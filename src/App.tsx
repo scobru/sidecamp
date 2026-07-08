@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './index.css';
 import logo from './assets/logo.png';
 
@@ -40,6 +40,25 @@ function App() {
   const [isLoadingPeers, setIsLoadingPeers] = useState(false);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
+
+  // Built-in Audio Player States
+  const [currentPlayback, setCurrentPlayback] = useState<{ name: string, path: string } | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Pre-Upload Metadata Editor States
+  const [metadataModalFile, setMetadataModalFile] = useState<{ name: string, path: string } | null>(null);
+  const [metadataTitle, setMetadataTitle] = useState('');
+  const [metadataArtist, setMetadataArtist] = useState('Sidecamp');
+  const [metadataAlbum, setMetadataAlbum] = useState('');
+  
+  // Auto-Upload Watcher States
+  const [autoUpload, setAutoUpload] = useState(() => {
+    return localStorage.getItem('auto_upload') === 'true';
+  });
 
   useEffect(() => {
     // Listen to Peer Daemon logs
@@ -227,6 +246,10 @@ function App() {
       setDlLogs(prev => [...prev, `${logPrefix} ✅ Download completed! Saved to: ${filePath}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'completed' } : d));
       loadDownloadedFiles();
+      
+      if (autoUpload && filePath) {
+        handleUploadFileAuto(filePath);
+      }
     } catch (e: any) {
       setDlLogs(prev => [...prev, `${logPrefix} ❌ Error during download: ${e.message || e}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
@@ -235,6 +258,113 @@ function App() {
       setTimeout(() => {
         setActiveDownloads(prev => prev.filter(d => d.id !== downloadId));
       }, 6000);
+    }
+  };
+
+  // Audio Player Controls
+  const playTrack = (name: string, path: string) => {
+    setCurrentPlayback({ name, path });
+    setIsPlaying(true);
+    if (audioRef.current) {
+      audioRef.current.src = `media://${encodeURIComponent(path)}`;
+      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+    }
+  };
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+      setIsPlaying(true);
+    }
+  };
+
+  const handleSeek = (time: number) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = time;
+    setCurrentTime(time);
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    if (!audioRef.current) return;
+    audioRef.current.volume = vol;
+    setVolume(vol);
+  };
+
+  const stopPlayback = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+    }
+    setCurrentPlayback(null);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+  };
+
+  const formatTime = (secs: number) => {
+    if (isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Auto-Upload Trigger
+  const handleUploadFileAuto = async (filePath: string) => {
+    if (!server || !token) {
+      setDlLogs(prev => [...prev, `[Auto-Upload] ⚠️ Server/Token not configured, skipping auto-upload.`]);
+      return;
+    }
+    const filename = filePath.split(/[/\\]/).pop() || '';
+    let artist = 'Sidecamp';
+    let title = filename.replace(/\.[^/.]+$/, "");
+    if (filename.includes(' - ')) {
+      const parts = filename.split(' - ');
+      artist = parts[0].trim();
+      title = parts[1].replace(/\.[^/.]+$/, "").trim();
+    }
+    
+    setDlLogs(prev => [...prev, `[Auto-Upload] Starting automatic upload of: ${filename}...`]);
+    try {
+      await window.electronAPI.setUploadConfig(server, token);
+      await window.electronAPI.uploadTrack(filePath, { artist, title });
+      setDlLogs(prev => [...prev, `[Auto-Upload] ✅ Auto-upload completed successfully!`]);
+    } catch (e: any) {
+      setDlLogs(prev => [...prev, `[Auto-Upload] ❌ Auto-upload failed: ${e.message || e}`]);
+    }
+  };
+
+  // Pre-Upload Metadata Editor Confirm
+  const confirmUpload = async () => {
+    if (!metadataModalFile) return;
+    const filePath = metadataModalFile.path;
+    
+    if (!server || !token) {
+      alert("You must configure the Server URL and Token in the Configuration section to upload files!");
+      return;
+    }
+    
+    setUploadingFilePath(filePath);
+    setDlLogs(prev => [...prev, `[Library] Starting upload of: ${metadataModalFile.name} with custom tags...`]);
+    setMetadataModalFile(null); // close modal
+    
+    try {
+      await window.electronAPI.setUploadConfig(server, token);
+      await window.electronAPI.uploadTrack(filePath, { 
+        artist: metadataArtist || 'Sidecamp', 
+        title: metadataTitle || metadataModalFile.name, 
+        album: metadataAlbum || undefined 
+      });
+      setDlLogs(prev => [...prev, `[Library] ✅ Upload completed successfully!`]);
+      alert("Track successfully uploaded to TuneCamp!");
+    } catch (e: any) {
+      setDlLogs(prev => [...prev, `[Library] ❌ Error during upload: ${e.message || e}`]);
+      alert("Error uploading file: " + (e.message || e));
+    } finally {
+      setUploadingFilePath(null);
     }
   };
 
@@ -260,23 +390,21 @@ function App() {
   };
 
   const handleUploadFile = async (filePath: string) => {
-    if (!server || !token) {
-      alert("You must configure the Server URL and Token in the Configuration section to upload files!");
-      return;
+    const filename = filePath.split(/[/\\]/).pop() || '';
+    let defaultArtist = 'Sidecamp';
+    let defaultTitle = filename.replace(/\.[^/.]+$/, "");
+    let defaultAlbum = '';
+    
+    if (filename.includes(' - ')) {
+      const parts = filename.split(' - ');
+      defaultArtist = parts[0].trim();
+      defaultTitle = parts[1].replace(/\.[^/.]+$/, "").trim();
     }
-    setUploadingFilePath(filePath);
-    setDlLogs(prev => [...prev, `[Library] Starting manual upload of: ${filePath.split(/[/\\]/).pop()} to TuneCamp...`]);
-    try {
-      await window.electronAPI.setUploadConfig(server, token);
-      await window.electronAPI.uploadTrack(filePath, { artist: 'Sidecamp' });
-      setDlLogs(prev => [...prev, `[Library] ✅ Manual upload completed successfully!`]);
-      alert("Track successfully uploaded to TuneCamp!");
-    } catch (e: any) {
-      setDlLogs(prev => [...prev, `[Library] ❌ Error during manual upload: ${e.message || e}`]);
-      alert("Error uploading file: " + (e.message || e));
-    } finally {
-      setUploadingFilePath(null);
-    }
+    
+    setMetadataTitle(defaultTitle);
+    setMetadataArtist(defaultArtist);
+    setMetadataAlbum(defaultAlbum);
+    setMetadataModalFile({ name: filename, path: filePath });
   };
 
   const handleStartPeer = async () => {
@@ -296,7 +424,31 @@ function App() {
     setDlLogs(prev => [...prev, `[Search] Starting search for "${searchQuery}" on ${searchSource.toUpperCase()}...`]);
     try {
       let res: any[] = [];
-      if (searchSource === 'soulseek') {
+      if (searchSource === 'all') {
+        const promises = [
+          window.electronAPI.slskSearch(searchQuery)
+            .then(res => res.map(r => ({ ...r, source: 'soulseek' })))
+            .catch(e => { console.error("Soulseek search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'soundcloud')
+            .then(res => res.map(r => ({ ...r, source: 'soundcloud' })))
+            .catch(e => { console.error("SoundCloud search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'bandcamp')
+            .then(res => res.map(r => ({ ...r, source: 'bandcamp' })))
+            .catch(e => { console.error("Bandcamp search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'torrent')
+            .then(res => res.map(r => ({ ...r, source: 'torrent_search' })))
+            .catch(e => { console.error("Torrent search failed:", e); return []; })
+        ];
+        
+        const settled = await Promise.allSettled(promises);
+        const aggregated: any[] = [];
+        settled.forEach(s => {
+          if (s.status === 'fulfilled') {
+            aggregated.push(...s.value);
+          }
+        });
+        res = aggregated;
+      } else if (searchSource === 'soulseek') {
         res = await window.electronAPI.slskSearch(searchQuery);
         res = res.map(r => ({ ...r, source: 'soulseek' }));
       } else {
@@ -338,6 +490,10 @@ function App() {
       setDlLogs(prev => [...prev, `[${source.toUpperCase()}] ✅ Download completed! Saved to: ${filePath}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'completed' } : d));
       loadDownloadedFiles(); // Refresh downloads list automatically!
+      
+      if (autoUpload && filePath) {
+        handleUploadFileAuto(filePath);
+      }
     } catch (err: any) {
       setDlLogs(prev => [...prev, `[${source.toUpperCase()}] ❌ Error during download: ${err.message || err}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
@@ -383,6 +539,12 @@ function App() {
       
       setActiveDownloads(prev => prev.map(d => d.id === tempId || (d.source === 'torrent' && d.status === 'downloading') ? { ...d, status: 'completed', name: d.name.startsWith('Analyzing') && resultPaths.length > 0 ? resultPaths[0].split(/[/\\]/).pop() : d.name } : d));
       loadDownloadedFiles(); // Refresh downloads list automatically!
+      
+      if (autoUpload && resultPaths.length > 0) {
+        for (const p of resultPaths) {
+          if (p) handleUploadFileAuto(p);
+        }
+      }
     } catch (err: any) {
       setDlLogs(prev => [...prev, `❌ Error during process: ${err.message || err}`]);
       setActiveDownloads(prev => prev.map(d => d.id === tempId ? { ...d, status: 'failed' } : d));
@@ -747,7 +909,17 @@ function App() {
 
               {downloadSource === 'soulseek' && (
                 <>
-                  <div className="platform-selector" style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', padding: '0.2rem 0.5rem' }}>
+                  <div className="platform-selector" style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', padding: '0.2rem 0.5rem', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                      <input 
+                        type="radio" 
+                        name="searchSource" 
+                        value="all" 
+                        checked={searchSource === 'all'} 
+                        onChange={() => { setSearchSource('all'); setSearchResults([]); }} 
+                      />
+                      🌐 All Platforms
+                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                       <input 
                         type="radio" 
@@ -912,7 +1084,7 @@ function App() {
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button 
                         className="btn btn-primary" 
-                        onClick={() => window.electronAPI.openDownload(file.path)}
+                        onClick={() => playTrack(file.name, file.path)}
                         style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
                       >
                         Play
@@ -956,6 +1128,114 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Audio Player Bar */}
+      {currentPlayback && (
+        <div className="audio-player-bar">
+          <audio 
+            ref={audioRef} 
+            onTimeUpdate={() => {
+              if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+            }}
+            onDurationChange={() => {
+              if (audioRef.current) setDuration(audioRef.current.duration);
+            }}
+            onEnded={() => {
+              stopPlayback();
+            }}
+          />
+          
+          <div className="player-info">
+            <span className="player-track-icon">🎵</span>
+            <div className="player-track-details">
+              <span className="player-track-title">{currentPlayback.name}</span>
+              <span className="player-track-path">{currentPlayback.path}</span>
+            </div>
+          </div>
+          
+          <div className="player-controls-center">
+            <button className="player-btn toggle-play" onClick={togglePlay}>
+              {isPlaying ? '⏸️' : '▶️'}
+            </button>
+            
+            <div className="player-seeker">
+              <span className="time-display">{formatTime(currentTime)}</span>
+              <input 
+                type="range" 
+                min="0" 
+                max={duration || 100} 
+                value={currentTime} 
+                onChange={(e) => handleSeek(parseFloat(e.target.value))} 
+                className="seeker-slider"
+              />
+              <span className="time-display">{formatTime(duration)}</span>
+            </div>
+          </div>
+          
+          <div className="player-controls-right">
+            <span className="volume-icon">🔊</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05" 
+              value={volume} 
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))} 
+              className="volume-slider"
+            />
+            <button className="player-btn stop-play" onClick={stopPlayback} title="Close Player">
+              ✖️
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Metadata Editor Modal */}
+      {metadataModalFile && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+            <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Upload Track to TuneCamp</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem', wordBreak: 'break-all' }}>
+              File: <span style={{ fontFamily: 'monospace', color: 'var(--text-main)' }}>{metadataModalFile.name}</span>
+            </p>
+            
+            <div className="form-group">
+              <label>Track Title</label>
+              <input 
+                type="text" 
+                value={metadataTitle} 
+                onChange={e => setMetadataTitle(e.target.value)} 
+                className="glass-input"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Artist Name</label>
+              <input 
+                type="text" 
+                value={metadataArtist} 
+                onChange={e => setMetadataArtist(e.target.value)} 
+                className="glass-input"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Album (Optional)</label>
+              <input 
+                type="text" 
+                value={metadataAlbum} 
+                onChange={e => setMetadataAlbum(e.target.value)} 
+                className="glass-input"
+              />
+            </div>
+            
+            <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setMetadataModalFile(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmUpload}>Upload</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

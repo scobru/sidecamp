@@ -1,4 +1,4 @@
-import WebTorrent from 'webtorrent';
+import type WebTorrent from 'webtorrent';
 import { EventEmitter } from 'events';
 import path from 'path';
 
@@ -9,18 +9,22 @@ export class TorrentService extends EventEmitter {
     constructor(downloadDir: string) {
         super();
         this.downloadDir = downloadDir;
-        this.client = new WebTorrent({ utp: false });
-        
-        this.client.on('error', (err) => {
-            console.error("WebTorrent error:", err);
-            this.emit('error', err);
-        });
     }
 
     public async download(magnetUri: string): Promise<string[]> {
-        return new Promise((resolve, reject) => {
-            if (!this.client) return reject(new Error("Client not initialized"));
-
+        return new Promise(async (resolve, reject) => {
+            if (!this.client) {
+                try {
+                    const WebTorrentClass = (await import('webtorrent')).default;
+                    this.client = new WebTorrentClass({ utp: false });
+                    this.client.on('error', (err: any) => {
+                        console.error("WebTorrent error:", err);
+                        this.emit('error', err);
+                    });
+                } catch (err) {
+                    return reject(err);
+                }
+            }
             this.emit('log', `Inizio download magnet...`);
 
             this.client.add(magnetUri, { path: this.downloadDir }, (torrent) => {

@@ -1,13 +1,12 @@
-import { BrowserWindow, app, ipcMain, shell } from "electron";
+import { BrowserWindow, app, ipcMain, net, protocol, shell } from "electron";
 import path, { join } from "path";
+import { pathToFileURL } from "url";
 import fs from "fs";
 import crypto from "crypto";
 import { WebSocket } from "ws";
-import * as musicMetadata from "music-metadata";
 import { EventEmitter } from "events";
 import { SoulseekDownloader } from "andrade-soulseek-downloader/dist/index.js";
 import fs$1 from "fs-extra";
-import WebTorrent from "webtorrent";
 import { exec } from "child_process";
 import axios from "axios";
 import FormData from "form-data";
@@ -42,6 +41,7 @@ var PeerDaemon = class extends EventEmitter {
 		this.emit("log", `Trovati ${files.length} file audio. Estrazione metadati...`);
 		const indexData = [];
 		let processed = 0;
+		const musicMetadata = await import("music-metadata");
 		for (const file of files) try {
 			const metadata = await musicMetadata.parseFile(file);
 			const stat = fs.statSync(file);
@@ -339,15 +339,19 @@ var TorrentService = class extends EventEmitter {
 	constructor(downloadDir) {
 		super();
 		this.downloadDir = downloadDir;
-		this.client = new WebTorrent({ utp: false });
-		this.client.on("error", (err) => {
-			console.error("WebTorrent error:", err);
-			this.emit("error", err);
-		});
 	}
 	async download(magnetUri) {
-		return new Promise((resolve, reject) => {
-			if (!this.client) return reject(/* @__PURE__ */ new Error("Client not initialized"));
+		return new Promise(async (resolve, reject) => {
+			if (!this.client) try {
+				const WebTorrentClass = (await import("webtorrent")).default;
+				this.client = new WebTorrentClass({ utp: false });
+				this.client.on("error", (err) => {
+					console.error("WebTorrent error:", err);
+					this.emit("error", err);
+				});
+			} catch (err) {
+				return reject(err);
+			}
 			this.emit("log", `Inizio download magnet...`);
 			this.client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
 				this.emit("log", `Metadati ricevuti: ${torrent.name}`);
@@ -651,6 +655,14 @@ async function searchTorrents(query) {
 }
 //#endregion
 //#region electron/main.ts
+protocol.registerSchemesAsPrivileged([{
+	scheme: "media",
+	privileges: {
+		bypassCSP: true,
+		stream: true,
+		supportFetchAPI: true
+	}
+}]);
 process.env.DIST = join(import.meta.dirname, "../dist");
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : join(process.env.DIST, "../public");
 var win;
@@ -843,6 +855,12 @@ ipcMain.handle("network:catalog-tracks", async (event, server, token) => {
 ipcMain.handle("network:catalog-download", async (event, server, token, trackId, artist, title) => {
 	return await network.downloadCatalogTrack(server, token, trackId, artist, title);
 });
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+	protocol.handle("media", (request) => {
+		const filePath = decodeURIComponent(request.url.slice(8));
+		return net.fetch(pathToFileURL(filePath).toString());
+	});
+	createWindow();
+});
 //#endregion
 export {};

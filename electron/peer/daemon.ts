@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { WebSocket } from "ws";
-import * as musicMetadata from "music-metadata";
 import { EventEmitter } from "events";
 
 export interface PeerConfig {
@@ -48,6 +47,7 @@ export class PeerDaemon extends EventEmitter {
         const indexData = [];
         let processed = 0;
 
+        const musicMetadata = await import("music-metadata");
         for (const file of files) {
             try {
                 const metadata = await musicMetadata.parseFile(file);

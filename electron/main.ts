@@ -1,5 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } }
+]);
 
 process.env.DIST = join(import.meta.dirname, '../dist')
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : join(process.env.DIST, '../public')
@@ -239,4 +244,10 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
   return await network.downloadCatalogTrack(server, token, trackId, artist, title);
 });
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  protocol.handle('media', (request) => {
+    const filePath = decodeURIComponent(request.url.slice('media://'.length));
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+  createWindow();
+});
