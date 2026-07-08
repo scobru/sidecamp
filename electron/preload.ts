@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Soulseek
   slskConnect: (user: string, pass: string) => ipcRenderer.invoke('slsk:connect', user, pass),
   slskSearch: (query: string) => ipcRenderer.invoke('slsk:search', query),
+  searchWeb: (query: string, source: string) => ipcRenderer.invoke('search:web', query, source),
   slskDownload: (result: any) => ipcRenderer.invoke('slsk:download', result),
   slskStatus: () => ipcRenderer.invoke('slsk:status'),
   
@@ -17,6 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ytdlp
   ytdlpDownload: (url: string) => ipcRenderer.invoke('ytdlp:download', url),
   
+  // Local downloads library
+  listDownloads: () => ipcRenderer.invoke('downloads:list'),
+  deleteDownload: (filePath: string) => ipcRenderer.invoke('downloads:delete', filePath),
+  
   // Peer Daemon
   startPeer: (config: any) => ipcRenderer.invoke('peer:start', config),
   stopPeer: () => ipcRenderer.invoke('peer:stop'),
@@ -25,5 +30,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPeerLog: (callback: (msg: string) => void) => ipcRenderer.on('peer:log', (_, msg) => callback(msg)),
   onPeerStatus: (callback: (status: string) => void) => ipcRenderer.on('peer:status', (_, status) => callback(status)),
   onPeerProgress: (callback: (data: any) => void) => ipcRenderer.on('peer:progress', (_, data) => callback(data)),
+  
+  onDownloadLog: (callback: (msg: string) => void) => ipcRenderer.on('download:log', (_, msg) => callback(msg)),
+  onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download:progress', (_, data) => callback(data)),
+  
+  openDownload: (filePath: string) => ipcRenderer.invoke('downloads:open', filePath),
+  removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
+
+  // Network Explorer
+  getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
+  getPeerTracks: (server: string, token: string, sessionId: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId),
+  downloadPeerTrack: (server: string, token: string, sessionId: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:download', server, token, sessionId, trackId, artist, title),
+  getCatalogTracks: (server: string, token: string) => ipcRenderer.invoke('network:catalog-tracks', server, token),
+  downloadCatalogTrack: (server: string, token: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:catalog-download', server, token, trackId, artist, title),
 })
 // End of file

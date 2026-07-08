@@ -29,20 +29,33 @@ export class TorrentService extends EventEmitter {
                 torrent.on('download', (bytes) => {
                     this.emit('progress', {
                         id: torrent.infoHash,
+                        name: torrent.name,
                         progress: torrent.progress,
                         speed: torrent.downloadSpeed,
+                        uploadSpeed: torrent.uploadSpeed,
                         downloaded: torrent.downloaded,
-                        total: torrent.length
+                        total: torrent.length,
+                        seeding: torrent.done
+                    });
+                });
+
+                torrent.on('upload', (bytes) => {
+                    this.emit('progress', {
+                        id: torrent.infoHash,
+                        name: torrent.name,
+                        progress: torrent.progress,
+                        speed: torrent.downloadSpeed,
+                        uploadSpeed: torrent.uploadSpeed,
+                        downloaded: torrent.downloaded,
+                        total: torrent.length,
+                        seeding: torrent.done
                     });
                 });
 
                 torrent.on('done', () => {
-                    this.emit('log', `Download completato: ${torrent.name}`);
+                    this.emit('log', `Download completato e in seeding: ${torrent.name}`);
                     const files = torrent.files.map(f => path.join(this.downloadDir, f.path));
                     resolve(files);
-                    // Non distruggiamo il torrent subito se vogliamo fare seed, ma per sidecamp
-                    // potremmo fermarlo per liberare spazio
-                    torrent.destroy();
                 });
 
                 torrent.on('error', (err) => {
@@ -50,6 +63,16 @@ export class TorrentService extends EventEmitter {
                 });
             });
         });
+    }
+
+    public remove(infoHash: string) {
+        if (this.client) {
+            const torrent = this.client.get(infoHash);
+            if (torrent) {
+                this.emit('log', `Rimozione torrent e stop seeding per: ${torrent.name}`);
+                torrent.destroy();
+            }
+        }
     }
 
     public stop() {

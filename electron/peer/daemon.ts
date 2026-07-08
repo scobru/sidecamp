@@ -61,8 +61,11 @@ export class PeerDaemon extends EventEmitter {
                     album: metadata.common.album || 'Unknown Album',
                     duration: metadata.format.duration || 0,
                     sizeBytes: stat.size,
+                    fileSizeBytes: stat.size,
                     format: path.extname(file).substring(1).toLowerCase(),
-                    bitrate: metadata.format.bitrate || 0
+                    mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
+                    bitrate: metadata.format.bitrate || 0,
+                    allowDownload: this.config.allowDownloads
                 };
 
                 this.fileIndex.set(trackData.id, trackData);
@@ -122,34 +125,34 @@ export class PeerDaemon extends EventEmitter {
             
             const wsUrl = new URL(this.config.server);
             wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-            wsUrl.pathname = '/api/peer/connect';
+            wsUrl.pathname = '/ws/peer';
+            wsUrl.searchParams.set('token', this.config.token);
+            wsUrl.searchParams.set('allowDownloads', String(this.config.allowDownloads));
             
             this.emit("status", "connecting");
             
-            this.ws = new WebSocket(wsUrl.toString(), {
-                headers: {
-                    'Authorization': `Bearer ${this.config.token}`
-                }
-            });
+            this.ws = new WebSocket(wsUrl.toString());
 
             this.ws.on('open', () => {
-                this.emit("status", "online");
-                this.emit("log", "Connesso a TuneCamp. Inviando l'indice della libreria...");
-                
-                // Handshake
-                this.ws?.send(JSON.stringify({
-                    type: 'handshake',
-                    allowDownloads: this.config.allowDownloads,
-                    index: indexData
-                }));
+                this.emit("log", "WebSocket connesso. In attesa di autorizzazione...");
             });
 
             this.ws.on('message', (data: any) => {
                 try {
                     const msg = JSON.parse(data.toString());
-                    if (msg.type === 'request') {
+                    if (msg.type === 'auth_ok') {
+                        this.emit("status", "online");
+                        this.emit("log", `Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`);
+                        
+                        this.ws?.send(JSON.stringify({
+                            type: 'manifest',
+                            tracks: indexData
+                        }));
+                    } else if (msg.type === 'ping') {
+                        this.ws?.send(JSON.stringify({ type: 'pong' }));
+                    } else if (msg.type === 'stream_request' || msg.type === 'download_request') {
                         this.handleRequest(msg.requestId, msg.trackId);
-                    } else if (msg.type === 'cancel') {
+                    } else if (msg.type === 'cancel_request') {
                         this.handleCancel(msg.requestId);
                     }
                 } catch (err) {
@@ -182,36 +185,37 @@ export class PeerDaemon extends EventEmitter {
     private handleRequest(requestId: string, trackId: string) {
         const track = this.fileIndex.get(trackId);
         if (!track || !fs.existsSync(track.path)) {
-            this.ws?.send(JSON.stringify({ type: 'stream_error', requestId, error: 'File non trovato' }));
+            this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
             return;
         }
 
-        this.emit("log", `Streaming richiesto: ${track.title} [Req: ${requestId}]`);
-        this.ws?.send(JSON.stringify({ type: 'stream_start', requestId, sizeBytes: track.sizeBytes, format: track.format }));
+        this.emit("log", `Streaming/Download richiesto: ${track.title} [Req: ${requestId}]`);
 
         const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024 });
         this.activeStreams.set(requestId, stream);
+        let seq = 0;
 
         stream.on('data', (chunk: Buffer) => {
             if (this.ws?.readyState === WebSocket.OPEN) {
-                // Invia dati binari con header text per il multiplexing
-                // Nella V1 di tunecamp-peer usavamo un approccio custom. 
-                // Qui simuliamo l'incapsulamento JSON + base64 o Binary puro se supportato.
-                // Usiamo JSON/base64 per semplicità sul WebSocket (non ottimale per file enormi ma ok per test).
-                this.ws.send(JSON.stringify({ type: 'stream_data', requestId, chunk: chunk.toString('base64') }));
+                this.ws.send(JSON.stringify({ 
+                    type: 'chunk', 
+                    requestId, 
+                    seq: seq++, 
+                    data: chunk.toString('base64') 
+                }));
             } else {
                 stream.destroy();
             }
         });
 
         stream.on('end', () => {
-            this.ws?.send(JSON.stringify({ type: 'stream_end', requestId }));
+            this.ws?.send(JSON.stringify({ type: 'chunk_end', requestId }));
             this.activeStreams.delete(requestId);
-            this.emit("log", `Streaming completato: ${track.title} [Req: ${requestId}]`);
+            this.emit("log", `Streaming/Download completato: ${track.title} [Req: ${requestId}]`);
         });
 
         stream.on('error', (err) => {
-            this.ws?.send(JSON.stringify({ type: 'stream_error', requestId, error: err.message }));
+            this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: err.message }));
             this.activeStreams.delete(requestId);
         });
     }
@@ -221,7 +225,7 @@ export class PeerDaemon extends EventEmitter {
         if (stream) {
             stream.destroy();
             this.activeStreams.delete(requestId);
-            this.emit("log", `Streaming cancellato [Req: ${requestId}]`);
+            this.emit("log", `Streaming/Download cancellato [Req: ${requestId}]`);
         }
     }
 

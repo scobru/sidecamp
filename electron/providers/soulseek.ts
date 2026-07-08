@@ -24,6 +24,7 @@ export class SoulseekService {
     private downloadDir: string;
     private currentUsername: string | null = null;
     private searchCache: Map<string, SoulseekSearchResult> = new Map();
+    private connectingPromise: Promise<boolean> | null = null;
 
     constructor(musicDir: string, downloadDir: string) {
         this.musicDir = musicDir;
@@ -46,39 +47,61 @@ export class SoulseekService {
             return false;
         }
 
-        if (this.currentUsername === username) {
+        if (this.currentUsername === username && this.downloader) {
             return true;
         }
 
-        try {
-            // Set environment variables for the library to pick up
-            process.env.SOULSEEK_USER = username;
-            process.env.SOULSEEK_PASSWORD = password;
-            process.env.SOULSEEK_SHARED_MUSIC_DIR = this.musicDir;
-            process.env.SOULSEEK_DOWNLOAD_DIR = this.downloadDir;
-
-            const config: DownloadConfig = {
-                maxAttempts: 10,
-                downloadTimeout: 120000,
-                searchTimeout: 10000,
-                preferSlotsAvailable: true,
-                minSpeed: 100000, // 100kb/s
-                searchDelay: 3000,
-                downloadDelay: 2000
-            };
-
-            const downloader = new SoulseekDownloader(config);
-            await downloader.connect();
-            this.downloader = downloader;
-            
-            console.log("✅ Soulseek Connected as", username);
-            this.currentUsername = username;
-            this.searchCache.clear();
-            return true;
-        } catch (err) {
-            console.error("❌ Soulseek Connection Error:", err);
-            return false;
+        if (this.connectingPromise) {
+            return this.connectingPromise;
         }
+
+        this.connectingPromise = (async () => {
+            try {
+                // Ensure /tmp directory exists to prevent hardcoded mkdirSync('/tmp/slsk') from throwing ENOENT on Windows
+                fs.mkdirSync(path.resolve('/tmp'), { recursive: true });
+
+                // Set environment variables for the library to pick up
+                process.env.SOULSEEK_USER = username;
+                process.env.SOULSEEK_PASSWORD = password;
+                process.env.SOULSEEK_SHARED_MUSIC_DIR = this.musicDir;
+                process.env.SOULSEEK_DOWNLOAD_DIR = this.downloadDir;
+
+                const config: DownloadConfig = {
+                    maxAttempts: 10,
+                    downloadTimeout: 120000,
+                    searchTimeout: 10000,
+                    preferSlotsAvailable: true,
+                    minSpeed: 100000, // 100kb/s
+                    searchDelay: 3000,
+                    downloadDelay: 2000
+                };
+
+                if (this.downloader) {
+                    try {
+                        await this.downloader.disconnect();
+                    } catch (e) {}
+                    this.downloader = undefined;
+                }
+
+                const downloader = new SoulseekDownloader(config);
+                await downloader.connect();
+                this.downloader = downloader;
+                
+                console.log("✅ Soulseek Connected as", username);
+                this.currentUsername = username;
+                this.searchCache.clear();
+                return true;
+            } catch (err) {
+                console.error("❌ Soulseek Connection Error:", err);
+                this.currentUsername = null;
+                this.downloader = undefined;
+                return false;
+            } finally {
+                this.connectingPromise = null;
+            }
+        })();
+
+        return this.connectingPromise;
     }
 
     async search(query: string): Promise<SoulseekResult[]> {
