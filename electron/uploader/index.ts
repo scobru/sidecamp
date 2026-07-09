@@ -36,6 +36,7 @@ export class TuneCampUploader {
         // Append optional metadata hints for TuneCamp's scanner
         if (metadata?.releaseSlug) formData.append('releaseSlug', metadata.releaseSlug);
         if (metadata?.artist) formData.append('artist', metadata.artist);
+        if (metadata?.title) formData.append('title', metadata.title);
         if (metadata?.album) formData.append('album', metadata.album);
         if (metadata?.artistId) formData.append('artistId', metadata.artistId.toString());
 

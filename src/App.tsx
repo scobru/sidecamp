@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { 
+  Radio, Globe, Download, FolderSync, Settings, 
+  Play, Pause, X, Volume2, Music, Magnet, Cloud 
+} from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
 
@@ -31,6 +35,9 @@ function App() {
   const [activeDownloads, setActiveDownloads] = useState<any[]>([]);
   const [searchSource, setSearchSource] = useState('soulseek'); // 'soulseek' | 'soundcloud' | 'bandcamp' | 'torrent'
   const [downloadedFiles, setDownloadedFiles] = useState<any[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [albumSeedModalOpen, setAlbumSeedModalOpen] = useState(false);
+  const [albumSeedName, setAlbumSeedName] = useState('My Custom Album');
   const [uploadingFilePath, setUploadingFilePath] = useState<string | null>(null);
 
   // Network Explorer States
@@ -45,6 +52,7 @@ function App() {
   const [currentPlayback, setCurrentPlayback] = useState<{ name: string, path: string } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,7 +64,7 @@ function App() {
   const [metadataAlbum, setMetadataAlbum] = useState('');
   
   // Auto-Upload Watcher States
-  const [autoUpload, setAutoUpload] = useState(() => {
+  const [autoUpload, _setAutoUpload] = useState(() => {
     return localStorage.getItem('auto_upload') === 'true';
   });
 
@@ -255,9 +263,7 @@ function App() {
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
     } finally {
       setDownloadingTrackId(null);
-      setTimeout(() => {
-        setActiveDownloads(prev => prev.filter(d => d.id !== downloadId));
-      }, 6000);
+      // Removed setTimeout to keep items in queue for the Transfers tab
     }
   };
 
@@ -282,10 +288,14 @@ function App() {
     }
   };
 
-  const handleSeek = (time: number) => {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = time;
+  const handleSeekChange = (time: number) => {
     setCurrentTime(time);
+  };
+
+  const handleSeekCommit = () => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = currentTime;
+    setIsSeeking(false);
   };
 
   const handleVolumeChange = (vol: number) => {
@@ -372,6 +382,7 @@ function App() {
     try {
       const res = await window.electronAPI.listDownloads();
       setDownloadedFiles(res);
+      setSelectedFiles([]);
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
     }
@@ -427,17 +438,17 @@ function App() {
       if (searchSource === 'all') {
         const promises = [
           window.electronAPI.slskSearch(searchQuery)
-            .then(res => res.map(r => ({ ...r, source: 'soulseek' })))
-            .catch(e => { console.error("Soulseek search failed:", e); return []; }),
+            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'soulseek' })))
+            .catch((e: any) => { console.error("Soulseek search failed:", e); return []; }),
           window.electronAPI.searchWeb(searchQuery, 'soundcloud')
-            .then(res => res.map(r => ({ ...r, source: 'soundcloud' })))
-            .catch(e => { console.error("SoundCloud search failed:", e); return []; }),
+            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'soundcloud' })))
+            .catch((e: any) => { console.error("SoundCloud search failed:", e); return []; }),
           window.electronAPI.searchWeb(searchQuery, 'bandcamp')
-            .then(res => res.map(r => ({ ...r, source: 'bandcamp' })))
-            .catch(e => { console.error("Bandcamp search failed:", e); return []; }),
-          window.electronAPI.searchWeb(searchQuery, 'torrent')
-            .then(res => res.map(r => ({ ...r, source: 'torrent_search' })))
-            .catch(e => { console.error("Torrent search failed:", e); return []; })
+            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'bandcamp' })))
+            .catch((e: any) => { console.error("Bandcamp search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'torrent', server, token)
+            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'torrent_search' })))
+            .catch((e: any) => { console.error("Torrent search failed:", e); return []; })
         ];
         
         const settled = await Promise.allSettled(promises);
@@ -452,7 +463,7 @@ function App() {
         res = await window.electronAPI.slskSearch(searchQuery);
         res = res.map(r => ({ ...r, source: 'soulseek' }));
       } else {
-        res = await window.electronAPI.searchWeb(searchQuery, searchSource);
+        res = await window.electronAPI.searchWeb(searchQuery, searchSource, server, token);
       }
       setSearchResults(res);
       setDlLogs(prev => [...prev, `[Search] Search completed! Found ${res.length} results.`]);
@@ -498,9 +509,7 @@ function App() {
       setDlLogs(prev => [...prev, `[${source.toUpperCase()}] ❌ Error during download: ${err.message || err}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
     } finally {
-      setTimeout(() => {
-        setActiveDownloads(prev => prev.filter(d => d.id !== downloadId || d.status === 'seeding'));
-      }, 6000);
+      // Removed setTimeout to keep items in queue for the Transfers tab
     }
   };
 
@@ -552,9 +561,52 @@ function App() {
       setIsDownloading(false);
       setDlProgress(null);
       setDirectUrl('');
-      setTimeout(() => {
-        setActiveDownloads(prev => prev.filter(d => d.id !== tempId || d.status === 'seeding'));
-      }, 6000);
+      // Removed setTimeout to keep items in queue for the Transfers tab
+    }
+  };
+
+  const purgeFailedDownloads = () => {
+    setActiveDownloads(prev => prev.filter(d => d.status !== 'failed'));
+  };
+
+  const clearDownloadItem = (id: string) => {
+    setActiveDownloads(prev => prev.filter(d => d.id !== id));
+  };
+
+  const handleSeedFile = async (filePath: string) => {
+    const filename = filePath.split(/[/\\]/).pop() || '';
+    setDlLogs(prev => [...prev, `[Library] Starting seed for: ${filename}...`]);
+    try {
+      const magnetUri = await window.electronAPI.torrentSeed(filePath);
+      setDlLogs(prev => [...prev, `[Library] ✅ Torrent seeding! Magnet Link: ${magnetUri}`]);
+      alert(`Started seeding torrent!\n\nMagnet URI:\n${magnetUri}\n\nCopied to clipboard!`);
+      navigator.clipboard.writeText(magnetUri).catch(() => {});
+      loadDownloadedFiles();
+    } catch (e: any) {
+      setDlLogs(prev => [...prev, `[Library] ❌ Seeding failed: ${e.message || e}`]);
+      alert("Error seeding file: " + (e.message || e));
+    }
+  };
+
+  const handleSeedSelectedClick = () => {
+    if (selectedFiles.length === 0) return;
+    setAlbumSeedName('My Custom Album');
+    setAlbumSeedModalOpen(true);
+  };
+
+  const confirmSeedSelected = async () => {
+    setAlbumSeedModalOpen(false);
+    setDlLogs(prev => [...prev, `[Library] Starting seed for album: "${albumSeedName}" with ${selectedFiles.length} files...`]);
+    try {
+      const magnetUri = await window.electronAPI.torrentSeed(selectedFiles, albumSeedName);
+      setDlLogs(prev => [...prev, `[Library] ✅ Album Torrent seeding! Magnet Link: ${magnetUri}`]);
+      alert(`Started seeding album torrent!\n\nMagnet URI:\n${magnetUri}\n\nCopied to clipboard!`);
+      navigator.clipboard.writeText(magnetUri).catch(() => {});
+      setSelectedFiles([]);
+      loadDownloadedFiles();
+    } catch (e: any) {
+      setDlLogs(prev => [...prev, `[Library] ❌ Seeding failed: ${e.message || e}`]);
+      alert("Error seeding album: " + (e.message || e));
     }
   };
 
@@ -563,6 +615,7 @@ function App() {
       await window.electronAPI.removeTorrent(infoHash);
       setActiveDownloads(prev => prev.filter(d => d.id !== infoHash));
       setDlLogs(prev => [...prev, `[Library] Torrent removed: ${infoHash.substring(0, 8)}...`]);
+      loadDownloadedFiles();
     } catch (e: any) {
       console.error("Error removing torrent:", e);
     }
@@ -597,19 +650,19 @@ function App() {
         
         <nav className="nav-menu">
           <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')}>
-            <span className="icon">📡</span> Peer Node
+            <span className="icon"><Radio size={18} /></span> Peer Node
           </button>
           <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>
-            <span className="icon">🌐</span> Network
+            <span className="icon"><Globe size={18} /></span> Network
           </button>
           <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')}>
-            <span className="icon">⬇️</span> Downloader
+            <span className="icon"><Download size={18} /></span> Downloader
           </button>
           <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')}>
-            <span className="icon">🎵</span> Downloaded Files
+            <span className="icon"><FolderSync size={18} /></span> Transfers
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-            <span className="icon">⚙️</span> Configuration
+            <span className="icon"><Settings size={18} /></span> Configuration
           </button>
         </nav>
 
@@ -620,7 +673,7 @@ function App() {
               Active Downloads ({activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding').length})
             </h4>
             <div className="sidebar-dl-list">
-              {activeDownloads.map((dl) => (
+              {activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding').map((dl) => (
                 <div key={dl.id} className="sidebar-dl-item">
                   <div className="sidebar-dl-info">
                     <span className="sidebar-dl-name" title={dl.name}>
@@ -673,7 +726,7 @@ function App() {
             {activeTab === 'peer' ? 'Local Sharing' : 
              activeTab === 'network' ? 'Network Explorer' : 
              activeTab === 'download' ? 'Search & Download' : 
-             activeTab === 'files' ? 'Downloaded Files' : 
+             activeTab === 'files' ? 'Transfers' : 
              'Settings'}
           </h2>
         </header>
@@ -1064,50 +1117,152 @@ function App() {
 
           {activeTab === 'files' && (
             <div className="glass-card files-card">
+              
+              {/* Transfer Queue Section */}
               <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: 0 }}>Local Downloads Library</h3>
-                <button className="btn btn-secondary" onClick={loadDownloadedFiles}>Refresh</button>
+                <h3 style={{ margin: 0 }}>Active & Failed Transfers</h3>
+                <button className="btn btn-secondary" onClick={purgeFailedDownloads}>Purge Failed</button>
               </div>
 
-              <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '5px' }}>
-                {downloadedFiles.map((file, i) => (
-                  <div key={i} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '5px', marginBottom: '2rem' }}>
+                {activeDownloads.map((dl) => (
+                  <div key={dl.id} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                     <div className="result-info" style={{ flex: 1 }}>
-                      <div className="result-filename" style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all' }}>
-                        {file.name}
+                      <div className="result-filename" style={{ fontWeight: 600, color: dl.status === 'failed' ? '#e74c3c' : 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {dl.source === 'soulseek' ? <Music size={16} /> : dl.source === 'torrent' ? <Magnet size={16} /> : dl.source === 'server' ? <Cloud size={16} /> : <Globe size={16} />}
+                        {dl.name}
+                        {dl.status === 'failed' && <span style={{ fontSize: '0.75rem', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 6px', borderRadius: '4px' }}>FAILED</span>}
+                        {dl.status === 'completed' && <span style={{ fontSize: '0.75rem', background: 'rgba(46, 204, 113, 0.2)', color: '#2ecc71', padding: '2px 6px', borderRadius: '4px' }}>COMPLETED</span>}
                       </div>
-                      <div className="result-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        {(file.size / 1024 / 1024).toFixed(2)} MB • {new Date(file.ctime).toLocaleString()}
+                      <div className="result-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span>Status: {dl.status === 'seeding' ? 'Seeding' : dl.status === 'completed' ? 'Completed' : dl.status === 'failed' ? 'Failed' : 'Downloading'}</span>
+                        {dl.speed && <span>• {(dl.speed / 1024 / 1024).toFixed(1)} MB/s</span>}
+                        {dl.progress !== undefined && <span>• {(dl.progress * 100).toFixed(1)}%</span>}
                       </div>
+                      {dl.progress !== undefined && dl.status === 'downloading' && (
+                        <div className="progress-bar-bg" style={{ height: '4px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
+                          <div className="progress-bar-fill" style={{ width: `${(dl.progress * 100).toFixed(0)}%`, height: '100%', background: 'var(--accent)', borderRadius: '2px' }}></div>
+                        </div>
+                      )}
                     </div>
-                    
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button 
-                        className="btn btn-primary" 
-                        onClick={() => playTrack(file.name, file.path)}
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      >
-                        Play
-                      </button>
-                      <button 
-                        className="btn btn-accent" 
-                        onClick={() => handleUploadFile(file.path)}
-                        disabled={uploadingFilePath !== null}
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      >
-                        {uploadingFilePath === file.path ? 'Uploading...' : 'Upload to TC'}
-                      </button>
-                      <button 
-                        className="btn btn-danger" 
-                        onClick={() => handleDeleteFile(file.path)}
-                        disabled={uploadingFilePath === file.path}
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      >
-                        Delete
-                      </button>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {dl.status === 'seeding' && (
+                        <button className="btn btn-secondary" onClick={() => handleStopTorrent(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</button>
+                      )}
+                      {(dl.status === 'failed' || dl.status === 'completed') && (
+                        <button className="btn btn-secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
+                      )}
                     </div>
                   </div>
                 ))}
+
+                {activeDownloads.length === 0 && (
+                  <div className="no-results" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    No active or failed transfers.
+                  </div>
+                )}
+              </div>
+
+              {/* Local Downloads Library Section */}
+              <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
+                <h3 style={{ margin: 0 }}>Local Downloads Library</h3>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {selectedFiles.length > 0 && (
+                    <>
+                      <button className="btn btn-accent" onClick={handleSeedSelectedClick}>
+                        🧲 Seed Selected ({selectedFiles.length})
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => setSelectedFiles([])}>
+                        Clear Selection
+                      </button>
+                    </>
+                  )}
+                  <button className="btn btn-secondary" onClick={loadDownloadedFiles}>Refresh</button>
+                </div>
+              </div>
+
+              <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '5px' }}>
+                {downloadedFiles.map((file, i) => {
+                  const isSeeding = !!file.magnetUri;
+                  return (
+                    <div key={i} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      {!isSeeding && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedFiles.includes(file.path)} 
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFiles(prev => [...prev, file.path]);
+                            } else {
+                              setSelectedFiles(prev => prev.filter(p => p !== file.path));
+                            }
+                          }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                      )}
+                      {isSeeding && (
+                        <div style={{ width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2ecc71', fontSize: '0.9rem' }} title="Already seeding">
+                          ✓
+                        </div>
+                      )}
+                      
+                      <div className="result-info" style={{ flex: 1 }}>
+                        <div className="result-filename" style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all' }}>
+                          {file.name}
+                        </div>
+                        <div className="result-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          {(file.size / 1024 / 1024).toFixed(2)} MB • {new Date(file.ctime).toLocaleString()}
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={() => playTrack(file.name, file.path)}
+                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                        >
+                          Play
+                        </button>
+                        <button 
+                          className="btn btn-accent" 
+                          onClick={() => handleUploadFile(file.path)}
+                          disabled={uploadingFilePath !== null}
+                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                        >
+                          {uploadingFilePath === file.path ? 'Uploading...' : 'Upload to TC'}
+                        </button>
+                        {file.magnetUri ? (
+                          <button 
+                            className="btn btn-secondary" 
+                            onClick={() => {
+                              navigator.clipboard.writeText(file.magnetUri);
+                              alert("Magnet URI copied to clipboard!");
+                            }}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', color: '#2ecc71', borderColor: '#2ecc71' }}
+                          >
+                            🟢 Seeding (Copy Link)
+                          </button>
+                        ) : (
+                          <button 
+                            className="btn btn-secondary" 
+                            onClick={() => handleSeedFile(file.path)}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                          >
+                            🧲 Seed Torrent
+                          </button>
+                        )}
+                        <button 
+                          className="btn btn-danger" 
+                          onClick={() => handleDeleteFile(file.path)}
+                          disabled={uploadingFilePath === file.path}
+                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {downloadedFiles.length === 0 && (
                   <div className="no-results" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
@@ -1135,7 +1290,7 @@ function App() {
           <audio 
             ref={audioRef} 
             onTimeUpdate={() => {
-              if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+              if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
             }}
             onDurationChange={() => {
               if (audioRef.current) setDuration(audioRef.current.duration);
@@ -1146,7 +1301,7 @@ function App() {
           />
           
           <div className="player-info">
-            <span className="player-track-icon">🎵</span>
+            <span className="player-track-icon"><Music size={32} /></span>
             <div className="player-track-details">
               <span className="player-track-title">{currentPlayback.name}</span>
               <span className="player-track-path">{currentPlayback.path}</span>
@@ -1155,7 +1310,7 @@ function App() {
           
           <div className="player-controls-center">
             <button className="player-btn toggle-play" onClick={togglePlay}>
-              {isPlaying ? '⏸️' : '▶️'}
+              {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '4px' }} />}
             </button>
             
             <div className="player-seeker">
@@ -1165,7 +1320,11 @@ function App() {
                 min="0" 
                 max={duration || 100} 
                 value={currentTime} 
-                onChange={(e) => handleSeek(parseFloat(e.target.value))} 
+                onMouseDown={() => setIsSeeking(true)}
+                onChange={(e) => handleSeekChange(parseFloat(e.target.value))} 
+                onMouseUp={handleSeekCommit}
+                onTouchStart={() => setIsSeeking(true)}
+                onTouchEnd={handleSeekCommit}
                 className="seeker-slider"
               />
               <span className="time-display">{formatTime(duration)}</span>
@@ -1173,7 +1332,7 @@ function App() {
           </div>
           
           <div className="player-controls-right">
-            <span className="volume-icon">🔊</span>
+            <span className="volume-icon"><Volume2 size={18} /></span>
             <input 
               type="range" 
               min="0" 
@@ -1184,7 +1343,7 @@ function App() {
               className="volume-slider"
             />
             <button className="player-btn stop-play" onClick={stopPlayback} title="Close Player">
-              ✖️
+              <X size={20} />
             </button>
           </div>
         </div>
@@ -1232,6 +1391,34 @@ function App() {
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setMetadataModalFile(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={confirmUpload}>Upload</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Album Seeding Modal */}
+      {albumSeedModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+            <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Seed Selected Tracks as Album</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+              You have selected <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{selectedFiles.length}</span> tracks to seed together.
+            </p>
+            
+            <div className="form-group">
+              <label>Album / Torrent Name</label>
+              <input 
+                type="text" 
+                value={albumSeedName} 
+                onChange={e => setAlbumSeedName(e.target.value)} 
+                className="glass-input"
+                placeholder="Enter album or torrent name"
+              />
+            </div>
+            
+            <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setAlbumSeedModalOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmSeedSelected}>Start Seeding</button>
             </div>
           </div>
         </div>

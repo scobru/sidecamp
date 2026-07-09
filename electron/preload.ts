@@ -8,12 +8,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Soulseek
   slskConnect: (user: string, pass: string) => ipcRenderer.invoke('slsk:connect', user, pass),
   slskSearch: (query: string) => ipcRenderer.invoke('slsk:search', query),
-  searchWeb: (query: string, source: string) => ipcRenderer.invoke('search:web', query, source),
+  searchWeb: (query: string, source: string, server?: string, token?: string) => ipcRenderer.invoke('search:web', query, source, server, token),
   slskDownload: (result: any) => ipcRenderer.invoke('slsk:download', result),
   slskStatus: () => ipcRenderer.invoke('slsk:status'),
   
   // Torrent
   torrentDownload: (magnetUri: string) => ipcRenderer.invoke('torrent:download', magnetUri),
+  torrentSeed: (input: string | string[], torrentName?: string) => ipcRenderer.invoke('torrent:seed', input, torrentName),
   
   // Ytdlp
   ytdlpDownload: (url: string) => ipcRenderer.invoke('ytdlp:download', url),

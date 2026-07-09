@@ -16,7 +16,7 @@ function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      preload: join(import.meta.dirname, 'preload.mjs'),
+      preload: join(import.meta.dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -86,13 +86,13 @@ ipcMain.handle('slsk:search', async (event, query) => {
   return await slsk.search(query);
 });
 
-ipcMain.handle('search:web', async (event, query, source) => {
+ipcMain.handle('search:web', async (event, query, source, server, token) => {
   if (source === 'soundcloud') {
     return await searchSoundCloud(query);
   } else if (source === 'bandcamp') {
     return await searchBandcamp(query);
   } else if (source === 'torrent') {
-    return await searchTorrents(query);
+    return await searchTorrents(query, server, token);
   }
   return [];
 });
@@ -125,7 +125,8 @@ ipcMain.handle('downloads:list', async () => {
             name: f.name,
             path: filePath,
             size: stat.size,
-            ctime: stat.ctimeMs
+            ctime: stat.ctimeMs,
+            magnetUri: torrent.getMagnetUriForFile(filePath)
           });
         }
       } else if (f.isDirectory()) {
@@ -141,7 +142,8 @@ ipcMain.handle('downloads:list', async () => {
                 name: `${f.name}/${sf.name}`,
                 path: filePath,
                 size: stat.size,
-                ctime: stat.ctimeMs
+                ctime: stat.ctimeMs,
+                magnetUri: torrent.getMagnetUriForFile(filePath)
               });
             }
           }
@@ -192,8 +194,19 @@ ipcMain.handle('torrent:download', async (event, magnetUri) => {
   return await torrent.download(magnetUri);
 });
 
+ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
+  const magnetUri = await torrent.seed(input, torrentName);
+  if (daemon) {
+    daemon.rescanAndSendManifest();
+  }
+  return magnetUri;
+});
+
 ipcMain.handle('torrent:remove', async (event, infoHash) => {
-  torrent.remove(infoHash);
+  await torrent.remove(infoHash);
+  if (daemon) {
+    daemon.rescanAndSendManifest();
+  }
   return true;
 });
 
@@ -205,7 +218,7 @@ ipcMain.handle('ytdlp:download', async (event, url) => {
 // --- Peer Daemon IPC ---
 ipcMain.handle('peer:start', async (event, config: PeerConfig) => {
   if (daemon) daemon.stop();
-  daemon = new PeerDaemon(config);
+  daemon = new PeerDaemon(config, (filePath) => torrent.getMagnetUriForFile(filePath));
   
   daemon.on('log', (msg) => win?.webContents.send('peer:log', msg));
   daemon.on('status', (status) => win?.webContents.send('peer:status', status));
@@ -245,9 +258,9 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
 });
 
 app.whenReady().then(() => {
-  protocol.handle('media', (request) => {
+  protocol.registerFileProtocol('media', (request, callback) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
-    return net.fetch(pathToFileURL(filePath).toString());
+    callback({ path: filePath });
   });
   createWindow();
 });

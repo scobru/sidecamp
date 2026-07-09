@@ -90,53 +90,101 @@ export async function searchBandcamp(query: string): Promise<any[]> {
         }
         const data = (await response.json()) as any;
         const results = data.auto?.results || [];
-        return results.map((r: any) => ({
-            id: 'bc_' + r.id,
-            title: r.name,
-            artist: r.band_name || 'Unknown Artist',
-            album: r.album_name || '',
-            url: r.item_url_path || r.item_url_root,
-            source: 'bandcamp',
-            size: 0,
-            bitrate: 0,
-            user: 'Bandcamp'
-        }));
+        return results.map((r: any) => {
+            let trackUrl = r.item_url_path || '';
+            if (trackUrl && !trackUrl.startsWith('http') && r.item_url_root) {
+                const root = r.item_url_root.replace(/\/$/, '');
+                const path = r.item_url_path.replace(/^\//, '');
+                trackUrl = `${root}/${path}`;
+            } else if (!trackUrl && r.item_url_root) {
+                trackUrl = r.item_url_root;
+            }
+            return {
+                id: 'bc_' + r.id,
+                title: r.name,
+                artist: r.band_name || 'Unknown Artist',
+                album: r.album_name || '',
+                url: trackUrl,
+                source: 'bandcamp',
+                size: 0,
+                bitrate: 0,
+                user: 'Bandcamp'
+            };
+        });
     } catch (e) {
         console.error("Bandcamp search error:", e);
         return [];
     }
 }
 
-export async function searchTorrents(query: string): Promise<any[]> {
+export async function searchTorrents(query: string, server?: string, token?: string): Promise<any[]> {
+    const results: any[] = [];
+
+    // 1. Fetch from apibay.org (PirateBay)
     try {
         const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}`;
         const res = await fetch(url, {
             headers: { "User-Agent": USER_AGENT }
         });
-        if (!res.ok) {
-            console.error(`Torrent API returned error: ${res.status}`);
-            return [];
+        if (res.ok) {
+            const data = await res.json() as any[];
+            if (Array.isArray(data) && data.length > 0 && data[0].name !== "No results returned") {
+                const pbResults = data.slice(0, 10).map((item: any) => {
+                    const magnet = `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`;
+                    return {
+                        id: 'torrent_' + item.id,
+                        title: item.name,
+                        artist: 'Torrent',
+                        album: `Seeds: ${item.seeders} / Peers: ${item.leechers}`,
+                        url: magnet,
+                        source: 'torrent_search',
+                        size: parseInt(item.size) || 0,
+                        bitrate: 0,
+                        user: 'Torrent (PirateBay)'
+                    };
+                });
+                results.push(...pbResults);
+            }
         }
-        const data = await res.json() as any[];
-        if (!Array.isArray(data) || data.length === 0 || data[0].name === "No results returned") {
-            return [];
-        }
-        return data.slice(0, 10).map((item: any) => {
-            const magnet = `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`;
-            return {
-                id: 'torrent_' + item.id,
-                title: item.name,
-                artist: 'Torrent',
-                album: `Seeds: ${item.seeders} / Peers: ${item.leechers}`,
-                url: magnet,
-                source: 'torrent_search',
-                size: parseInt(item.size) || 0,
-                bitrate: 0,
-                user: 'Torrent (PirateBay)'
-            };
-        });
     } catch (e) {
-        console.error("Torrent search error:", e);
-        return [];
+        console.error("Torrent search error from PirateBay:", e);
     }
+
+    // 2. Fetch from connected Sidecamp peers on the network (via TuneCamp server)
+    if (server && token) {
+        try {
+            const cleanServer = server.replace(/\/$/, '');
+            const url = `${cleanServer}/api/peers/search?q=${encodeURIComponent(query)}`;
+            const res = await fetch(url, {
+                headers: {
+                    "User-Agent": USER_AGENT,
+                    "Authorization": `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                const peerTracks = await res.json() as any[];
+                if (Array.isArray(peerTracks)) {
+                    // Filter peer tracks that have a magnet_uri
+                    const peerTorrents = peerTracks
+                        .filter(track => track.magnet_uri)
+                        .map(track => ({
+                            id: 'peer_torrent_' + track.id + '_' + track.session_id,
+                            title: track.title,
+                            artist: track.artist || 'Unknown Artist',
+                            album: `Sidecamp Peer: ${track.username || 'Unknown'} (Network)`,
+                            url: track.magnet_uri,
+                            source: 'torrent_search',
+                            size: track.file_size || 0,
+                            bitrate: 0,
+                            user: `Sidecamp Peer (${track.username})`
+                        }));
+                    results.push(...peerTorrents);
+                }
+            }
+        } catch (e) {
+            console.error("Torrent search error from TuneCamp network:", e);
+        }
+    }
+
+    return results;
 }

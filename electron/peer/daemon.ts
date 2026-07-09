@@ -18,10 +18,12 @@ export class PeerDaemon extends EventEmitter {
     private activeStreams: Map<string, fs.ReadStream> = new Map();
     private isRunning: boolean = false;
     private reconnectTimer: NodeJS.Timeout | null = null;
+    private getMagnetUriForFile?: (filePath: string) => string | undefined;
 
-    constructor(config: PeerConfig) {
+    constructor(config: PeerConfig, getMagnetUriForFile?: (filePath: string) => string | undefined) {
         super();
         this.config = config;
+        this.getMagnetUriForFile = getMagnetUriForFile;
     }
 
     public setConfig(config: PeerConfig) {
@@ -65,7 +67,8 @@ export class PeerDaemon extends EventEmitter {
                     format: path.extname(file).substring(1).toLowerCase(),
                     mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
                     bitrate: metadata.format.bitrate || 0,
-                    allowDownload: this.config.allowDownloads
+                    allowDownload: this.config.allowDownloads,
+                    magnetUri: this.getMagnetUriForFile ? this.getMagnetUriForFile(file) : undefined
                 };
 
                 this.fileIndex.set(trackData.id, trackData);
@@ -226,6 +229,20 @@ export class PeerDaemon extends EventEmitter {
             stream.destroy();
             this.activeStreams.delete(requestId);
             this.emit("log", `Streaming/Download cancellato [Req: ${requestId}]`);
+        }
+    }
+
+    public async rescanAndSendManifest() {
+        if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        try {
+            const indexData = await this.scanFolders();
+            this.ws.send(JSON.stringify({
+                type: 'manifest',
+                tracks: indexData
+            }));
+            this.emit("log", "Indice libreria aggiornato inviato al server.");
+        } catch (err: any) {
+            this.emit("log", `Errore durante l'aggiornamento dell'indice libreria: ${err.message}`);
         }
     }
 

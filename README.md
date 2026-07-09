@@ -24,7 +24,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 
 ## Prerequisites
 
-- **Node.js** 18+ and **npm** 9+
+- **Node.js** 18+ and **Yarn** or **npm**
 - **yt-dlp** installed and available on `PATH` (for audio ripping)
 - A running **TuneCamp** instance to connect to
 
@@ -36,19 +36,44 @@ git clone https://github.com/scobru/sidecamp.git
 cd sidecamp
 
 # Install dependencies
-npm install
+yarn install  # or: npm install
 
 # Run in development mode (Vite + Electron)
-npm run dev
+yarn dev      # or: npm run dev
+```
+
+### Running Tests
+
+We use **Vitest** and **React Testing Library** for unit and hook testing:
+
+```bash
+# Run tests in watch mode
+yarn test          # or: npm run test
+
+# Run tests once (single run)
+yarn test:run      # or: npm run test:run
 ```
 
 ### Build for production
 
 ```bash
-npm run build
+# Build for the current host OS
+yarn build         # or: npm run build
 ```
 
 This compiles TypeScript, bundles the Vite frontend, and packages the Electron app via `electron-builder`.
+
+We have configured target packages for the following systems in `package.json`:
+- **Windows**: NSIS installer (`.exe`)
+- **macOS**: DMG disk image (`.dmg`) and ZIP archive (`.zip`)
+- **Linux**: AppImage (`.AppImage`) and Debian package (`.deb`)
+
+To force compilation for a specific target platform, use:
+```bash
+npx electron-builder --win
+npx electron-builder --mac
+npx electron-builder --linux
+```
 
 ## Connecting to TuneCamp
 
