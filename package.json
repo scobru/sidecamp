@@ -56,6 +56,7 @@
       "dist-electron/**/*",
       "package.json"
     ],
+    "icon": "src/assets/logo.png",
     "mac": {
       "target": [
         "dmg",
