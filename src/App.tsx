@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Radio, Globe, Download, FolderSync, Settings, Info,
   Play, Pause, X, Volume2, Music, Magnet, Cloud
@@ -39,6 +39,8 @@ function App() {
   const [albumSeedModalOpen, setAlbumSeedModalOpen] = useState(false);
   const [albumSeedName, setAlbumSeedName] = useState('My Custom Album');
   const [uploadingFilePath, setUploadingFilePath] = useState<string | null>(null);
+
+  const parsedFolders = useMemo(() => folder.split(',').map(f => f.trim()).filter(Boolean), [folder]);
 
   // Network Explorer States
   const [networkPeers, setNetworkPeers] = useState<any[]>([]);
@@ -483,7 +485,7 @@ function App() {
     await window.electronAPI.startPeer({
       server,
       token,
-      folders: folder.split(',').map(f => f.trim()).filter(Boolean),
+      folders: parsedFolders,
       allowDownloads: true
     });
   };
@@ -1053,13 +1055,13 @@ function App() {
                 <div className="form-group">
                   <label style={{ fontWeight: 600, fontSize: '0.95rem' }}>Currently shared folders:</label>
                   <div style={{ padding: '0.8rem 1rem', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--glass-border)', borderRadius: '8px', marginTop: '0.5rem' }}>
-                    {folder.split(',').map(f => f.trim()).filter(Boolean).map((f, idx) => (
+                    {parsedFolders.map((f, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0' }}>
                         <span style={{ fontSize: '1.1rem' }}>📁</span>
                         <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-main)' }}>{f}</span>
                       </div>
                     ))}
-                    {folder.split(',').map(f => f.trim()).filter(Boolean).length === 0 && (
+                    {parsedFolders.length === 0 && (
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
                         No folders configured. Configure them in the "Configuration" tab.
                       </div>
@@ -1067,7 +1069,7 @@ function App() {
                   </div>
                 </div>
                 <div className="btn-group" style={{ marginTop: '1.5rem' }}>
-                  <button className="btn btn-primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || folder.split(',').map(f => f.trim()).filter(Boolean).length === 0}>
+                  <button className="btn btn-primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || parsedFolders.length === 0}>
                     Start Sharing
                   </button>
                   <button className="btn btn-danger" onClick={handleStopPeer} disabled={peerStatus === 'offline'}>
