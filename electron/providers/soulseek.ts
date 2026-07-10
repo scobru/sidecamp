@@ -79,7 +79,9 @@ export class SoulseekService {
                 if (this.downloader) {
                     try {
                         await this.downloader.disconnect();
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error("❌ Soulseek Disconnect Error:", e);
+                    }
                     this.downloader = undefined;
                 }
 
