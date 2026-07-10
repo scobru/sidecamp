@@ -14,15 +14,17 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 
 ## Features
 
-- 🔎 **Soulseek Search & Download** — Search the Soulseek network and download tracks directly to your machine.
-- 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop.
+- 🔎 **Unified Search** — Search Soulseek, SoundCloud, Bandcamp, torrents, and the TuneCamp peer network from one bar — all sources at once ("All Platforms") or one at a time.
+- 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop with live progress.
 - 🎬 **yt-dlp Audio Ripping** — Rip audio from YouTube, SoundCloud, Bandcamp, and other platforms.
-- 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog.
-- 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album), rename files, and move them to folders.
+- 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel.
+- 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album) and rename files.
+- 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
+- 💬 **Peer Chat** — Send direct messages to other peers by username over the peer WebSocket, Soulseek-style.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
-- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron.
+- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with light/dark themes and a collapsible sidebar.
 
 ## Prerequisites
 

@@ -58,6 +58,7 @@ function App() {
   const [networkPeers, setNetworkPeers] = useState<any[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<any | null>(null);
   const [peerTracks, setPeerTracks] = useState<any[]>([]);
+  const [networkQuery, setNetworkQuery] = useState('');
   const [isLoadingPeers, setIsLoadingPeers] = useState(false);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
@@ -215,6 +216,7 @@ function App() {
     setSelectedPeer(peer);
     setIsLoadingTracks(true);
     setPeerTracks([]);
+    setNetworkQuery('');
     try {
       if (peer.id === 'server') {
         const res = await window.electronAPI.getCatalogTracks(server, token);
@@ -294,13 +296,26 @@ function App() {
   };
 
   // Audio Player Controls
-  const playTrack = (name: string, path: string) => {
-    setCurrentPlayback({ name, path });
+  const startPlayback = (name: string, src: string, displayPath: string) => {
+    setCurrentPlayback({ name, path: displayPath });
     setIsPlaying(true);
     if (audioRef.current) {
-      audioRef.current.src = `media://${encodeURIComponent(path)}`;
+      audioRef.current.src = src;
       audioRef.current.play().catch(e => console.error("Playback failed:", e));
     }
+  };
+
+  const playTrack = (name: string, path: string) => {
+    startPlayback(name, `media://${encodeURIComponent(path)}`, path);
+  };
+
+  const playNetworkTrack = (peer: any, track: any) => {
+    const cleanServer = server.replace(/\/$/, '');
+    const streamUrl = peer.id === 'server'
+      ? `${cleanServer}/api/tracks/${track.id}/stream`
+      : `${cleanServer}/api/peers/${peer.id}/tracks/${track.id}/stream`;
+    const src = `stream://audio?url=${encodeURIComponent(streamUrl)}&token=${encodeURIComponent(token)}`;
+    startPlayback(`${track.artist} - ${track.title}`, src, `${peer.username} (Network)`);
   };
 
   const togglePlay = () => {
@@ -1142,11 +1157,25 @@ function App() {
                   <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>Select a peer from the list on the left to browse their tracks.</div>
                 ) : peerTracks.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>No tracks shared by this peer.</div>
-                ) : (
+                ) : (() => {
+                  const q = networkQuery.trim().toLowerCase();
+                  const filtered = q
+                    ? peerTracks.filter(t => `${t.title || ''} ${t.artist || ''} ${t.album || ''}`.toLowerCase().includes(q))
+                    : peerTracks;
+                  return (
+                  <>
+                    <input
+                      type="text"
+                      value={networkQuery}
+                      onChange={e => setNetworkQuery(e.target.value)}
+                      placeholder={`Filter ${peerTracks.length} tracks by title, artist, album...`}
+                      className="glass-input"
+                      style={{ marginBottom: '1rem' }}
+                    />
                   <div className="peer-tracks-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '5px' }}>
-                    {peerTracks.map((t) => (
-                      <div 
-                        key={t.id} 
+                    {filtered.map((t) => (
+                      <div
+                        key={t.id}
                         style={{
                           display: 'flex',
                           justifyContent: 'space-between',
@@ -1159,22 +1188,36 @@ function App() {
                         }}
                         className="peer-track-item"
                       >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
                           <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>{t.title || 'Unknown Title'}</span>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t.artist || 'Unknown Artist'} • {t.album || 'Unknown Album'} ({t.format})</span>
                         </div>
-                        <button 
-                          className="btn btn-accent" 
-                          onClick={() => handleDownloadPeerTrack(t)}
-                          disabled={downloadingTrackId === t.id}
-                          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                        >
-                          {downloadingTrackId === t.id ? 'Downloading...' : 'Download'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => playNetworkTrack(selectedPeer, t)}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                          >
+                            Play
+                          </button>
+                          <button
+                            className="btn btn-accent"
+                            onClick={() => handleDownloadPeerTrack(t)}
+                            disabled={downloadingTrackId === t.id}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                          >
+                            {downloadingTrackId === t.id ? 'Downloading...' : 'Download'}
+                          </button>
+                        </div>
                       </div>
                     ))}
+                    {filtered.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>No tracks match "{networkQuery}".</div>
+                    )}
                   </div>
-                )}
+                  </>
+                  );
+                })()}
               </div>
             </div>
           )}

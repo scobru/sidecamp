@@ -3,7 +3,8 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } }
+  { scheme: 'media', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+  { scheme: 'stream', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } }
 ]);
 
 process.env.DIST = join(import.meta.dirname, '../dist')
@@ -401,5 +402,24 @@ app.whenReady().then(() => {
 
     return net.fetch(pathToFileURL(absolutePath).toString());
   });
+
+  // Proxy remote audio streams from the TuneCamp server so the renderer can play
+  // network tracks without exposing the token to the page origin or tripping CSP.
+  // URL: stream://audio?url=<encoded server stream URL>&token=<encoded token>
+  protocol.handle('stream', async (request) => {
+    try {
+      const u = new URL(request.url);
+      const target = u.searchParams.get('url');
+      const token = u.searchParams.get('token') || '';
+      if (!target) return new Response('Bad Request', { status: 400 });
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const range = request.headers.get('range');
+      if (range) headers['Range'] = range;
+      return net.fetch(target, { headers });
+    } catch (err: any) {
+      return new Response('Stream error: ' + err.message, { status: 500 });
+    }
+  });
+
   createWindow();
 });
