@@ -1,0 +1,7 @@
+🔒 Security fix: prevent arbitrary file execution via downloads:open
+
+🎯 **What:** The `downloads:open` IPC handler allowed opening any arbitrary file path provided by the client renderer via `shell.openPath`.
+
+⚠️ **Risk:** If a malicious payload were sent to the main process via IPC, this vulnerability allowed arbitrary local file execution. An attacker could potentially launch executables or open sensitive files outside the designated download folder.
+
+🛡️ **Solution:** Modified `downloads:open` to securely resolve `filePath` using `path.resolve` and verify that the resolved path strictly starts with the designated `downloadDir` (plus `path.sep` to avoid partial path matching vulnerabilities, e.g., `/downloadDirHack/`). If the path is not within the download directory, it throws an error and blocks `shell.openPath`.
