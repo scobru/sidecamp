@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slskStatus: () => ipcRenderer.invoke('slsk:status'),
   
   // Torrent
-  torrentDownload: (magnetUri: string) => ipcRenderer.invoke('torrent:download', magnetUri),
+  torrentDownload: (magnetUri: string, downloadId?: string) => ipcRenderer.invoke('torrent:download', magnetUri, downloadId),
   torrentSeed: (input: string | string[], torrentName?: string) => ipcRenderer.invoke('torrent:seed', input, torrentName),
   
   // Ytdlp
@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startPeer: (config: any) => ipcRenderer.invoke('peer:start', config),
   stopPeer: () => ipcRenderer.invoke('peer:stop'),
   sendPeerChat: (to: string, text: string) => ipcRenderer.invoke('peer:chat-send', to, text),
+
+  // Shared-folder file browser
+  listSharedDir: (root: string, subpath: string) => ipcRenderer.invoke('fs:list', root, subpath),
+  mkdirShared: (root: string, subpath: string, name: string) => ipcRenderer.invoke('fs:mkdir', root, subpath, name),
 
   // Events listener (log, progress, status)
   onPeerLog: (callback: (msg: string) => void) => ipcRenderer.on('peer:log', (_, msg) => callback(msg)),

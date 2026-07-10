@@ -239,8 +239,8 @@ ipcMain.handle('dialog:pick-folder', async () => {
 });
 
 // --- Torrent IPC ---
-ipcMain.handle('torrent:download', async (event, magnetUri) => {
-  return await torrent.download(magnetUri);
+ipcMain.handle('torrent:download', async (event, magnetUri, downloadId) => {
+  return await torrent.download(magnetUri, downloadId);
 });
 
 ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
@@ -289,6 +289,43 @@ ipcMain.handle('peer:stop', () => {
 ipcMain.handle('peer:chat-send', (event, to: string, text: string) => {
   daemon?.sendChat(to, text);
   return true;
+});
+
+// --- Shared-folder file browser IPC ---
+// Guard: a resolved target must stay within the given shared-folder root, so a
+// crafted subpath (../) can't escape into the rest of the filesystem.
+function insideRoot(root: string, target: string): boolean {
+  const r = path.resolve(root);
+  const t = path.resolve(target);
+  return t === r || t.startsWith(r + path.sep);
+}
+
+ipcMain.handle('fs:list', async (event, root: string, subpath: string) => {
+  if (!root) return { error: 'No folder selected' };
+  const target = path.resolve(root, subpath || '');
+  if (!insideRoot(root, target)) return { error: 'Invalid path' };
+  try {
+    const dirents = await fs.promises.readdir(target, { withFileTypes: true });
+    const entries = dirents
+      .map(d => ({ name: d.name, isDir: d.isDirectory() }))
+      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+    return { entries };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('fs:mkdir', async (event, root: string, subpath: string, name: string) => {
+  const clean = String(name || '').replace(/[<>:"/\\|?*]/g, '').trim();
+  if (!clean) return { error: 'Invalid folder name' };
+  const target = path.resolve(root, subpath || '', clean);
+  if (!insideRoot(root, target)) return { error: 'Invalid path' };
+  try {
+    await fs.promises.mkdir(target, { recursive: true });
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
 });
 
 // --- Network Explorer IPC ---

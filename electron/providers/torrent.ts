@@ -73,7 +73,7 @@ export class TorrentService extends EventEmitter {
         });
     }
 
-    public async download(magnetUri: string): Promise<string[]> {
+    public async download(magnetUri: string, downloadId?: string): Promise<string[]> {
         return new Promise(async (resolve, reject) => {
             let client;
             try {
@@ -85,10 +85,13 @@ export class TorrentService extends EventEmitter {
 
             client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
-                
+
                 const emitProgress = () => {
                     this.emit('progress', {
-                        id: torrent.infoHash,
+                        // downloadId correlates with the UI's active-download entry;
+                        // infoHash is kept so the stop/seed control can target the torrent.
+                        id: downloadId || torrent.infoHash,
+                        infoHash: torrent.infoHash,
                         name: torrent.name,
                         progress: torrent.progress,
                         speed: torrent.downloadSpeed,

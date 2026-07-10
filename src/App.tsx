@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
+import {
   Radio, Globe, Download, FolderSync, Settings, Info,
-  Play, Pause, X, Volume2, Music, Magnet, Cloud
+  Play, Pause, X, Volume2, Music, Magnet, Cloud,
+  Folder, FolderPlus, ChevronRight, PanelLeft
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -25,6 +26,13 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('peer');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // File browser (shared folders)
+  const [browserRoot, setBrowserRoot] = useState('');
+  const [browserPath, setBrowserPath] = useState('');
+  const [browserEntries, setBrowserEntries] = useState<{ name: string; isDir: boolean }[]>([]);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [browserError, setBrowserError] = useState('');
 
   // Direct Download & Torrent States
   const [downloadSource, setDownloadSource] = useState('soulseek'); // 'soulseek' | 'direct'
@@ -103,6 +111,7 @@ function App() {
           const updated = [...prev];
           updated[index] = {
             ...updated[index],
+            infoHash: data.infoHash,
             progress: data.progress,
             speed: data.speed,
             uploadSpeed: data.uploadSpeed,
@@ -116,6 +125,7 @@ function App() {
             ...prev,
             {
               id: data.id,
+              infoHash: data.infoHash,
               name: data.name || `Torrent (${data.id.substring(0, 8)})`,
               source: 'torrent',
               status: data.seeding ? 'seeding' : 'downloading',
@@ -508,6 +518,42 @@ function App() {
     setChatText('');
   };
 
+  const loadBrowser = async (root: string, subpath: string) => {
+    setBrowserError('');
+    const res = await window.electronAPI.listSharedDir(root, subpath);
+    if (res.error) { setBrowserError(res.error); setBrowserEntries([]); return; }
+    setBrowserEntries(res.entries || []);
+  };
+
+  const selectBrowserRoot = (root: string) => {
+    setBrowserRoot(root);
+    setBrowserPath('');
+    loadBrowser(root, '');
+  };
+
+  const openBrowserFolder = (name: string) => {
+    const next = browserPath ? `${browserPath}/${name}` : name;
+    setBrowserPath(next);
+    loadBrowser(browserRoot, next);
+  };
+
+  const browserGoUp = () => {
+    if (!browserPath) return;
+    const parts = browserPath.split('/').filter(Boolean);
+    parts.pop();
+    const next = parts.join('/');
+    setBrowserPath(next);
+    loadBrowser(browserRoot, next);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!browserRoot || !newFolderName.trim()) return;
+    const res = await window.electronAPI.mkdirShared(browserRoot, browserPath, newFolderName);
+    if (res.error) { setBrowserError(res.error); return; }
+    setNewFolderName('');
+    loadBrowser(browserRoot, browserPath);
+  };
+
   const handleSearch = async () => {
     setDlLogs(prev => [...prev, `[Search] Starting search for "${searchQuery}" on ${searchSource.toUpperCase()}...`]);
     try {
@@ -572,7 +618,7 @@ function App() {
       if (source === 'soundcloud' || source === 'bandcamp') {
         filePath = await window.electronAPI.ytdlpDownload(result.url);
       } else if (source === 'torrent_search') {
-        const paths = await window.electronAPI.torrentDownload(result.url);
+        const paths = await window.electronAPI.torrentDownload(result.url, downloadId);
         filePath = paths.length > 0 ? paths[0] : '';
       } else if (source === 'peer') {
         filePath = await window.electronAPI.downloadPeerTrack(server, token, result.sessionId, result.trackId, result.artist, result.title);
@@ -618,7 +664,7 @@ function App() {
       let resultPaths: string[] = [];
       if (isTorrent) {
         setDlLogs(prev => [...prev, `Magnet Torrent link detected. Starting download...`]);
-        resultPaths = await window.electronAPI.torrentDownload(directUrl);
+        resultPaths = await window.electronAPI.torrentDownload(directUrl, tempId);
         setDlLogs(prev => [...prev, `Torrent download completed! Downloaded ${resultPaths.length} files.`]);
       } else {
         setDlLogs(prev => [...prev, `Web URL detected (SoundCloud/Bandcamp/YouTube/etc.). Starting extraction with YT-DLP...`]);
@@ -722,96 +768,110 @@ function App() {
   };
 
   const validFolders = folder.split(',').map(f => f.trim()).filter(Boolean);
-  const activeDownloadingOrSeeding = activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding');
   const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
+
+  useEffect(() => {
+    if (activeTab === 'browser' && validFolders.length > 0 && !browserRoot) {
+      selectBrowserRoot(validFolders[0]);
+    }
+  }, [activeTab]);
 
   return (
     <div className="app-container">
-      <div className="sidebar">
+      <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="logo-container">
           <img src={logo} className="logo-img" alt="Sidecamp Logo" />
-          <h1>Sidecamp</h1>
+          {!sidebarCollapsed && <h1>Sidecamp</h1>}
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed(c => !c)}
+            title={sidebarCollapsed ? 'Expand' : 'Collapse'}
+          >
+            <PanelLeft size={18} />
+          </button>
         </div>
-        
+
         <nav className="nav-menu">
-          <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')}>
-            <span className="icon"><Radio size={18} /></span> Peer Node
+          <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')} title="Peer Node">
+            <span className="icon"><Radio size={18} /></span> {!sidebarCollapsed && 'Peer Node'}
           </button>
-          <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>
-            <span className="icon"><Globe size={18} /></span> Network
+          <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
+            <span className="icon"><Globe size={18} /></span> {!sidebarCollapsed && 'Network'}
           </button>
-          <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')}>
-            <span className="icon"><Download size={18} /></span> Downloader
+          <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Downloader">
+            <span className="icon"><Download size={18} /></span> {!sidebarCollapsed && 'Downloader'}
           </button>
-          <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')}>
-            <span className="icon"><Music size={18} /></span> Library
+          <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
+            <span className="icon"><Music size={18} /></span> {!sidebarCollapsed && 'Library'}
           </button>
-          <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')}>
-            <span className="icon"><FolderSync size={18} /></span> Transfers
+          <button className={`nav-item ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')} title="Shared Files">
+            <span className="icon"><Folder size={18} /></span> {!sidebarCollapsed && 'Shared Files'}
           </button>
-          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-            <span className="icon"><Settings size={18} /></span> Configuration
+          <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Transfers">
+            <span className="icon"><FolderSync size={18} /></span> {!sidebarCollapsed && 'Transfers'}
           </button>
-          <button className={`nav-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')}>
-            <span className="icon"><Info size={18} /></span> About
+          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuration">
+            <span className="icon"><Settings size={18} /></span> {!sidebarCollapsed && 'Configuration'}
+          </button>
+          <button className={`nav-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')} title="About">
+            <span className="icon"><Info size={18} /></span> {!sidebarCollapsed && 'About'}
           </button>
         </nav>
 
-        {activeDownloads.length > 0 && (
-          <div className="sidebar-downloads">
-            <h4>
-              <span className="spinner-mini" style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-              Active Downloads ({activeDownloadingOrSeeding.length})
-            </h4>
-            <div className="sidebar-dl-list">
-              {activeDownloadingOrSeeding.map((dl) => (
-                <div key={dl.id} className="sidebar-dl-item">
-                  <div className="sidebar-dl-info">
-                    <span className="sidebar-dl-name" title={dl.name}>
-                      {dl.source === 'soulseek' ? '🎵 ' : dl.source === 'torrent' ? '🧲 ' : dl.source === 'server' ? '☁️ ' : '🌐 '}
-                      {dl.name}
-                    </span>
-                    <span className={`sidebar-dl-status ${dl.status}`}>
-                      {dl.status === 'seeding' ? (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          Seed ({dl.uploadSpeed ? `${(dl.uploadSpeed / 1024 / 1024).toFixed(1)}M/s` : '0M/s'})
-                          <button 
-                            onClick={() => handleStopTorrent(dl.id)} 
-                            style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '0.85rem', padding: 0, marginLeft: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Stop Seeding"
-                          >
-                            ❌
-                          </button>
-                        </span>
-                      ) : dl.status === 'completed' ? (
-                        'Completed'
-                      ) : dl.status === 'failed' ? (
-                        'Failed'
-                      ) : dl.speed ? (
-                        `${(dl.speed / 1024 / 1024).toFixed(1)} MB/s`
-                      ) : (
-                        'Downloading'
-                      )}
-                    </span>
-                  </div>
-                  {dl.progress !== undefined && dl.status !== 'seeding' && (
-                    <div className="progress-bar-bg" style={{ height: '4px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div className="progress-bar-fill" style={{ width: `${(dl.progress * 100).toFixed(0)}%`, height: '100%', background: 'var(--accent)', borderRadius: '2px' }}></div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="status-indicator">
           <div className={`status-dot ${peerStatus}`}></div>
-          <span>{peerStatus.toUpperCase()}</span>
+          {!sidebarCollapsed && <span>{peerStatus.toUpperCase()}</span>}
         </div>
       </div>
 
       <main className="main-content">
+          {activeTab === 'browser' && (
+            <div className="glass-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0 }}>Shared Files <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>browse & organize your shared folders</span></h3>
+              </div>
+              {validFolders.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No shared folders configured. Add them in the "Configuration" tab.</div>
+              )}
+              {validFolders.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                    {validFolders.map((f, i) => (
+                      <button key={i} className={`btn ${browserRoot === f ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(f)}>
+                        📁 {f.split(/[/\\]/).pop() || f}
+                      </button>
+                    ))}
+                  </div>
+                  {browserRoot && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}>⬆ Up</button>
+                        <span>{(browserRoot.split(/[/\\]/).pop() || browserRoot)}{browserPath ? ' / ' + browserPath.replace(/\//g, ' / ') : ''}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+                        <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="New subfolder name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} />
+                        <button className="btn btn-primary" onClick={handleCreateFolder} disabled={!newFolderName.trim()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <FolderPlus size={16} /> Create
+                        </button>
+                      </div>
+                      {browserError && <div style={{ color: '#e74c3c', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{browserError}</div>}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {browserEntries.map((en, i) => (
+                          <div key={i} onClick={() => en.isDir && openBrowserFolder(en.name)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: en.isDir ? 'pointer' : 'default' }}>
+                            <span>{en.isDir ? '📁' : '🎵'}</span>
+                            <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
+                            {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
+                          </div>
+                        ))}
+                        {browserEntries.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>Empty folder.</div>}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {activeTab === 'library' && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -1363,7 +1423,7 @@ function App() {
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {dl.status === 'seeding' && (
-                        <button className="btn btn-secondary" onClick={() => handleStopTorrent(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</button>
+                        <button className="btn btn-secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</button>
                       )}
                       {(dl.status === 'failed' || dl.status === 'completed') && (
                         <button className="btn btn-secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
