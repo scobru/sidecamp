@@ -7,6 +7,7 @@
     "name": "scobru",
     "email": "scobru@users.noreply.github.com"
   },
+  "desktopName": "Sidecamp",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -80,9 +81,8 @@
         "deb"
       ],
       "category": "Network",
-      "desktopName": "Sidecamp",
-      "synopsis": "P2P content acquisition and peer file sharing",
-      "maintainer": "scobru <scobru@users.noreply.github.com>"
+      "maintainer": "scobru <scobru@users.noreply.github.com>",
+      "synopsis": "P2P content acquisition and peer file sharing"
     },
     "win": {
       "target": [
