@@ -86,7 +86,7 @@ export class TorrentService extends EventEmitter {
             client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
                 
-                torrent.on('download', (bytes) => {
+                const emitProgress = () => {
                     this.emit('progress', {
                         id: torrent.infoHash,
                         name: torrent.name,
@@ -97,20 +97,10 @@ export class TorrentService extends EventEmitter {
                         total: torrent.length,
                         seeding: torrent.done
                     });
-                });
+                };
 
-                torrent.on('upload', (bytes) => {
-                    this.emit('progress', {
-                        id: torrent.infoHash,
-                        name: torrent.name,
-                        progress: torrent.progress,
-                        speed: torrent.downloadSpeed,
-                        uploadSpeed: torrent.uploadSpeed,
-                        downloaded: torrent.downloaded,
-                        total: torrent.length,
-                        seeding: torrent.done
-                    });
-                });
+                torrent.on('download', emitProgress);
+                torrent.on('upload', emitProgress);
 
                 torrent.on('done', () => {
                     this.emit('log', `Download completato e in seeding: ${torrent.name}`);
