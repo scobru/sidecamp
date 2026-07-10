@@ -31,15 +31,19 @@ export function ProgressBar({
     const start = displayProgress;
     const end = Math.max(0, Math.min(1, progress));
     const startTime = Date.now();
+    let frameId: number;
     
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
       setDisplayProgress(start + (end - start) * eased);
-      if (t < 1) requestAnimationFrame(animate);
+      if (t < 1) {
+        frameId = requestAnimationFrame(animate);
+      }
     };
-    requestAnimationFrame(animate);
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
   }, [progress]);
 
   const pct = (displayProgress * 100).toFixed(1);
