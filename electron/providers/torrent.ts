@@ -86,7 +86,7 @@ export class TorrentService extends EventEmitter {
             client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
                 
-                torrent.on('download', (bytes) => {
+                torrent.on('download', () => {
                     this.emit('progress', {
                         id: torrent.infoHash,
                         name: torrent.name,
@@ -99,7 +99,7 @@ export class TorrentService extends EventEmitter {
                     });
                 });
 
-                torrent.on('upload', (bytes) => {
+                torrent.on('upload', () => {
                     this.emit('progress', {
                         id: torrent.infoHash,
                         name: torrent.name,

@@ -38,16 +38,6 @@ async function readAll(): Promise<Record<string, CacheEntry>> {
   } catch { return {}; }
 }
 
-// ponytail: serialize writes — concurrent organize:scan from different folders would race the JSON file
-async function writeAll(data: Record<string, CacheEntry>): Promise<void> {
-  const next = writeQueue.then(async () => {
-    await fs.ensureDir(path.dirname(getCacheFile()));
-    await fs.writeJson(getCacheFile(), data, { spaces: 0 });
-  });
-  writeQueue = next.catch(() => {});
-  return next;
-}
-
 export async function cacheGet(dir: string, dirMtime: number): Promise<any[] | null> {
   const all = await readAll();
   const entry = all[dir];
@@ -58,9 +48,14 @@ export async function cacheGet(dir: string, dirMtime: number): Promise<any[] | n
 }
 
 export async function cachePut(dir: string, dirMtime: number, tracks: any[]): Promise<void> {
-  const all = await readAll();
-  all[dir] = { mtime: dirMtime, scannedAt: Date.now(), tracks };
-  await writeAll(all);
+  const next = writeQueue.then(async () => {
+    const all = await readAll();
+    all[dir] = { mtime: dirMtime, scannedAt: Date.now(), tracks };
+    await fs.ensureDir(path.dirname(getCacheFile()));
+    await fs.writeJson(getCacheFile(), all, { spaces: 0 });
+  });
+  writeQueue = next.catch(() => {});
+  return next;
 }
 
 export async function cacheClear(): Promise<void> {
