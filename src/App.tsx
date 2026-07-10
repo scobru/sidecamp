@@ -701,6 +701,10 @@ function App() {
     setTimeout(() => setSettingsSaved(false), 3000);
   };
 
+  const validFolders = folder.split(',').map(f => f.trim()).filter(Boolean);
+  const activeDownloadingOrSeeding = activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding');
+  const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
+
   return (
     <div className="app-container">
       <div className="sidebar">
@@ -737,10 +741,10 @@ function App() {
           <div className="sidebar-downloads">
             <h4>
               <span className="spinner-mini" style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-              Active Downloads ({activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding').length})
+              Active Downloads ({activeDownloadingOrSeeding.length})
             </h4>
             <div className="sidebar-dl-list">
-              {activeDownloads.filter(d => d.status === 'downloading' || d.status === 'seeding').map((dl) => (
+              {activeDownloadingOrSeeding.map((dl) => (
                 <div key={dl.id} className="sidebar-dl-item">
                   <div className="sidebar-dl-info">
                     <span className="sidebar-dl-name" title={dl.name}>
@@ -1053,13 +1057,13 @@ function App() {
                 <div className="form-group">
                   <label style={{ fontWeight: 600, fontSize: '0.95rem' }}>Currently shared folders:</label>
                   <div style={{ padding: '0.8rem 1rem', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--glass-border)', borderRadius: '8px', marginTop: '0.5rem' }}>
-                    {folder.split(',').map(f => f.trim()).filter(Boolean).map((f, idx) => (
+                    {validFolders.map((f, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0' }}>
                         <span style={{ fontSize: '1.1rem' }}>📁</span>
                         <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-main)' }}>{f}</span>
                       </div>
                     ))}
-                    {folder.split(',').map(f => f.trim()).filter(Boolean).length === 0 && (
+                    {validFolders.length === 0 && (
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
                         No folders configured. Configure them in the "Configuration" tab.
                       </div>
@@ -1067,7 +1071,7 @@ function App() {
                   </div>
                 </div>
                 <div className="btn-group" style={{ marginTop: '1.5rem' }}>
-                  <button className="btn btn-primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || folder.split(',').map(f => f.trim()).filter(Boolean).length === 0}>
+                  <button className="btn btn-primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || validFolders.length === 0}>
                     Start Sharing
                   </button>
                   <button className="btn btn-danger" onClick={handleStopPeer} disabled={peerStatus === 'offline'}>
@@ -1419,8 +1423,8 @@ function App() {
               <div className="terminal-log" style={{ marginTop: '2rem' }}>
                 <div className="terminal-header">Library Activity Logs</div>
                 <div className="terminal-body" style={{ height: '180px' }}>
-                  {dlLogs.filter(log => log.includes('[Library]')).map((log, i) => <div key={i} className="log-line">{log}</div>)}
-                  {dlLogs.filter(log => log.includes('[Library]')).length === 0 && <div className="log-line dim">No library activity logs...</div>}
+                  {libraryLogs.map((log, i) => <div key={i} className="log-line">{log}</div>)}
+                  {libraryLogs.length === 0 && <div className="log-line dim">No library activity logs...</div>}
                 </div>
               </div>
             </div>
