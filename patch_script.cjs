@@ -43,3 +43,20 @@ if (fs.existsSync(msgFile)) {
   fs.writeFileSync(msgFile, content);
   console.log('patched message parser');
 }
+
+// A broad search (e.g. "Beethoven") makes hundreds/thousands of peers with
+// matches send ConnectToPeer, and the client opens one TCP socket per peer with
+// no limit -> the Electron main event loop starves and the app freezes. Cap the
+// number of concurrent result-peer sockets. Downloads use the type 'F' path,
+// which bypasses the peers map, so they are unaffected.
+// ponytail: fixed cap of 75; if broad searches still return too few results, raise it.
+const clientFile = path.join(process.cwd(), 'node_modules/andrade-soulseek-downloader/dist/slsk-client/slsk-client.js');
+if (fs.existsSync(clientFile)) {
+  let content = fs.readFileSync(clientFile, 'utf8');
+  content = content.replace(
+    /(default: \{\s*)(peers\[peer\.user\] = new default_peer_1\.DefaultPeer\(net\.createConnection\(\{)/,
+    "$1if (Object.keys(peers).length >= 75) return; // cap result-peer sockets to avoid event-loop starvation on broad searches\n                $2"
+  );
+  fs.writeFileSync(clientFile, content);
+  console.log('patched peer cap');
+}
