@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
@@ -18,9 +18,11 @@ export class YtdlpService extends EventEmitter {
             // Scarica il miglior audio, estrai l'audio in formato mp3/opus, ecc.
             // Esempio base con esecuzione comando (necessita yt-dlp installato)
             const outputPath = path.join(this.downloadDir, '%(title)s.%(ext)s');
-            const command = `yt-dlp -x --audio-format mp3 -o "${outputPath}" "${url}"`;
+            // ponytail: UA non-browser evita la challenge Fastly di Bandcamp
+            // (yt-dlp finge un UA browser su TLS non-browser -> flaggato come bot)
+            const args = ['-x', '--audio-format', 'mp3', '--user-agent', 'curl/8.9.1', '-o', outputPath, url];
 
-            const child = exec(command, (error, stdout, stderr) => {
+            const child = execFile('yt-dlp', args, (error, stdout, stderr) => {
                 if (error) {
                     return reject(error);
                 }
