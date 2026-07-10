@@ -109,35 +109,52 @@ ipcMain.handle('slsk:status', async () => {
 // --- Local Downloads Library IPC ---
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4', '.webm']);
 
-function scanAudioFiles(dir: string, baseDir: string): { name: string; path: string; size: number; ctime: number; magnetUri: string }[] {
-  const result = [];
-  for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, f.name);
-    if (f.isDirectory()) {
-      result.push(...scanAudioFiles(full, baseDir));
-    } else if (f.isFile() && AUDIO_EXTS.has(path.extname(f.name).toLowerCase())) {
-      const stat = fs.statSync(full);
-      if (stat.size > 0) {
-        result.push({
-          name: path.relative(baseDir, full),
-          path: full,
-          size: stat.size,
-          ctime: stat.ctimeMs,
-          magnetUri: torrent.getMagnetUriForFile(full)
-        });
-      }
+async function scanAudioFiles(dir: string, baseDir: string): Promise<{ name: string; path: string; size: number; ctime: number; magnetUri: string }[]> {
+  const result: { name: string; path: string; size: number; ctime: number; magnetUri: string }[] = [];
+  try {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+
+    const MAX_CONCURRENT = 50;
+    for (let i = 0; i < entries.length; i += MAX_CONCURRENT) {
+      const chunk = entries.slice(i, i + MAX_CONCURRENT);
+      await Promise.all(chunk.map(async (f) => {
+        const full = path.join(dir, f.name);
+        if (f.isDirectory()) {
+          const subResult = await scanAudioFiles(full, baseDir);
+          result.push(...subResult);
+        } else if (f.isFile() && AUDIO_EXTS.has(path.extname(f.name).toLowerCase())) {
+          try {
+            const stat = await fs.promises.stat(full);
+            if (stat.size > 0) {
+              result.push({
+                name: path.relative(baseDir, full),
+                path: full,
+                size: stat.size,
+                ctime: stat.ctimeMs,
+                magnetUri: torrent.getMagnetUriForFile(full)
+              });
+            }
+          } catch (err) {
+            // ignore stat errors (e.g., file deleted during scan)
+          }
+        }
+      }));
     }
+  } catch (err) {
+    console.error(`Error scanning directory ${dir}:`, err);
   }
   return result;
 }
 
 ipcMain.handle('downloads:list', async () => {
   try {
-    if (!fs.existsSync(downloadDir)) {
+    try {
+      await fs.promises.access(downloadDir, fs.constants.F_OK);
+    } catch {
       return [];
     }
 
-    const result = scanAudioFiles(downloadDir, downloadDir);
+    const result = await scanAudioFiles(downloadDir, downloadDir);
     return result.sort((a, b) => b.ctime - a.ctime);
   } catch (e) {
     console.error("Error reading downloads directory:", e);
