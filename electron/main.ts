@@ -280,7 +280,15 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
 app.whenReady().then(() => {
   protocol.handle('media', (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
-    return net.fetch(pathToFileURL(filePath).toString());
+    const absolutePath = path.resolve(filePath);
+    const isMusic = absolutePath.startsWith(musicDir + path.sep) || absolutePath === musicDir;
+    const isDownload = absolutePath.startsWith(downloadDir + path.sep) || absolutePath === downloadDir;
+
+    if (!isMusic && !isDownload) {
+      return new Response('Access Denied', { status: 403 });
+    }
+
+    return net.fetch(pathToFileURL(absolutePath).toString());
   });
   createWindow();
 });
