@@ -147,10 +147,16 @@ ipcMain.handle('downloads:list', async () => {
 
 ipcMain.handle('downloads:delete', async (event, filePath) => {
   try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    const normalizedPath = path.resolve(filePath);
+    const normalizedDownloadDir = path.resolve(downloadDir);
+    if (!normalizedPath.startsWith(normalizedDownloadDir + path.sep)) {
+      throw new Error("Access denied: invalid path");
+    }
+
+    if (fs.existsSync(normalizedPath)) {
+      fs.unlinkSync(normalizedPath);
       // Clean up empty directories
-      const dir = path.dirname(filePath);
+      const dir = path.dirname(normalizedPath);
       if (dir !== downloadDir && fs.existsSync(dir)) {
         const files = fs.readdirSync(dir);
         if (files.length === 0) {
