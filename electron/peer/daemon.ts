@@ -52,8 +52,10 @@ export class PeerDaemon extends EventEmitter {
         const musicMetadata = await import("music-metadata");
         for (const file of files) {
             try {
-                const metadata = await musicMetadata.parseFile(file);
-                const stat = fs.statSync(file);
+                const [metadata, stat] = await Promise.all([
+                    musicMetadata.parseFile(file),
+                    fs.promises.stat(file)
+                ]);
                 
                 const trackData = {
                     id: crypto.createHash('md5').update(file).digest('hex'),
