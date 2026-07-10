@@ -3,6 +3,9 @@ name: Release
 # Builds native installers for every OS on their own runner (macOS installers
 # can't be produced on Windows/Linux). Push a v* tag to publish a GitHub Release
 # with all artifacts attached, or run manually to just build and upload them.
+permissions:
+  contents: write
+
 on:
   push:
     tags: ['v*']
