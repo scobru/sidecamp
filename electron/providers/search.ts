@@ -33,9 +33,11 @@ async function getSoundCloudClientId(): Promise<string> {
         }
         throw new Error("Could not find client_id in script assets");
     } catch (err) {
-        console.warn("SoundCloud Client ID scrape failed, using fallback:", err);
-        // Fallback to a common client ID if scrape fails
-        return "iY8tV4wgf1Ls4m9T2n18w5I85aZ2zE6V";
+        console.warn("SoundCloud Client ID scrape failed, checking environment variable:", err);
+        if (process.env.SOUNDCLOUD_CLIENT_ID) {
+            return process.env.SOUNDCLOUD_CLIENT_ID;
+        }
+        throw new Error("SoundCloud Client ID scrape failed and no SOUNDCLOUD_CLIENT_ID environment variable set");
     }
 }
 
