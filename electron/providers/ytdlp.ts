@@ -20,7 +20,13 @@ export class YtdlpService extends EventEmitter {
             const outputPath = path.join(this.downloadDir, '%(title)s.%(ext)s');
             // ponytail: UA non-browser evita la challenge Fastly di Bandcamp
             // (yt-dlp finge un UA browser su TLS non-browser -> flaggato come bot)
-            const args = ['-x', '--audio-format', 'mp3', '--user-agent', 'curl/8.9.1', '-o', outputPath, url];
+
+            try {
+                new URL(url);
+            } catch (e) {
+                return reject(new Error('Invalid URL provided'));
+            }
+            const args = ['-x', '--audio-format', 'mp3', '--user-agent', 'curl/8.9.1', '-o', outputPath, '--', url];
 
             const child = execFile('yt-dlp', args, (error, stdout, stderr) => {
                 if (error) {
