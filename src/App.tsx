@@ -19,6 +19,9 @@ function App() {
   const [folder, setFolder] = useState('');
   const [peerStatus, setPeerStatus] = useState('offline');
   const [logs, setLogs] = useState<string[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean }[]>([]);
+  const [chatTo, setChatTo] = useState('');
+  const [chatText, setChatText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('peer');
@@ -80,6 +83,10 @@ function App() {
 
     window.electronAPI.onPeerStatus((status: string) => {
       setPeerStatus(status);
+    });
+
+    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number }) => {
+      setChatMessages(prev => [...prev, data].slice(-100));
     });
 
     // Listen to download logs and progress
@@ -492,6 +499,15 @@ function App() {
     await window.electronAPI.stopPeer();
   };
 
+  const handleSendChat = async () => {
+    const to = chatTo.trim();
+    const text = chatText.trim();
+    if (!to || !text) return;
+    await window.electronAPI.sendPeerChat(to, text);
+    setChatMessages(prev => [...prev, { from: `→ ${to}`, text, ts: Date.now(), self: true }].slice(-100));
+    setChatText('');
+  };
+
   const handleSearch = async () => {
     setDlLogs(prev => [...prev, `[Search] Starting search for "${searchQuery}" on ${searchSource.toUpperCase()}...`]);
     try {
@@ -509,7 +525,9 @@ function App() {
             .catch((e: any) => { console.error("Bandcamp search failed:", e); return []; }),
           window.electronAPI.searchWeb(searchQuery, 'torrent', server, token)
             .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'torrent_search' })))
-            .catch((e: any) => { console.error("Torrent search failed:", e); return []; })
+            .catch((e: any) => { console.error("Torrent search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'network', server, token)
+            .catch((e: any) => { console.error("Network search failed:", e); return []; })
         ];
         
         const settled = await Promise.allSettled(promises);
@@ -556,6 +574,8 @@ function App() {
       } else if (source === 'torrent_search') {
         const paths = await window.electronAPI.torrentDownload(result.url);
         filePath = paths.length > 0 ? paths[0] : '';
+      } else if (source === 'peer') {
+        filePath = await window.electronAPI.downloadPeerTrack(server, token, result.sessionId, result.trackId, result.artist, result.title);
       } else {
         filePath = await window.electronAPI.slskDownload(result);
       }
@@ -1087,6 +1107,43 @@ function App() {
                   {logs.length === 0 && <div className="log-line dim">No logs available...</div>}
                 </div>
               </div>
+
+              <div className="terminal-log" style={{ marginTop: '1rem' }}>
+                <div className="terminal-header">💬 Peer Chat</div>
+                <div className="terminal-body" style={{ minHeight: '120px', maxHeight: '260px', overflowY: 'auto' }}>
+                  {chatMessages.map((m, i) => (
+                    <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
+                      <span style={{ opacity: 0.6 }}>[{new Date(m.ts).toLocaleTimeString()}]</span>{' '}
+                      <strong>{m.from}:</strong> {m.text}
+                    </div>
+                  ))}
+                  {chatMessages.length === 0 && <div className="log-line dim">No messages. Send one to a peer by username.</div>}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={chatTo}
+                    onChange={e => setChatTo(e.target.value)}
+                    placeholder="Peer username"
+                    className="glass-input"
+                    style={{ flex: '0 0 160px' }}
+                    disabled={peerStatus !== 'online'}
+                  />
+                  <input
+                    type="text"
+                    value={chatText}
+                    onChange={e => setChatText(e.target.value)}
+                    placeholder={peerStatus === 'online' ? 'Message...' : 'Start Sharing to enable chat'}
+                    className="glass-input"
+                    style={{ flex: 1, minWidth: '160px' }}
+                    disabled={peerStatus !== 'online'}
+                    onKeyDown={e => e.key === 'Enter' && handleSendChat()}
+                  />
+                  <button className="btn btn-primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatTo.trim() || !chatText.trim()}>
+                    Send
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1161,6 +1218,16 @@ function App() {
                       />
                       Torrent
                     </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                      <input
+                        type="radio"
+                        name="searchSource"
+                        value="network"
+                        checked={searchSource === 'network'}
+                        onChange={() => { setSearchSource('network'); setSearchResults([]); }}
+                      />
+                      📡 Network
+                    </label>
                   </div>
 
                   <div className="search-bar">
@@ -1168,7 +1235,7 @@ function App() {
                       type="text" 
                       value={searchQuery} 
                       onChange={e => setSearchQuery(e.target.value)} 
-                      placeholder={`Search on ${searchSource === 'soulseek' ? 'Soulseek' : searchSource === 'soundcloud' ? 'SoundCloud' : searchSource === 'bandcamp' ? 'Bandcamp' : 'Torrent (PirateBay)'}...`} 
+                      placeholder={`Search on ${searchSource === 'soulseek' ? 'Soulseek' : searchSource === 'soundcloud' ? 'SoundCloud' : searchSource === 'bandcamp' ? 'Bandcamp' : searchSource === 'network' ? 'TuneCamp Network' : 'Torrent (PirateBay)'}...`}
                       className="glass-input search-input"
                       onKeyDown={e => e.key === 'Enter' && handleSearch()}
                     />
@@ -1184,7 +1251,8 @@ function App() {
                           </div>
                           <div className="result-meta">
                             {res.source === 'soulseek' && `${(res.size / 1024 / 1024).toFixed(2)} MB • ${res.bitrate || '?'} kbps • User: ${res.user}`}
-                            {res.source !== 'soulseek' && `Platform: ${res.user || res.source}`}
+                            {res.source === 'peer' && `${res.size ? (res.size / 1024 / 1024).toFixed(2) + ' MB • ' : ''}${res.user}`}
+                            {res.source !== 'soulseek' && res.source !== 'peer' && `Platform: ${res.user || res.source}`}
                           </div>
                         </div>
                         <button 

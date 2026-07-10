@@ -153,6 +153,8 @@ export class PeerDaemon extends EventEmitter {
                             type: 'manifest',
                             tracks: indexData
                         }));
+                    } else if (msg.type === 'chat') {
+                        this.emit("chat", { from: msg.from, text: msg.text, ts: msg.ts });
                     } else if (msg.type === 'ping') {
                         this.ws?.send(JSON.stringify({ type: 'pong' }));
                     } else if (msg.type === 'stream_request' || msg.type === 'download_request') {
@@ -231,6 +233,12 @@ export class PeerDaemon extends EventEmitter {
             stream.destroy();
             this.activeStreams.delete(requestId);
             this.emit("log", `Streaming/Download cancellato [Req: ${requestId}]`);
+        }
+    }
+
+    public sendChat(to: string, text: string) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'chat', to, text }));
         }
     }
 

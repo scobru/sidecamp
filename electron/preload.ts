@@ -26,11 +26,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Peer Daemon
   startPeer: (config: any) => ipcRenderer.invoke('peer:start', config),
   stopPeer: () => ipcRenderer.invoke('peer:stop'),
-  
+  sendPeerChat: (to: string, text: string) => ipcRenderer.invoke('peer:chat-send', to, text),
+
   // Events listener (log, progress, status)
   onPeerLog: (callback: (msg: string) => void) => ipcRenderer.on('peer:log', (_, msg) => callback(msg)),
   onPeerStatus: (callback: (status: string) => void) => ipcRenderer.on('peer:status', (_, status) => callback(status)),
   onPeerProgress: (callback: (data: any) => void) => ipcRenderer.on('peer:progress', (_, data) => callback(data)),
+  onPeerChat: (callback: (data: { from: string; text: string; ts: number }) => void) => ipcRenderer.on('peer:chat', (_, data) => callback(data)),
   
   onDownloadLog: (callback: (msg: string) => void) => ipcRenderer.on('download:log', (_, msg) => callback(msg)),
   onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download:progress', (_, data) => callback(data)),

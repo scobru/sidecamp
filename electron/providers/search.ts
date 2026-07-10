@@ -119,10 +119,10 @@ export async function searchBandcamp(query: string): Promise<any[]> {
     }
 }
 
-export async function searchTorrents(query: string, server?: string, token?: string): Promise<any[]> {
+export async function searchTorrents(query: string): Promise<any[]> {
     const results: any[] = [];
 
-    // 1. Fetch from apibay.org (PirateBay)
+    // Fetch from apibay.org (PirateBay)
     try {
         const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}`;
         const res = await fetch(url, {
@@ -152,41 +152,44 @@ export async function searchTorrents(query: string, server?: string, token?: str
         console.error("Torrent search error from PirateBay:", e);
     }
 
-    // 2. Fetch from connected Sidecamp peers on the network (via TuneCamp server)
-    if (server && token) {
-        try {
-            const cleanServer = server.replace(/\/$/, '');
-            const url = `${cleanServer}/api/peers/search?q=${encodeURIComponent(query)}`;
-            const res = await fetch(url, {
-                headers: {
-                    "User-Agent": USER_AGENT,
-                    "Authorization": `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                const peerTracks = await res.json() as any[];
-                if (Array.isArray(peerTracks)) {
-                    // Filter peer tracks that have a magnet_uri
-                    const peerTorrents = peerTracks
-                        .filter(track => track.magnet_uri)
-                        .map(track => ({
-                            id: 'peer_torrent_' + track.id + '_' + track.session_id,
-                            title: track.title,
-                            artist: track.artist || 'Unknown Artist',
-                            album: `Sidecamp Peer: ${track.username || 'Unknown'} (Network)`,
-                            url: track.magnet_uri,
-                            source: 'torrent_search',
-                            size: track.file_size || 0,
-                            bitrate: 0,
-                            user: `Sidecamp Peer (${track.username})`
-                        }));
-                    results.push(...peerTorrents);
-                }
-            }
-        } catch (e) {
-            console.error("Torrent search error from TuneCamp network:", e);
-        }
-    }
-
     return results;
+}
+
+// Search audio shared by connected Sidecamp peers on the TuneCamp network.
+// Every match is downloadable via the server tunnel (downloadPeerTrack), so we
+// no longer drop tracks that lack a magnet_uri.
+export async function searchPeerNetwork(query: string, server?: string, token?: string): Promise<any[]> {
+    if (!server || !token) return [];
+    try {
+        const cleanServer = server.replace(/\/$/, '');
+        const url = `${cleanServer}/api/peers/search?q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, {
+            headers: {
+                "User-Agent": USER_AGENT,
+                "Authorization": `Bearer ${token}`
+            }
+        });
+        if (!res.ok) {
+            console.error(`Peer network search returned error: ${res.status}`);
+            return [];
+        }
+        const peerTracks = await res.json() as any[];
+        if (!Array.isArray(peerTracks)) return [];
+        return peerTracks.map(track => ({
+            id: 'peer_' + track.session_id + '_' + track.id,
+            title: track.title,
+            artist: track.artist || 'Unknown Artist',
+            album: track.album || `Network: ${track.username || 'Unknown'}`,
+            url: '',
+            source: 'peer',
+            sessionId: track.session_id,
+            trackId: track.id,
+            size: track.file_size || 0,
+            bitrate: 0,
+            user: `Network (${track.username || 'Unknown'})`
+        }));
+    } catch (e) {
+        console.error("Peer network search error:", e);
+        return [];
+    }
 }

@@ -48,7 +48,7 @@ import { TorrentService } from './providers/torrent';
 import { YtdlpService } from './providers/ytdlp';
 import { NetworkService } from './providers/network';
 import { TuneCampUploader } from './uploader';
-import { searchSoundCloud, searchBandcamp, searchTorrents } from './providers/search';
+import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork } from './providers/search';
 import path from 'path';
 import fs from 'fs';
 import NodeID3 from 'node-id3';
@@ -93,7 +93,9 @@ ipcMain.handle('search:web', async (event, query, source, server, token) => {
   } else if (source === 'bandcamp') {
     return await searchBandcamp(query);
   } else if (source === 'torrent') {
-    return await searchTorrents(query, server, token);
+    return await searchTorrents(query);
+  } else if (source === 'network') {
+    return await searchPeerNetwork(query, server, token);
   }
   return [];
 });
@@ -270,7 +272,8 @@ ipcMain.handle('peer:start', async (event, config: PeerConfig) => {
   daemon.on('log', (msg) => win?.webContents.send('peer:log', msg));
   daemon.on('status', (status) => win?.webContents.send('peer:status', status));
   daemon.on('progress', (current, total) => win?.webContents.send('peer:progress', { current, total }));
-  
+  daemon.on('chat', (data) => win?.webContents.send('peer:chat', data));
+
   await daemon.start();
   return true;
 });
@@ -280,6 +283,11 @@ ipcMain.handle('peer:stop', () => {
     daemon.stop();
     daemon = null;
   }
+  return true;
+});
+
+ipcMain.handle('peer:chat-send', (event, to: string, text: string) => {
+  daemon?.sendChat(to, text);
   return true;
 });
 
