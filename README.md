@@ -17,9 +17,11 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🔎 **Soulseek Search & Download** — Search the Soulseek network and download tracks directly to your machine.
 - 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop.
 - 🎬 **yt-dlp Audio Ripping** — Rip audio from YouTube, SoundCloud, Bandcamp, and other platforms.
+- 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog.
+- 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album), rename files, and move them to folders.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
-- 📤 **Auto-Upload to TuneCamp** — Downloaded files are automatically uploaded and indexed into your TuneCamp library.
+- 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
 - 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron.
 
 ## Prerequisites

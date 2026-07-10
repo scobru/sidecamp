@@ -25,6 +25,7 @@ export default defineConfig({
                 'ws',
                 'socket.io-client',
                 'electron',
+                'node-id3',
               ],
             },
             rolldownOptions: {
@@ -41,6 +42,7 @@ export default defineConfig({
                 'ws',
                 'socket.io-client',
                 'electron',
+                'node-id3',
               ],
             },
           },

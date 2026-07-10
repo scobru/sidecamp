@@ -176,11 +176,24 @@ ipcMain.handle('downloads:open', async (event, filePath) => {
   }
 });
 
+ipcMain.handle('downloads:read-tags', async (event, filePath) => {
+  const tags = NodeID3.read(filePath);
+  return { title: tags.title || '', artist: tags.artist || '', album: tags.album || '' };
+});
+
 ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
-  NodeID3.update(tags, filePath);
+  const result = NodeID3.write(tags, filePath);
+  if (result !== true) throw new Error(`NodeID3.write failed: ${result}`);
   return true;
+});
+
+ipcMain.handle('downloads:rename', async (event, filePath, newFilename) => {
+  const dir = path.dirname(filePath);
+  const destPath = path.join(dir, newFilename);
+  fs.renameSync(filePath, destPath);
+  return destPath;
 });
 
 ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {

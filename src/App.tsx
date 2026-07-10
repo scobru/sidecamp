@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
-  Radio, Globe, Download, FolderSync, Settings, 
-  Play, Pause, X, Volume2, Music, Magnet, Cloud 
+  Radio, Globe, Download, FolderSync, Settings, Info,
+  Play, Pause, X, Volume2, Music, Magnet, Cloud
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -59,7 +59,7 @@ function App() {
 
   // Edit Tags Modal States
   const [editTagsFile, setEditTagsFile] = useState<{ name: string, path: string } | null>(null);
-  const [editTagsData, setEditTagsData] = useState({ title: '', artist: '', album: '' });
+  const [editTagsData, setEditTagsData] = useState({ title: '', artist: '', album: '', filename: '' });
 
   // Pre-Upload Metadata Editor States
   const [metadataModalFile, setMetadataModalFile] = useState<{ name: string, path: string } | null>(null);
@@ -320,7 +320,7 @@ function App() {
   };
 
   const formatTime = (secs: number) => {
-    if (isNaN(secs)) return '0:00';
+    if (!isFinite(secs) || isNaN(secs)) return '0:00';
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -392,19 +392,39 @@ function App() {
     }
   };
 
-  const handleEditTags = (file: any) => {
-    const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(/\.[^/.]+$/, '');
-    setEditTagsData({ title: baseName, artist: '', album: '' });
+  const handleEditTags = async (file: any) => {
     setEditTagsFile({ name: file.name, path: file.path });
+    try {
+      const tags = await window.electronAPI.readTags(file.path);
+      const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(/\.[^/.]+$/, '');
+      const currentFilename = file.name.split(/[/\\]/).pop() || file.name;
+      setEditTagsData({
+        title: tags.title || baseName,
+        artist: tags.artist || '',
+        album: tags.album || '',
+        filename: currentFilename,
+      });
+    } catch {
+      const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(/\.[^/.]+$/, '');
+      const currentFilename = file.name.split(/[/\\]/).pop() || file.name;
+      setEditTagsData({ title: baseName, artist: '', album: '', filename: currentFilename });
+    }
   };
 
   const confirmEditTags = async () => {
     if (!editTagsFile) return;
     try {
-      await window.electronAPI.writeTags(editTagsFile.path, editTagsData);
+      const { filename, ...tags } = editTagsData;
+      await window.electronAPI.writeTags(editTagsFile.path, tags);
+      const originalFilename = editTagsFile.name.split(/[/\\]/).pop() || editTagsFile.name;
+      if (filename && filename !== originalFilename) {
+        await window.electronAPI.renameDownload(editTagsFile.path, filename);
+      }
       setDlLogs(prev => [...prev, `[Library] Tags saved: ${editTagsFile.name}`]);
+      setEditTagsFile(null);
+      loadDownloadedFiles();
     } catch (e: any) {
-      alert('Error writing tags: ' + (e.message || e));
+      alert('Error: ' + (e.message || e));
     }
     setEditTagsFile(null);
   };
@@ -435,16 +455,24 @@ function App() {
 
   const handleUploadFile = async (filePath: string) => {
     const filename = filePath.split(/[/\\]/).pop() || '';
+    const baseName = filename.replace(/\.[^/.]+$/, '');
     let defaultArtist = 'Sidecamp';
-    let defaultTitle = filename.replace(/\.[^/.]+$/, "");
+    let defaultTitle = baseName;
     let defaultAlbum = '';
-    
-    if (filename.includes(' - ')) {
-      const parts = filename.split(' - ');
-      defaultArtist = parts[0].trim();
-      defaultTitle = parts[1].replace(/\.[^/.]+$/, "").trim();
+
+    try {
+      const tags = await window.electronAPI.readTags(filePath);
+      if (tags.title) defaultTitle = tags.title;
+      if (tags.artist) defaultArtist = tags.artist;
+      if (tags.album) defaultAlbum = tags.album;
+    } catch {
+      if (baseName.includes(' - ')) {
+        const parts = baseName.split(' - ');
+        defaultArtist = parts[0].trim();
+        defaultTitle = parts[1].trim();
+      }
     }
-    
+
     setMetadataTitle(defaultTitle);
     setMetadataArtist(defaultArtist);
     setMetadataAlbum(defaultAlbum);
@@ -700,6 +728,9 @@ function App() {
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
             <span className="icon"><Settings size={18} /></span> Configuration
           </button>
+          <button className={`nav-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')}>
+            <span className="icon"><Info size={18} /></span> About
+          </button>
         </nav>
 
         {activeDownloads.length > 0 && (
@@ -758,32 +789,93 @@ function App() {
 
       <main className="main-content">
           {activeTab === 'library' && (
-            <div className="glass-card library-card">
+            <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: 0 }}>Library</h3>
+                <h3 style={{ margin: 0 }}>Library <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>{downloadedFiles.length} tracks</span></h3>
                 <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {downloadedFiles.map((file, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.8rem 1rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {downloadedFiles.map((file, i) => {
+                  const basename = file.name.split(/[/\\]/).pop() || file.name;
+                  const folder = file.name.includes('/') || file.name.includes('\\')
+                    ? file.name.substring(0, file.name.lastIndexOf(file.name.includes('\\') ? '\\' : '/'))
+                    : null;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', transition: 'background 0.15s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{basename}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', gap: '10px' }}>
+                          <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          {folder && <span style={{ opacity: 0.7 }}>📁 {folder}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button className="btn btn-primary" onClick={() => playTrack(basename, file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
+                        <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
+                        <button className="btn btn-secondary" onClick={() => handleMoveFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Move</button>
+                        <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Delete</button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      <button className="btn btn-primary" onClick={() => playTrack(file.name, file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Play</button>
-                      <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Edit Tags</button>
-                      <button className="btn btn-secondary" onClick={() => handleMoveFile(file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Move</button>
-                      <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Delete</button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {downloadedFiles.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No music files in library.</div>
                 )}
               </div>
             </div>
           )}
+          {activeTab === 'about' && (
+            <div style={{ maxWidth: '720px' }}>
+              <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                  <img src={logo} alt="Sidecamp" style={{ width: '64px', height: '64px', borderRadius: '12px' }} />
+                  <div>
+                    <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)', fontSize: '1.8rem' }}>Sidecamp</h2>
+                    <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Powered by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>TuneCamp</span></p>
+                  </div>
+                </div>
+                <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                  <strong style={{ color: 'var(--text-main)' }}>Sidecamp</strong> is a desktop companion app for <strong style={{ color: 'var(--primary)' }}>TuneCamp</strong> — an independent music platform built for artists and listeners who believe in open, decentralized music distribution.
+                </p>
+                <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 0 }}>
+                  With Sidecamp you can discover and download music from the TuneCamp network and from peer-to-peer sources (Soulseek, BitTorrent, YouTube), manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
+                </p>
+              </div>
+
+              <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+                <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem' }}>What you can do</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  {[
+                    { icon: '🌐', title: 'Network Explorer', desc: 'Browse tracks shared by TuneCamp peers and the server catalog. Download anything with one click.' },
+                    { icon: '⬇️', title: 'Multi-source Downloader', desc: 'Search and download via Soulseek, magnet links, torrents, or YouTube/SoundCloud/Bandcamp URLs.' },
+                    { icon: '🎵', title: 'Local Library', desc: 'Browse your downloaded tracks, edit ID3 tags, rename files, move them to folders.' },
+                    { icon: '📡', title: 'Peer Node', desc: 'Run a lightweight peer that shares your library with the TuneCamp network in real time.' },
+                    { icon: '☁️', title: 'Upload to TuneCamp', desc: 'Push tracks from your library directly to your TuneCamp account with custom metadata.' },
+                    { icon: '🔗', title: 'Torrent Seeding', desc: 'Seed individual tracks or full albums as torrents, making them available to the wider network.' },
+                  ].map(f => (
+                    <div key={f.title} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                      <div style={{ fontSize: '1.4rem', marginBottom: '0.5rem' }}>{f.icon}</div>
+                      <div style={{ fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-main)' }}>{f.title}</div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{f.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass-card">
+                <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1rem' }}>Tech stack</h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {['Electron', 'React 19', 'TypeScript', 'Vite', 'Soulseek', 'WebTorrent', 'yt-dlp', 'node-id3', 'TuneCamp API'].map(t => (
+                    <span key={t} style={{ padding: '4px 10px', background: 'rgba(179,102,255,0.12)', border: '1px solid rgba(179,102,255,0.25)', borderRadius: '20px', fontSize: '0.8rem', color: 'var(--primary)' }}>{t}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'settings' && (
             <>
               <div className="settings-section" style={{ marginBottom: '2rem' }}>
@@ -1403,43 +1495,24 @@ function App() {
 
       {/* Metadata Editor Modal */}
       {metadataModalFile && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+        <div className="modal-overlay" onClick={() => setMetadataModalFile(null)}>
+          <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
             <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Upload Track to TuneCamp</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem', wordBreak: 'break-all' }}>
               File: <span style={{ fontFamily: 'monospace', color: 'var(--text-main)' }}>{metadataModalFile.name}</span>
             </p>
-            
             <div className="form-group">
               <label>Track Title</label>
-              <input 
-                type="text" 
-                value={metadataTitle} 
-                onChange={e => setMetadataTitle(e.target.value)} 
-                className="glass-input"
-              />
+              <input type="text" value={metadataTitle} onChange={e => setMetadataTitle(e.target.value)} className="glass-input" />
             </div>
-            
             <div className="form-group">
               <label>Artist Name</label>
-              <input 
-                type="text" 
-                value={metadataArtist} 
-                onChange={e => setMetadataArtist(e.target.value)} 
-                className="glass-input"
-              />
+              <input type="text" value={metadataArtist} onChange={e => setMetadataArtist(e.target.value)} className="glass-input" />
             </div>
-            
             <div className="form-group">
               <label>Album (Optional)</label>
-              <input 
-                type="text" 
-                value={metadataAlbum} 
-                onChange={e => setMetadataAlbum(e.target.value)} 
-                className="glass-input"
-              />
+              <input type="text" value={metadataAlbum} onChange={e => setMetadataAlbum(e.target.value)} className="glass-input" />
             </div>
-            
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setMetadataModalFile(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={confirmUpload}>Upload</button>
@@ -1450,24 +1523,16 @@ function App() {
 
       {/* Album Seeding Modal */}
       {albumSeedModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+        <div className="modal-overlay" onClick={() => setAlbumSeedModalOpen(false)}>
+          <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
             <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Seed Selected Tracks as Album</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
               You have selected <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{selectedFiles.length}</span> tracks to seed together.
             </p>
-            
             <div className="form-group">
               <label>Album / Torrent Name</label>
-              <input 
-                type="text" 
-                value={albumSeedName} 
-                onChange={e => setAlbumSeedName(e.target.value)} 
-                className="glass-input"
-                placeholder="Enter album or torrent name"
-              />
+              <input type="text" value={albumSeedName} onChange={e => setAlbumSeedName(e.target.value)} className="glass-input" placeholder="Enter album or torrent name" />
             </div>
-            
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setAlbumSeedModalOpen(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={confirmSeedSelected}>Start Seeding</button>
@@ -1475,13 +1540,14 @@ function App() {
           </div>
         </div>
       )}
+
       {/* Edit Tags Modal */}
       {editTagsFile && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+        <div className="modal-overlay" onClick={() => setEditTagsFile(null)}>
+          <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
             <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Edit File Tags</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem', wordBreak: 'break-all' }}>
-              File: <span style={{ fontFamily: 'monospace', color: 'var(--text-main)' }}>{editTagsFile.name}</span>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem', wordBreak: 'break-all' }}>
+              <span style={{ fontFamily: 'monospace', color: 'var(--text-main)' }}>{editTagsFile.name.split(/[/\\]/).pop()}</span>
             </p>
             <div className="form-group">
               <label>Track Title</label>
@@ -1494,6 +1560,10 @@ function App() {
             <div className="form-group">
               <label>Album</label>
               <input type="text" value={editTagsData.album} onChange={e => setEditTagsData(prev => ({ ...prev, album: e.target.value }))} className="glass-input" />
+            </div>
+            <div className="form-group">
+              <label>File Name</label>
+              <input type="text" value={editTagsData.filename} onChange={e => setEditTagsData(prev => ({ ...prev, filename: e.target.value }))} className="glass-input" />
             </div>
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setEditTagsFile(null)}>Cancel</button>
