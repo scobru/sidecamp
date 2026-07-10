@@ -57,6 +57,10 @@ function App() {
   const [volume, setVolume] = useState(0.8);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Edit Tags Modal States
+  const [editTagsFile, setEditTagsFile] = useState<{ name: string, path: string } | null>(null);
+  const [editTagsData, setEditTagsData] = useState({ title: '', artist: '', album: '' });
+
   // Pre-Upload Metadata Editor States
   const [metadataModalFile, setMetadataModalFile] = useState<{ name: string, path: string } | null>(null);
   const [metadataTitle, setMetadataTitle] = useState('');
@@ -146,7 +150,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'files') {
+    if (activeTab === 'files' || activeTab === 'library') {
       loadDownloadedFiles();
     }
   }, [activeTab]);
@@ -385,6 +389,35 @@ function App() {
       setSelectedFiles([]);
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
+    }
+  };
+
+  const handleEditTags = (file: any) => {
+    const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(/\.[^/.]+$/, '');
+    setEditTagsData({ title: baseName, artist: '', album: '' });
+    setEditTagsFile({ name: file.name, path: file.path });
+  };
+
+  const confirmEditTags = async () => {
+    if (!editTagsFile) return;
+    try {
+      await window.electronAPI.writeTags(editTagsFile.path, editTagsData);
+      setDlLogs(prev => [...prev, `[Library] Tags saved: ${editTagsFile.name}`]);
+    } catch (e: any) {
+      alert('Error writing tags: ' + (e.message || e));
+    }
+    setEditTagsFile(null);
+  };
+
+  const handleMoveFile = async (filePath: string) => {
+    const destFolder = await window.electronAPI.pickFolder();
+    if (!destFolder) return;
+    try {
+      const newPath = await window.electronAPI.moveDownload(filePath, destFolder);
+      setDlLogs(prev => [...prev, `[Library] Moved to: ${newPath}`]);
+      loadDownloadedFiles();
+    } catch (e: any) {
+      alert('Error moving file: ' + (e.message || e));
     }
   };
 
@@ -658,6 +691,9 @@ function App() {
           <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')}>
             <span className="icon"><Download size={18} /></span> Downloader
           </button>
+          <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')}>
+            <span className="icon"><Music size={18} /></span> Library
+          </button>
           <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')}>
             <span className="icon"><FolderSync size={18} /></span> Transfers
           </button>
@@ -721,19 +757,35 @@ function App() {
       </div>
 
       <main className="main-content">
-        <header className="topbar">
-          <h2>
-            {activeTab === 'peer' ? 'Local Sharing' : 
-             activeTab === 'network' ? 'Network Explorer' : 
-             activeTab === 'download' ? 'Search & Download' : 
-             activeTab === 'files' ? 'Transfers' : 
-             'Settings'}
-          </h2>
-        </header>
-
-        <div className="content-area">
+          {activeTab === 'library' && (
+            <div className="glass-card library-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0 }}>Library</h3>
+                <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {downloadedFiles.map((file, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.8rem 1rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <button className="btn btn-primary" onClick={() => playTrack(file.name, file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Play</button>
+                      <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Edit Tags</button>
+                      <button className="btn btn-secondary" onClick={() => handleMoveFile(file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Move</button>
+                      <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+                {downloadedFiles.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No music files in library.</div>
+                )}
+              </div>
+            </div>
+          )}
           {activeTab === 'settings' && (
-            <div className="glass-card settings-card">
+            <>
               <div className="settings-section" style={{ marginBottom: '2rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Connection to TuneCamp</h3>
                 <div className="form-group">
@@ -802,7 +854,7 @@ function App() {
                 </button>
                 {settingsSaved && <span style={{ color: 'var(--accent)', marginLeft: '1rem', fontWeight: 600 }}>✓ Configuration saved!</span>}
               </div>
-            </div>
+            </>
           )}
 
           {activeTab === 'network' && (
@@ -1281,25 +1333,25 @@ function App() {
               </div>
             </div>
           )}
-        </div>
       </main>
+
+      <audio
+        ref={audioRef}
+        style={{ display: 'none' }}
+        onTimeUpdate={() => {
+          if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
+        }}
+        onDurationChange={() => {
+          if (audioRef.current) setDuration(audioRef.current.duration);
+        }}
+        onEnded={() => {
+          stopPlayback();
+        }}
+      />
 
       {/* Audio Player Bar */}
       {currentPlayback && (
         <div className="audio-player-bar">
-          <audio 
-            ref={audioRef} 
-            onTimeUpdate={() => {
-              if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
-            }}
-            onDurationChange={() => {
-              if (audioRef.current) setDuration(audioRef.current.duration);
-            }}
-            onEnded={() => {
-              stopPlayback();
-            }}
-          />
-          
           <div className="player-info">
             <span className="player-track-icon"><Music size={32} /></span>
             <div className="player-track-details">
@@ -1419,6 +1471,33 @@ function App() {
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setAlbumSeedModalOpen(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={confirmSeedSelected}>Start Seeding</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Tags Modal */}
+      {editTagsFile && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-card" style={{ maxWidth: '500px', width: '90%' }}>
+            <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem', fontSize: '1.25rem' }}>Edit File Tags</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem', wordBreak: 'break-all' }}>
+              File: <span style={{ fontFamily: 'monospace', color: 'var(--text-main)' }}>{editTagsFile.name}</span>
+            </p>
+            <div className="form-group">
+              <label>Track Title</label>
+              <input type="text" value={editTagsData.title} onChange={e => setEditTagsData(prev => ({ ...prev, title: e.target.value }))} className="glass-input" />
+            </div>
+            <div className="form-group">
+              <label>Artist Name</label>
+              <input type="text" value={editTagsData.artist} onChange={e => setEditTagsData(prev => ({ ...prev, artist: e.target.value }))} className="glass-input" />
+            </div>
+            <div className="form-group">
+              <label>Album</label>
+              <input type="text" value={editTagsData.album} onChange={e => setEditTagsData(prev => ({ ...prev, album: e.target.value }))} className="glass-input" />
+            </div>
+            <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setEditTagsFile(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmEditTags}>Save Tags</button>
             </div>
           </div>
         </div>

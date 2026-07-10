@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   openDownload: (filePath: string) => ipcRenderer.invoke('downloads:open', filePath),
   removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
+  writeTags: (filePath: string, tags: any) => ipcRenderer.invoke('downloads:write-tags', filePath, tags),
+  moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),
+  pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
 
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),

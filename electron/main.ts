@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 
@@ -51,6 +51,7 @@ import { TuneCampUploader } from './uploader';
 import { searchSoundCloud, searchBandcamp, searchTorrents } from './providers/search';
 import path from 'path';
 import fs from 'fs';
+import NodeID3 from 'node-id3';
 
 let daemon: PeerDaemon | null = null;
 const musicDir = path.join(app.getPath('music'), 'Sidecamp');
@@ -106,51 +107,37 @@ ipcMain.handle('slsk:status', async () => {
 });
 
 // --- Local Downloads Library IPC ---
+const AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4', '.webm']);
+
+function scanAudioFiles(dir: string, baseDir: string): { name: string; path: string; size: number; ctime: number; magnetUri: string }[] {
+  const result = [];
+  for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, f.name);
+    if (f.isDirectory()) {
+      result.push(...scanAudioFiles(full, baseDir));
+    } else if (f.isFile() && AUDIO_EXTS.has(path.extname(f.name).toLowerCase())) {
+      const stat = fs.statSync(full);
+      if (stat.size > 0) {
+        result.push({
+          name: path.relative(baseDir, full),
+          path: full,
+          size: stat.size,
+          ctime: stat.ctimeMs,
+          magnetUri: torrent.getMagnetUriForFile(full)
+        });
+      }
+    }
+  }
+  return result;
+}
+
 ipcMain.handle('downloads:list', async () => {
   try {
     if (!fs.existsSync(downloadDir)) {
       return [];
     }
-    
-    const files = fs.readdirSync(downloadDir, { withFileTypes: true });
-    const result = [];
-    
-    for (const f of files) {
-      if (f.isFile()) {
-        const filePath = path.join(downloadDir, f.name);
-        const ext = path.extname(f.name).toLowerCase();
-        if (['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4'].includes(ext)) {
-          const stat = fs.statSync(filePath);
-          result.push({
-            name: f.name,
-            path: filePath,
-            size: stat.size,
-            ctime: stat.ctimeMs,
-            magnetUri: torrent.getMagnetUriForFile(filePath)
-          });
-        }
-      } else if (f.isDirectory()) {
-        const subDirPath = path.join(downloadDir, f.name);
-        const subFiles = fs.readdirSync(subDirPath, { withFileTypes: true });
-        for (const sf of subFiles) {
-          if (sf.isFile()) {
-            const filePath = path.join(subDirPath, sf.name);
-            const ext = path.extname(sf.name).toLowerCase();
-            if (['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4'].includes(ext)) {
-              const stat = fs.statSync(filePath);
-              result.push({
-                name: `${f.name}/${sf.name}`,
-                path: filePath,
-                size: stat.size,
-                ctime: stat.ctimeMs,
-                magnetUri: torrent.getMagnetUriForFile(filePath)
-              });
-            }
-          }
-        }
-      }
-    }
-    
+
+    const result = scanAudioFiles(downloadDir, downloadDir);
     return result.sort((a, b) => b.ctime - a.ctime);
   } catch (e) {
     console.error("Error reading downloads directory:", e);
@@ -187,6 +174,26 @@ ipcMain.handle('downloads:open', async (event, filePath) => {
     console.error("Error opening file:", e);
     throw e;
   }
+});
+
+ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
+  NodeID3.update(tags, filePath);
+  return true;
+});
+
+ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
+  const fileName = path.basename(filePath);
+  const destPath = path.join(destFolder, fileName);
+  fs.mkdirSync(destFolder, { recursive: true });
+  fs.renameSync(filePath, destPath);
+  return destPath;
+});
+
+ipcMain.handle('dialog:pick-folder', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
 });
 
 // --- Torrent IPC ---
@@ -258,9 +265,9 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
 });
 
 app.whenReady().then(() => {
-  protocol.registerFileProtocol('media', (request, callback) => {
+  protocol.handle('media', (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
-    callback({ path: filePath });
+    return net.fetch(pathToFileURL(filePath).toString());
   });
   createWindow();
 });
