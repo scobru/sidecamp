@@ -27,8 +27,10 @@ jobs:
 
       # electron-builder targets the runner's OS (see per-platform targets in
       # package.json "build"). No signing certs in CI -> unsigned artifacts.
+      # --publish never: we attach to the GitHub Release manually below, so
+      # electron-builder doesn't try to publish by itself.
       - name: Build
-        run: yarn build
+        run: yarn build --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
