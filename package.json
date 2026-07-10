@@ -5,6 +5,7 @@
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
+    "postinstall": "node patch_script.cjs",
     "dev": "vite",
     "build": "tsc -b && vite build && electron-builder",
     "lint": "eslint .",
@@ -21,6 +22,7 @@
     "fs-extra": "^11.3.6",
     "lucide-react": "^1.23.0",
     "music-metadata": "^11.13.0",
+    "node-id3": "^0.2.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "slsk-client": "^1.1.0",

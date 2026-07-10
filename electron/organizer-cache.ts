@@ -58,9 +58,14 @@ export async function cacheGet(dir: string, dirMtime: number): Promise<any[] | n
 }
 
 export async function cachePut(dir: string, dirMtime: number, tracks: any[]): Promise<void> {
-  const all = await readAll();
-  all[dir] = { mtime: dirMtime, scannedAt: Date.now(), tracks };
-  await writeAll(all);
+  const next = writeQueue.then(async () => {
+    const all = await readAll();
+    all[dir] = { mtime: dirMtime, scannedAt: Date.now(), tracks };
+    await fs.ensureDir(path.dirname(getCacheFile()));
+    await fs.writeJson(getCacheFile(), all, { spaces: 0 });
+  });
+  writeQueue = next.catch(() => {});
+  return next;
 }
 
 export async function cacheClear(): Promise<void> {
