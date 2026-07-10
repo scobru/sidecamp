@@ -168,7 +168,11 @@ ipcMain.handle('downloads:delete', async (event, filePath) => {
 
 ipcMain.handle('downloads:open', async (event, filePath) => {
   try {
-    await shell.openPath(filePath);
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(downloadDir + path.sep) && resolvedPath !== downloadDir) {
+      throw new Error("Access denied: Path is outside the download directory");
+    }
+    await shell.openPath(resolvedPath);
     return true;
   } catch (e) {
     console.error("Error opening file:", e);
