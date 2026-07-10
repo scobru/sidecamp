@@ -57,6 +57,17 @@ if (fs.existsSync(clientFile)) {
     /(default: \{\s*)(peers\[peer\.user\] = new default_peer_1\.DefaultPeer\(net\.createConnection\(\{)/,
     "$1if (Object.keys(peers).length >= 75) return; // cap result-peer sockets to avoid event-loop starvation on broad searches\n                $2"
   );
+
+  // Don't join the distributed search network. As a downloader we don't need to
+  // relay other users' searches; each DistributedPeer forwards the WHOLE
+  // network's queries to us (code 3), which accumulate unbounded in
+  // stack.peerSearchRequests with a linear indexOf dedup (O(n^2) over time) and
+  // run shared.search per query -> the app freezes after sitting idle a while.
+  content = content.replace(
+    /(case 'D': \{)([\s\S]*?)(peers\[peer\.user\] = new distributed_peer_1\.DistributedPeer)/,
+    "$1 return; // ponytail: skip distributed-search membership; it firehoses us with the network's queries and freezes the app when idle$2$3"
+  );
+
   fs.writeFileSync(clientFile, content);
-  console.log('patched peer cap');
+  console.log('patched peer cap + distributed skip');
 }
