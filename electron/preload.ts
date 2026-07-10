@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Shared-folder file browser
   listSharedDir: (root: string, subpath: string) => ipcRenderer.invoke('fs:list', root, subpath),
   mkdirShared: (root: string, subpath: string, name: string) => ipcRenderer.invoke('fs:mkdir', root, subpath, name),
+  deleteShared: (root: string, subpath: string, name: string, isDir: boolean) => ipcRenderer.invoke('fs:delete', root, subpath, name, isDir),
 
   // Events listener (log, progress, status)
   onPeerLog: (callback: (msg: string) => void) => ipcRenderer.on('peer:log', (_, msg) => callback(msg)),

@@ -328,6 +328,19 @@ ipcMain.handle('fs:mkdir', async (event, root: string, subpath: string, name: st
   }
 });
 
+ipcMain.handle('fs:delete', async (event, root: string, subpath: string, name: string, isDir: boolean) => {
+  if (!name) return { error: 'Nothing to delete' };
+  const target = path.resolve(root, subpath || '', name);
+  // Must stay strictly inside the root — never allow deleting the root itself.
+  if (!insideRoot(root, target) || target === path.resolve(root)) return { error: 'Invalid path' };
+  try {
+    await fs.promises.rm(target, { recursive: !!isDir, force: false });
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
 // --- Network Explorer IPC ---
 ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);

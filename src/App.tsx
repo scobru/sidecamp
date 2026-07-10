@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings, Info,
   Play, Pause, X, Volume2, Music, Magnet, Cloud,
-  Folder, FolderPlus, ChevronRight, PanelLeft
+  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -27,6 +27,7 @@ function App() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('peer');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   // File browser (shared folders)
   const [browserRoot, setBrowserRoot] = useState('');
   const [browserPath, setBrowserPath] = useState('');
@@ -554,6 +555,13 @@ function App() {
     loadBrowser(browserRoot, browserPath);
   };
 
+  const handleDeleteEntry = async (name: string, isDir: boolean) => {
+    if (!window.confirm(`Delete ${isDir ? 'folder' : 'file'} "${name}"${isDir ? ' and all its contents' : ''}? This cannot be undone.`)) return;
+    const res = await window.electronAPI.deleteShared(browserRoot, browserPath, name, isDir);
+    if (res.error) { setBrowserError(res.error); return; }
+    loadBrowser(browserRoot, browserPath);
+  };
+
   const handleSearch = async () => {
     setDlLogs(prev => [...prev, `[Search] Starting search for "${searchQuery}" on ${searchSource.toUpperCase()}...`]);
     try {
@@ -776,6 +784,11 @@ function App() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
   return (
     <div className="app-container">
       <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -818,7 +831,17 @@ function App() {
           </button>
         </nav>
 
-        <div className="status-indicator">
+        <button
+          className="nav-item"
+          onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          style={{ marginTop: 'auto' }}
+        >
+          <span className="icon">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</span>
+          {!sidebarCollapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
+        </button>
+
+        <div className="status-indicator" style={{ marginTop: '0.5rem' }}>
           <div className={`status-dot ${peerStatus}`}></div>
           {!sidebarCollapsed && <span>{peerStatus.toUpperCase()}</span>}
         </div>
@@ -857,10 +880,19 @@ function App() {
                       {browserError && <div style={{ color: '#e74c3c', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{browserError}</div>}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {browserEntries.map((en, i) => (
-                          <div key={i} onClick={() => en.isDir && openBrowserFolder(en.name)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: en.isDir ? 'pointer' : 'default' }}>
-                            <span>{en.isDir ? '📁' : '🎵'}</span>
-                            <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
-                            {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                            <div onClick={() => en.isDir && openBrowserFolder(en.name)} style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, cursor: en.isDir ? 'pointer' : 'default' }}>
+                              <span>{en.isDir ? '📁' : '🎵'}</span>
+                              <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
+                              {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
+                            </div>
+                            <button
+                              onClick={() => handleDeleteEntry(en.name, en.isDir)}
+                              title={`Delete ${en.isDir ? 'folder' : 'file'}`}
+                              style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '4px', display: 'inline-flex', borderRadius: '6px' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         ))}
                         {browserEntries.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>Empty folder.</div>}

@@ -4,6 +4,11 @@
   --bg-color: #0d0c10;
   --panel-bg: #141217;
   --elevated-bg: #1c1a22;
+  --sidebar-bg: #09080b;
+  --input-bg: rgba(0, 0, 0, 0.3);
+  --terminal-bg: #08070a;
+  --terminal-header-bg: #131118;
+  --row-hover-bg: #23212a;
   --glass-border: rgba(255, 255, 255, 0.05);
   --primary: #b366ff;
   --primary-hover: #9d4edd;
@@ -15,6 +20,25 @@
   --text-muted: #9f9ba8;
   --font-family: 'Inter', system-ui, -apple-system, sans-serif;
   --font-headings: 'Outfit', sans-serif;
+}
+
+:root[data-theme="light"] {
+  --bg-color: #f4f2f7;
+  --panel-bg: #ffffff;
+  --elevated-bg: #f0edf4;
+  --sidebar-bg: #ffffff;
+  --input-bg: rgba(0, 0, 0, 0.04);
+  --terminal-bg: #f7f5fa;
+  --terminal-header-bg: #ece8f2;
+  --row-hover-bg: #ece8f2;
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --text-main: #1a1720;
+  --text-muted: #6b6577;
+}
+
+:root[data-theme="light"] .nav-item.active {
+  background: var(--primary);
+  color: #ffffff;
 }
 
 * {
@@ -41,7 +65,7 @@ body {
 /* Sidebar */
 .sidebar {
   width: 260px;
-  background: #09080b;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
@@ -257,7 +281,7 @@ body {
 
 .glass-input {
   width: 100%;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--input-bg);
   border: 1px solid var(--glass-border);
   border-radius: 6px;
   padding: 0.8rem 1rem;
@@ -334,14 +358,14 @@ body {
 /* Terminal Log */
 .terminal-log {
   margin-top: 2rem;
-  background: #08070a;
+  background: var(--terminal-bg);
   border-radius: 8px;
   border: 1px solid var(--glass-border);
   overflow: hidden;
 }
 
 .terminal-header {
-  background: #131118;
+  background: var(--terminal-header-bg);
   padding: 0.6rem 1.2rem;
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -354,7 +378,7 @@ body {
   padding: 1rem 1.2rem;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.8rem;
-  color: #d1d5db;
+  color: var(--text-main);
   height: 250px;
   overflow-y: auto;
   line-height: 1.5;
@@ -396,7 +420,7 @@ body {
 }
 
 .result-item:hover {
-  background: #23212a;
+  background: var(--row-hover-bg);
   border-color: rgba(179, 102, 255, 0.15);
 }
 
