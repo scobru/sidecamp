@@ -341,6 +341,32 @@ ipcMain.handle('fs:delete', async (event, root: string, subpath: string, name: s
   }
 });
 
+ipcMain.handle('app:downloads-dir', () => downloadDir);
+
+ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => {
+  if (!name) return { error: 'Nothing to move' };
+  const src = path.resolve(srcRoot, srcSub || '', name);
+  const dest = path.resolve(destRoot, destSub || '', name);
+  if (!insideRoot(srcRoot, src) || src === path.resolve(srcRoot)) return { error: 'Invalid source' };
+  if (!insideRoot(destRoot, dest)) return { error: 'Invalid destination' };
+  if (src === dest) return { error: 'Source and destination are the same' };
+  try {
+    if (fs.existsSync(dest)) return { error: 'An item with that name already exists there' };
+    try {
+      await fs.promises.rename(src, dest);
+    } catch (err: any) {
+      // rename fails across volumes (EXDEV) — copy then remove instead.
+      if (err.code === 'EXDEV') {
+        await fs.promises.cp(src, dest, { recursive: true });
+        await fs.promises.rm(src, { recursive: true, force: true });
+      } else throw err;
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
 // --- Network Explorer IPC ---
 ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);

@@ -34,6 +34,8 @@ function App() {
   const [browserEntries, setBrowserEntries] = useState<{ name: string; isDir: boolean }[]>([]);
   const [newFolderName, setNewFolderName] = useState('');
   const [browserError, setBrowserError] = useState('');
+  const [downloadsDir, setDownloadsDir] = useState('');
+  const [movingItem, setMovingItem] = useState<{ root: string; path: string; name: string; isDir: boolean } | null>(null);
 
   // Direct Download & Torrent States
   const [downloadSource, setDownloadSource] = useState('soulseek'); // 'soulseek' | 'direct'
@@ -97,6 +99,8 @@ function App() {
     window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number }) => {
       setChatMessages(prev => [...prev, data].slice(-100));
     });
+
+    window.electronAPI.getDownloadsDir().then((dir: string) => setDownloadsDir(dir || ''));
 
     // Listen to download logs and progress
     window.electronAPI.onDownloadLog((msg: string) => {
@@ -447,18 +451,6 @@ function App() {
     setEditTagsFile(null);
   };
 
-  const handleMoveFile = async (filePath: string) => {
-    const destFolder = await window.electronAPI.pickFolder();
-    if (!destFolder) return;
-    try {
-      const newPath = await window.electronAPI.moveDownload(filePath, destFolder);
-      setDlLogs(prev => [...prev, `[Library] Moved to: ${newPath}`]);
-      loadDownloadedFiles();
-    } catch (e: any) {
-      alert('Error moving file: ' + (e.message || e));
-    }
-  };
-
   const handleDeleteFile = async (filePath: string) => {
     if (confirm("Are you sure you want to delete this file?")) {
       try {
@@ -559,6 +551,14 @@ function App() {
     if (!window.confirm(`Delete ${isDir ? 'folder' : 'file'} "${name}"${isDir ? ' and all its contents' : ''}? This cannot be undone.`)) return;
     const res = await window.electronAPI.deleteShared(browserRoot, browserPath, name, isDir);
     if (res.error) { setBrowserError(res.error); return; }
+    loadBrowser(browserRoot, browserPath);
+  };
+
+  const handleMoveHere = async () => {
+    if (!movingItem) return;
+    const res = await window.electronAPI.moveShared(movingItem.root, movingItem.path, movingItem.name, browserRoot, browserPath);
+    if (res.error) { setBrowserError(res.error); return; }
+    setMovingItem(null);
     loadBrowser(browserRoot, browserPath);
   };
 
@@ -777,12 +777,16 @@ function App() {
 
   const validFolders = folder.split(',').map(f => f.trim()).filter(Boolean);
   const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
+  const browserRoots = [
+    ...(downloadsDir ? [{ label: 'Downloads', path: downloadsDir }] : []),
+    ...validFolders.map(f => ({ label: f.split(/[/\\]/).pop() || f, path: f })),
+  ];
 
   useEffect(() => {
-    if (activeTab === 'browser' && validFolders.length > 0 && !browserRoot) {
-      selectBrowserRoot(validFolders[0]);
+    if (activeTab === 'browser' && browserRoots.length > 0 && !browserRoot) {
+      selectBrowserRoot(browserRoots[0].path);
     }
-  }, [activeTab]);
+  }, [activeTab, downloadsDir]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -851,17 +855,17 @@ function App() {
           {activeTab === 'browser' && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0 }}>Shared Files <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>browse & organize your shared folders</span></h3>
+                <h3 style={{ margin: 0 }}>Shared Files <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>browse, move & organize your files</span></h3>
               </div>
-              {validFolders.length === 0 && (
-                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No shared folders configured. Add them in the "Configuration" tab.</div>
+              {browserRoots.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No folders yet. Add shared folders in the "Configuration" tab.</div>
               )}
-              {validFolders.length > 0 && (
+              {browserRoots.length > 0 && (
                 <>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                    {validFolders.map((f, i) => (
-                      <button key={i} className={`btn ${browserRoot === f ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(f)}>
-                        📁 {f.split(/[/\\]/).pop() || f}
+                    {browserRoots.map((r, i) => (
+                      <button key={i} className={`btn ${browserRoot === r.path ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(r.path)}>
+                        {r.path === downloadsDir ? '⬇ ' : '📁 '}{r.label}
                       </button>
                     ))}
                   </div>
@@ -871,6 +875,13 @@ function App() {
                         <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}>⬆ Up</button>
                         <span>{(browserRoot.split(/[/\\]/).pop() || browserRoot)}{browserPath ? ' / ' + browserPath.replace(/\//g, ' / ') : ''}</span>
                       </div>
+                      {movingItem && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(179,102,255,0.12)', border: '1px solid var(--primary)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                          <span>Moving <strong>{movingItem.name}</strong> — navigate to a folder, then:</span>
+                          <button className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={handleMoveHere}>Move here</button>
+                          <button className="btn btn-secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => setMovingItem(null)}>Cancel</button>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
                         <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="New subfolder name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} />
                         <button className="btn btn-primary" onClick={handleCreateFolder} disabled={!newFolderName.trim()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -886,6 +897,13 @@ function App() {
                               <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
                               {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
                             </div>
+                            <button
+                              onClick={() => setMovingItem({ root: browserRoot, path: browserPath, name: en.name, isDir: en.isDir })}
+                              title={`Move ${en.isDir ? 'folder' : 'file'}`}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'inline-flex', borderRadius: '6px' }}
+                            >
+                              <FolderSync size={16} />
+                            </button>
                             <button
                               onClick={() => handleDeleteEntry(en.name, en.isDir)}
                               title={`Delete ${en.isDir ? 'folder' : 'file'}`}
@@ -931,8 +949,6 @@ function App() {
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                         <button className="btn btn-primary" onClick={() => playTrack(basename, file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
                         <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
-                        <button className="btn btn-secondary" onClick={() => handleMoveFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Move</button>
-                        <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Delete</button>
                       </div>
                     </div>
                   );

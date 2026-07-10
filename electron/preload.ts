@@ -32,15 +32,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listSharedDir: (root: string, subpath: string) => ipcRenderer.invoke('fs:list', root, subpath),
   mkdirShared: (root: string, subpath: string, name: string) => ipcRenderer.invoke('fs:mkdir', root, subpath, name),
   deleteShared: (root: string, subpath: string, name: string, isDir: boolean) => ipcRenderer.invoke('fs:delete', root, subpath, name, isDir),
+  moveShared: (srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => ipcRenderer.invoke('fs:move', srcRoot, srcSub, name, destRoot, destSub),
+  getDownloadsDir: () => ipcRenderer.invoke('app:downloads-dir'),
 
-  // Events listener (log, progress, status)
-  onPeerLog: (callback: (msg: string) => void) => ipcRenderer.on('peer:log', (_, msg) => callback(msg)),
-  onPeerStatus: (callback: (status: string) => void) => ipcRenderer.on('peer:status', (_, status) => callback(status)),
-  onPeerProgress: (callback: (data: any) => void) => ipcRenderer.on('peer:progress', (_, data) => callback(data)),
-  onPeerChat: (callback: (data: { from: string; text: string; ts: number }) => void) => ipcRenderer.on('peer:chat', (_, data) => callback(data)),
-  
-  onDownloadLog: (callback: (msg: string) => void) => ipcRenderer.on('download:log', (_, msg) => callback(msg)),
-  onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download:progress', (_, data) => callback(data)),
+  // Events listener (log, progress, status). Each is a single logical
+  // subscription — clear any previous listener first so a re-subscribe (React
+  // StrictMode double-mount / remount) replaces it instead of stacking, which
+  // would duplicate every log line and chat message.
+  onPeerLog: (callback: (msg: string) => void) => { ipcRenderer.removeAllListeners('peer:log'); ipcRenderer.on('peer:log', (_, msg) => callback(msg)); },
+  onPeerStatus: (callback: (status: string) => void) => { ipcRenderer.removeAllListeners('peer:status'); ipcRenderer.on('peer:status', (_, status) => callback(status)); },
+  onPeerProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('peer:progress'); ipcRenderer.on('peer:progress', (_, data) => callback(data)); },
+  onPeerChat: (callback: (data: { from: string; text: string; ts: number }) => void) => { ipcRenderer.removeAllListeners('peer:chat'); ipcRenderer.on('peer:chat', (_, data) => callback(data)); },
+
+  onDownloadLog: (callback: (msg: string) => void) => { ipcRenderer.removeAllListeners('download:log'); ipcRenderer.on('download:log', (_, msg) => callback(msg)); },
+  onDownloadProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('download:progress'); ipcRenderer.on('download:progress', (_, data) => callback(data)); },
   
   openDownload: (filePath: string) => ipcRenderer.invoke('downloads:open', filePath),
   removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
