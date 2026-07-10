@@ -67,17 +67,25 @@ yarn build         # or: npm run build
 
 This compiles TypeScript, bundles the Vite frontend, and packages the Electron app via `electron-builder`.
 
-We have configured target packages for the following systems in `package.json`:
-- **Windows**: NSIS installer (`.exe`)
-- **macOS**: DMG disk image (`.dmg`) and ZIP archive (`.zip`)
-- **Linux**: AppImage (`.AppImage`) and Debian package (`.deb`)
+`yarn build` only produces an installer for **the OS you run it on** (electron-builder + native modules build for the host). Per-platform scripts:
 
-To force compilation for a specific target platform, use:
 ```bash
-npx electron-builder --win
-npx electron-builder --mac
-npx electron-builder --linux
+yarn build:win     # NSIS installer (.exe)
+yarn build:mac     # DMG (.dmg) + ZIP (.zip)  — macOS host only
+yarn build:linux   # AppImage (.AppImage) + Debian (.deb)
 ```
+
+> **You can't build the macOS installer on Windows or Linux** — it requires Apple tooling. To produce all three at once, use CI.
+
+### Cross-platform releases (CI)
+
+`.github/workflows/release.yml` builds on Windows, macOS, and Linux runners in parallel. Push a version tag to publish a GitHub Release with every installer attached:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Or trigger the workflow manually (`workflow_dispatch`) to just build and upload the artifacts. CI builds are unsigned (no signing certificates configured).
 
 ## Connecting to TuneCamp
 
