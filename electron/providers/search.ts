@@ -201,7 +201,7 @@ export async function searchTorrents(query: string): Promise<any[]> {
             }
         }
     } catch (e) {
-        console.error("Torrent search error from PirateBay:", e);
+        console.error("Torrent search error:", e);
     }
 
     return results;
