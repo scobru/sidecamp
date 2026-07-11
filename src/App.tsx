@@ -37,6 +37,10 @@ function App() {
   const [browserError, setBrowserError] = useState('');
   const [downloadsDir, setDownloadsDir] = useState('');
   const [movingItem, setMovingItem] = useState<{ root: string; path: string; name: string; isDir: boolean } | null>(null);
+  // Per-list search filters
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [browserSearch, setBrowserSearch] = useState('');
+  const [transferSearch, setTransferSearch] = useState('');
 
   // Direct Download & Torrent States
   const [downloadSource, setDownloadSource] = useState('soulseek'); // 'soulseek' | 'direct'
@@ -548,6 +552,7 @@ function App() {
 
   const loadBrowser = async (root: string, subpath: string) => {
     setBrowserError('');
+    setBrowserSearch('');
     const res = await window.electronAPI.listSharedDir(root, subpath);
     if (res.error) { setBrowserError(res.error); setBrowserEntries([]); return; }
     setBrowserEntries(res.entries || []);
@@ -996,8 +1001,11 @@ function App() {
                         </button>
                       </div>
                       {browserError && <div style={{ color: '#e74c3c', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{browserError}</div>}
+                      {browserEntries.length > 0 && (
+                        <input type="text" value={browserSearch} onChange={e => setBrowserSearch(e.target.value)} placeholder="Search in this folder…" className="glass-input" style={{ width: '100%', marginBottom: '0.75rem', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {browserEntries.map((en, i) => (
+                        {browserEntries.filter(en => en.name.toLowerCase().includes(browserSearch.toLowerCase().trim())).map((en, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
                             <div onClick={() => en.isDir && openBrowserFolder(en.name)} style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, cursor: en.isDir ? 'pointer' : 'default' }}>
                               <span>{en.isDir ? '📁' : '🎵'}</span>
@@ -1137,14 +1145,17 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'library' && (
+          {activeTab === 'library' && (() => {
+            const libraryFiltered = downloadedFiles.filter(f => f.name.toLowerCase().includes(librarySearch.toLowerCase().trim()));
+            return (
             <div className="glass-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: 0 }}>Library <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>{downloadedFiles.length} tracks</span></h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Library <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>{librarySearch.trim() ? `${libraryFiltered.length} / ${downloadedFiles.length}` : downloadedFiles.length} tracks</span></h3>
+                <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Search tracks…" className="glass-input" style={{ flex: 1, maxWidth: '360px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
                 <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {downloadedFiles.map((file, i) => {
+                {libraryFiltered.map((file, i) => {
                   const basename = file.name.split(/[/\\]/).pop() || file.name;
                   const folder = file.name.includes('/') || file.name.includes('\\')
                     ? file.name.substring(0, file.name.lastIndexOf(file.name.includes('\\') ? '\\' : '/'))
@@ -1168,12 +1179,13 @@ function App() {
                     </div>
                   );
                 })}
-                {downloadedFiles.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No music files in library.</div>
+                {libraryFiltered.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() ? 'No tracks match your search.' : 'No music files in library.'}</div>
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
           {activeTab === 'about' && (
             <div style={{ maxWidth: '720px' }}>
               <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
@@ -1741,8 +1753,9 @@ function App() {
               </div>
 
               {/* Local Downloads Library Section */}
-              <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
-                <h3 style={{ margin: 0 }}>Local Downloads Library</h3>
+              <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
+                <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Local Downloads Library</h3>
+                <input type="text" value={transferSearch} onChange={e => setTransferSearch(e.target.value)} placeholder="Search files…" className="glass-input" style={{ flex: 1, maxWidth: '320px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
                 <div style={{ display: 'flex', gap: '10px' }}>
                   {selectedFiles.length > 0 && (
                     <>
@@ -1759,7 +1772,7 @@ function App() {
               </div>
 
               <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '5px' }}>
-                {downloadedFiles.map((file, i) => {
+                {downloadedFiles.filter(file => file.name.toLowerCase().includes(transferSearch.toLowerCase().trim())).map((file, i) => {
                   const isSeeding = !!file.magnetUri;
                   return (
                     <div key={i} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '15px' }}>
