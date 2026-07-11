@@ -25,3 +25,6 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+# yt-dlp dumps the YouTube player script into cwd during extraction
+*-player-script.js
