@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPeerProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('peer:progress'); ipcRenderer.on('peer:progress', (_, data) => callback(data)); },
   onPeerChat: (callback: (data: { from: string; text: string; ts: number }) => void) => { ipcRenderer.removeAllListeners('peer:chat'); ipcRenderer.on('peer:chat', (_, data) => callback(data)); },
 
+  onNavGoto: (callback: (tab: string) => void) => { ipcRenderer.removeAllListeners('nav:goto'); ipcRenderer.on('nav:goto', (_, tab) => callback(tab)); },
+
   onDownloadLog: (callback: (msg: string) => void) => { ipcRenderer.removeAllListeners('download:log'); ipcRenderer.on('download:log', (_, msg) => callback(msg)); },
   onDownloadProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('download:progress'); ipcRenderer.on('download:progress', (_, data) => callback(data)); },
   

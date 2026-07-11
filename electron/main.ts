@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 
@@ -11,6 +11,50 @@ process.env.DIST = join(import.meta.dirname, '../dist')
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : join(process.env.DIST, '../public')
 
 let win: BrowserWindow | null
+
+// Native menu mirrors the sidebar sections with Ctrl+1..9 accelerators.
+const NAV_SECTIONS: [string, string][] = [
+  ['Peer Node', 'peer'],
+  ['Network', 'network'],
+  ['Downloader', 'download'],
+  ['Library', 'library'],
+  ['Organize', 'organize'],
+  ['Shared Files', 'browser'],
+  ['Transfers', 'files'],
+  ['Configuration', 'settings'],
+  ['About', 'about'],
+];
+
+function buildMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+    { label: 'File', submenu: [{ role: 'quit' }] },
+    { role: 'editMenu' },
+    {
+      label: 'Go',
+      submenu: NAV_SECTIONS.map(([label, tab], i) => ({
+        label,
+        accelerator: `CmdOrCtrl+${i + 1}`,
+        click: () => win?.webContents.send('nav:goto', tab),
+      })),
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -473,6 +517,8 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
 });
 
 app.whenReady().then(() => {
+  buildMenu();
+
   protocol.handle('media', (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
     const absolutePath = path.resolve(filePath);

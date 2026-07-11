@@ -109,6 +109,9 @@ function App() {
       setPeerStatus(status);
     });
 
+    // Native menu "Go" items / Ctrl+1..9 accelerators
+    window.electronAPI.onNavGoto?.((tab: string) => setActiveTab(tab));
+
     window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number }) => {
       setChatMessages(prev => [...prev, data].slice(-100));
     });
@@ -910,31 +913,31 @@ function App() {
 
         <nav className="nav-menu">
           <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')} title="Peer Node">
-            <span className="icon"><Radio size={18} /></span> {!sidebarCollapsed && 'Peer Node'}
+            <span className="icon"><Radio size={16} /></span> {!sidebarCollapsed && 'Peer Node'}
           </button>
           <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
-            <span className="icon"><Globe size={18} /></span> {!sidebarCollapsed && 'Network'}
+            <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && 'Network'}
           </button>
           <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Downloader">
-            <span className="icon"><Download size={18} /></span> {!sidebarCollapsed && 'Downloader'}
+            <span className="icon"><Download size={16} /></span> {!sidebarCollapsed && 'Downloader'}
           </button>
           <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
-            <span className="icon"><Music size={18} /></span> {!sidebarCollapsed && 'Library'}
+            <span className="icon"><Music size={16} /></span> {!sidebarCollapsed && 'Library'}
           </button>
           <button className={`nav-item ${activeTab === 'organize' ? 'active' : ''}`} onClick={() => setActiveTab('organize')} title="Organize">
-            <span className="icon"><ListMusic size={18} /></span> {!sidebarCollapsed && 'Organize'}
+            <span className="icon"><ListMusic size={16} /></span> {!sidebarCollapsed && 'Organize'}
           </button>
           <button className={`nav-item ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')} title="Shared Files">
-            <span className="icon"><Folder size={18} /></span> {!sidebarCollapsed && 'Shared Files'}
+            <span className="icon"><Folder size={16} /></span> {!sidebarCollapsed && 'Shared Files'}
           </button>
           <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Transfers">
-            <span className="icon"><FolderSync size={18} /></span> {!sidebarCollapsed && 'Transfers'}
+            <span className="icon"><FolderSync size={16} /></span> {!sidebarCollapsed && 'Transfers'}
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuration">
-            <span className="icon"><Settings size={18} /></span> {!sidebarCollapsed && 'Configuration'}
+            <span className="icon"><Settings size={16} /></span> {!sidebarCollapsed && 'Configuration'}
           </button>
           <button className={`nav-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')} title="About">
-            <span className="icon"><Info size={18} /></span> {!sidebarCollapsed && 'About'}
+            <span className="icon"><Info size={16} /></span> {!sidebarCollapsed && 'About'}
           </button>
         </nav>
 
@@ -944,7 +947,7 @@ function App() {
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
           style={{ marginTop: 'auto' }}
         >
-          <span className="icon">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</span>
+          <span className="icon">{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</span>
           {!sidebarCollapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
         </button>
 
