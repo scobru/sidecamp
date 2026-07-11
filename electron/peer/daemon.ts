@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { WebSocket } from "ws";
 import { EventEmitter } from "events";
 
+const VALID_EXTENSIONS = new Set(['.mp3', '.flac', '.ogg', '.m4a', '.wav']);
+
 export interface PeerConfig {
     server: string;
     token: string;
@@ -34,7 +36,6 @@ export class PeerDaemon extends EventEmitter {
         this.emit("log", "Avvio scansione cartelle locali...");
         this.fileIndex.clear();
         
-        const validExtensions = new Set(['.mp3', '.flac', '.ogg', '.m4a', '.wav']);
         let files: string[] = [];
 
         const allFolders = (Array.isArray(this.config.folders) 
@@ -50,7 +51,6 @@ export class PeerDaemon extends EventEmitter {
             }
         }
 
-        files = files.filter(f => validExtensions.has(path.extname(f).toLowerCase()));
         this.emit("log", `Trovati ${files.length} file audio. Estrazione metadati...`);
 
         const indexData = [];
@@ -98,14 +98,13 @@ export class PeerDaemon extends EventEmitter {
     }
 
     private walkDir(dir: string, files: string[] = []) {
-        const list = fs.readdirSync(dir);
+        const list = fs.readdirSync(dir, { withFileTypes: true });
         for (const item of list) {
-            const itemPath = path.join(dir, item);
+            const itemPath = path.join(dir, item.name);
             try {
-                const stat = fs.statSync(itemPath);
-                if (stat.isDirectory()) {
+                if (item.isDirectory()) {
                     this.walkDir(itemPath, files);
-                } else {
+                } else if (item.isFile() && VALID_EXTENSIONS.has(path.extname(item.name).toLowerCase())) {
                     files.push(itemPath);
                 }
             } catch (e) {}
