@@ -45,9 +45,12 @@ export class PeerDaemon extends EventEmitter {
             .filter(f => f.length > 0);
 
         for (const folder of allFolders) {
-            if (fs.existsSync(folder)) {
-                this.walkDir(folder, files);
-            }
+            try {
+                const stat = await fs.promises.stat(folder);
+                if (stat.isDirectory()) {
+                    await this.walkDir(folder, files);
+                }
+            } catch (e) {}
         }
 
         files = files.filter(f => validExtensions.has(path.extname(f).toLowerCase()));
@@ -97,19 +100,18 @@ export class PeerDaemon extends EventEmitter {
         return indexData;
     }
 
-    private walkDir(dir: string, files: string[] = []) {
-        const list = fs.readdirSync(dir);
-        for (const item of list) {
-            const itemPath = path.join(dir, item);
-            try {
-                const stat = fs.statSync(itemPath);
-                if (stat.isDirectory()) {
-                    this.walkDir(itemPath, files);
+    private async walkDir(dir: string, files: string[] = []) {
+        try {
+            const list = await fs.promises.readdir(dir, { withFileTypes: true });
+            for (const item of list) {
+                const itemPath = path.join(dir, item.name);
+                if (item.isDirectory()) {
+                    await this.walkDir(itemPath, files);
                 } else {
                     files.push(itemPath);
                 }
-            } catch (e) {}
-        }
+            }
+        } catch (e) {}
     }
 
     public async start() {
