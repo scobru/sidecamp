@@ -175,14 +175,18 @@ ipcMain.handle('downloads:delete', async (event, filePath) => {
       throw new Error("Access denied: invalid path");
     }
 
-    if (fs.existsSync(normalizedPath)) {
-      fs.unlinkSync(normalizedPath);
+    const exists = await fs.promises.access(normalizedPath).then(() => true).catch(() => false);
+    if (exists) {
+      await fs.promises.unlink(normalizedPath);
       // Clean up empty directories
       const dir = path.dirname(normalizedPath);
-      if (dir !== downloadDir && fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        if (files.length === 0) {
-          fs.rmdirSync(dir);
+      if (dir !== downloadDir) {
+        const dirExists = await fs.promises.access(dir).then(() => true).catch(() => false);
+        if (dirExists) {
+          const files = await fs.promises.readdir(dir);
+          if (files.length === 0) {
+            await fs.promises.rmdir(dir);
+          }
         }
       }
       return true;
@@ -224,15 +228,15 @@ ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
 ipcMain.handle('downloads:rename', async (event, filePath, newFilename) => {
   const dir = path.dirname(filePath);
   const destPath = path.join(dir, newFilename);
-  fs.renameSync(filePath, destPath);
+  await fs.promises.rename(filePath, destPath);
   return destPath;
 });
 
 ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
   const fileName = path.basename(filePath);
   const destPath = path.join(destFolder, fileName);
-  fs.mkdirSync(destFolder, { recursive: true });
-  fs.renameSync(filePath, destPath);
+  await fs.promises.mkdir(destFolder, { recursive: true });
+  await fs.promises.rename(filePath, destPath);
   return destPath;
 });
 
