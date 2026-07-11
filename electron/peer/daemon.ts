@@ -37,7 +37,14 @@ export class PeerDaemon extends EventEmitter {
         const validExtensions = new Set(['.mp3', '.flac', '.ogg', '.m4a', '.wav']);
         let files: string[] = [];
 
-        for (const folder of this.config.folders) {
+        const allFolders = (Array.isArray(this.config.folders) 
+            ? this.config.folders 
+            : [this.config.folders as any])
+            .flatMap(f => f.split(';'))
+            .map(f => f.trim())
+            .filter(f => f.length > 0);
+
+        for (const folder of allFolders) {
             if (fs.existsSync(folder)) {
                 this.walkDir(folder, files);
             }
