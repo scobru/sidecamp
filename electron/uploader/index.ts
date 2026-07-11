@@ -23,7 +23,9 @@ export class TuneCampUploader {
      * Uploads a local file to TuneCamp via the /api/admin/upload/tracks endpoint
      */
     public async uploadTrack(filePath: string, metadata?: { releaseSlug?: string, artist?: string, album?: string, artistId?: number }): Promise<any> {
-        if (!fs.existsSync(filePath)) {
+        try {
+            await fs.promises.access(filePath);
+        } catch {
             throw new Error(`File not found: ${filePath}`);
         }
 

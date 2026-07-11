@@ -45,8 +45,11 @@ export class PeerDaemon extends EventEmitter {
             .filter(f => f.length > 0);
 
         for (const folder of allFolders) {
-            if (fs.existsSync(folder)) {
-                this.walkDir(folder, files);
+            try {
+                await fs.promises.access(folder);
+                await this.walkDir(folder, files);
+            } catch {
+                // ignore if folder doesn't exist
             }
         }
 
@@ -97,14 +100,14 @@ export class PeerDaemon extends EventEmitter {
         return indexData;
     }
 
-    private walkDir(dir: string, files: string[] = []) {
-        const list = fs.readdirSync(dir);
+    private async walkDir(dir: string, files: string[] = []) {
+        const list = await fs.promises.readdir(dir);
         for (const item of list) {
             const itemPath = path.join(dir, item);
             try {
-                const stat = fs.statSync(itemPath);
+                const stat = await fs.promises.stat(itemPath);
                 if (stat.isDirectory()) {
-                    this.walkDir(itemPath, files);
+                    await this.walkDir(itemPath, files);
                 } else {
                     files.push(itemPath);
                 }
@@ -196,9 +199,15 @@ export class PeerDaemon extends EventEmitter {
         }
     }
 
-    private handleRequest(requestId: string, trackId: string) {
+    private async handleRequest(requestId: string, trackId: string) {
         const track = this.fileIndex.get(trackId);
-        if (!track || !fs.existsSync(track.path)) {
+        if (!track) {
+            this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
+            return;
+        }
+        try {
+            await fs.promises.access(track.path);
+        } catch {
             this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
             return;
         }

@@ -36,8 +36,10 @@ export class NetworkService {
     const cleanServer = server.replace(/\/$/, '');
     const url = `${cleanServer}/api/peers/${sessionId}/tracks/${trackId}/download?token=${token}`;
 
-    if (!fs.existsSync(this.downloadDir)) {
-      fs.mkdirSync(this.downloadDir, { recursive: true });
+    try {
+      await fs.promises.access(this.downloadDir);
+    } catch {
+      await fs.promises.mkdir(this.downloadDir, { recursive: true });
     }
 
     const response = await axios({
@@ -87,8 +89,10 @@ export class NetworkService {
     const cleanServer = server.replace(/\/$/, '');
     const url = `${cleanServer}/api/tracks/${trackId}/download`;
 
-    if (!fs.existsSync(this.downloadDir)) {
-      fs.mkdirSync(this.downloadDir, { recursive: true });
+    try {
+      await fs.promises.access(this.downloadDir);
+    } catch {
+      await fs.promises.mkdir(this.downloadDir, { recursive: true });
     }
 
     const response = await axios({
