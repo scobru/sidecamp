@@ -299,6 +299,10 @@ function App() {
   const startPlayback = (name: string, src: string, displayPath: string) => {
     setCurrentPlayback({ name, path: displayPath });
     setIsPlaying(true);
+    // Reset so the previous track's time/duration doesn't linger on the new one.
+    setCurrentTime(0);
+    setDuration(0);
+    setIsSeeking(false);
     if (audioRef.current) {
       audioRef.current.src = src;
       audioRef.current.play().catch(e => console.error("Playback failed:", e));
@@ -1657,7 +1661,12 @@ function App() {
           if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
         }}
         onDurationChange={() => {
-          if (audioRef.current) setDuration(audioRef.current.duration);
+          // Network/live streams report Infinity or NaN — treat those as "unknown" (0)
+          // instead of poisoning the seeker (max/value) and the time readout.
+          if (audioRef.current) {
+            const d = audioRef.current.duration;
+            setDuration(isFinite(d) ? d : 0);
+          }
         }}
         onEnded={() => {
           stopPlayback();
@@ -1682,11 +1691,12 @@ function App() {
             
             <div className="player-seeker">
               <span className="time-display">{formatTime(currentTime)}</span>
-              <input 
-                type="range" 
-                min="0" 
-                max={duration || 100} 
-                value={currentTime} 
+              <input
+                type="range"
+                min="0"
+                max={duration || 100}
+                value={duration ? Math.min(currentTime, duration) : 0}
+                disabled={!duration}
                 onMouseDown={() => setIsSeeking(true)}
                 onChange={(e) => handleSeekChange(parseFloat(e.target.value))} 
                 onMouseUp={handleSeekCommit}

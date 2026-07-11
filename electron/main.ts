@@ -235,7 +235,13 @@ ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
 });
 
 ipcMain.handle('dialog:pick-folder', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  // Parent the dialog to the window and re-focus the webContents afterward.
+  // Without this, on Windows the renderer loses input focus when the native
+  // dialog closes and text inputs stop accepting clicks until a page reload.
+  const result = win
+    ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+    : await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  win?.webContents.focus();
   return result.canceled ? null : result.filePaths[0];
 });
 
