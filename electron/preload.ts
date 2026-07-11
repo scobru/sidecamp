@@ -55,6 +55,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
 
+  // Library Organizer
+  organizeScan: (root: string, mode: string) => ipcRenderer.invoke('organize:scan', root, mode),
+  organizeApply: (root: string, actions: any[]) => ipcRenderer.invoke('organize:apply', root, actions),
+
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
   getPeerTracks: (server: string, token: string, sessionId: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId),

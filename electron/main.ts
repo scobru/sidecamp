@@ -380,6 +380,38 @@ ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: s
   }
 });
 
+// --- Library Organizer IPC ---
+import { scanDir, buildPlan, applyPlan, OrganizeMode } from './organizer';
+import { cacheGet, cachePut } from './organizer-cache';
+
+ipcMain.handle('organize:scan', async (event, root: string, mode: OrganizeMode) => {
+  if (!root) return { error: 'No folder selected' };
+  try {
+    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
+    let tracks = await cacheGet(root, dirMtime);
+    if (!tracks) {
+      tracks = await scanDir(root);
+      await cachePut(root, dirMtime, tracks);
+    }
+    return buildPlan(tracks, root, mode);
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('organize:apply', async (event, root: string, actions: any[]) => {
+  if (!root || !Array.isArray(actions)) return { error: 'Invalid request' };
+  try {
+    const result = await applyPlan(root, actions);
+    // layout changed → cached scan is stale
+    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
+    await cachePut(root, dirMtime, await scanDir(root));
+    return result;
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
 // --- Network Explorer IPC ---
 ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);

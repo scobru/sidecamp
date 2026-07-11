@@ -28,6 +28,13 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
+      # Asset filenames come from package.json "version" — sync it from the tag
+      # so v0.2.2 never ships files named 0.2.0 again.
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm version ${GITHUB_REF_NAME#v} --no-git-tag-version --allow-same-version
+        shell: bash
+
       # electron-builder targets the runner's OS (see per-platform targets in
       # package.json "build"). No signing certs in CI -> unsigned artifacts.
       # --publish never: we attach to the GitHub Release manually below, so

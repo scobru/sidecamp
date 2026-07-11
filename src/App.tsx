@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings, Info,
   Play, Pause, X, Volume2, Music, Magnet, Cloud,
-  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon
+  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
+  ListMusic
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -82,6 +83,14 @@ function App() {
   const [metadataArtist, setMetadataArtist] = useState('Sidecamp');
   const [metadataAlbum, setMetadataAlbum] = useState('');
   
+  // Library Organizer States
+  const [organizeRoot, setOrganizeRoot] = useState('');
+  const [organizeMode, setOrganizeMode] = useState<'artist' | 'artist-album' | 'genre'>('artist');
+  const [organizePlan, setOrganizePlan] = useState<{ actions: { type: string; from: string; to: string }[]; stats: any } | null>(null);
+  const [organizeBusy, setOrganizeBusy] = useState(false);
+  const [organizeError, setOrganizeError] = useState('');
+  const [organizeResult, setOrganizeResult] = useState<{ done: number; errors: string[] } | null>(null);
+
   // Auto-Upload Watcher States
   const [autoUpload, _setAutoUpload] = useState(() => {
     return localStorage.getItem('auto_upload') === 'true';
@@ -815,6 +824,50 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  const handleOrganizePickFolder = async () => {
+    const dir = await window.electronAPI.pickFolder();
+    if (dir) {
+      setOrganizeRoot(dir);
+      setOrganizePlan(null);
+      setOrganizeResult(null);
+      setOrganizeError('');
+    }
+  };
+
+  const handleOrganizeScan = async (mode = organizeMode) => {
+    if (!organizeRoot) return;
+    setOrganizeBusy(true);
+    setOrganizeError('');
+    setOrganizeResult(null);
+    try {
+      const res = await window.electronAPI.organizeScan(organizeRoot, mode);
+      if (res?.error) { setOrganizeError(res.error); setOrganizePlan(null); }
+      else setOrganizePlan(res);
+    } catch (e: any) {
+      setOrganizeError(e.message);
+    } finally {
+      setOrganizeBusy(false);
+    }
+  };
+
+  const handleOrganizeApply = async () => {
+    if (!organizeRoot || !organizePlan?.actions.length) return;
+    setOrganizeBusy(true);
+    setOrganizeError('');
+    try {
+      const res = await window.electronAPI.organizeApply(organizeRoot, organizePlan.actions);
+      if (res?.error) setOrganizeError(res.error);
+      else {
+        setOrganizeResult(res);
+        setOrganizePlan(null);
+      }
+    } catch (e: any) {
+      setOrganizeError(e.message);
+    } finally {
+      setOrganizeBusy(false);
+    }
+  };
+
   return (
     <div className="app-container">
       <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -842,6 +895,9 @@ function App() {
           </button>
           <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
             <span className="icon"><Music size={18} /></span> {!sidebarCollapsed && 'Library'}
+          </button>
+          <button className={`nav-item ${activeTab === 'organize' ? 'active' : ''}`} onClick={() => setActiveTab('organize')} title="Organize">
+            <span className="icon"><ListMusic size={18} /></span> {!sidebarCollapsed && 'Organize'}
           </button>
           <button className={`nav-item ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')} title="Shared Files">
             <span className="icon"><Folder size={18} /></span> {!sidebarCollapsed && 'Shared Files'}
@@ -940,6 +996,90 @@ function App() {
                     </>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'organize' && (
+            <div className="glass-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0 }}>Organize <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>rename, sort & deduplicate a music folder</span></h3>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                <button className="btn btn-secondary" onClick={handleOrganizePickFolder} disabled={organizeBusy} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Folder size={16} /> {organizeRoot ? 'Change folder' : 'Pick folder'}
+                </button>
+                {organizeRoot && <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)', wordBreak: 'break-all' }}>{organizeRoot}</span>}
+              </div>
+
+              {organizeRoot && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  <select
+                    className="glass-input"
+                    value={organizeMode}
+                    onChange={e => { const m = e.target.value as any; setOrganizeMode(m); if (organizePlan) handleOrganizeScan(m); }}
+                    disabled={organizeBusy}
+                    style={{ width: 'auto', padding: '0.4rem 0.8rem' }}
+                  >
+                    <option value="artist">By Artist</option>
+                    <option value="artist-album">By Artist / Album</option>
+                    <option value="genre">By Genre</option>
+                  </select>
+                  <button className="btn btn-primary" onClick={() => handleOrganizeScan()} disabled={organizeBusy}>
+                    {organizeBusy ? 'Working…' : 'Scan'}
+                  </button>
+                  {organizePlan && organizePlan.actions.length > 0 && (
+                    <button className="btn btn-primary" onClick={handleOrganizeApply} disabled={organizeBusy}>
+                      Apply {organizePlan.actions.length} changes
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {organizeError && <div style={{ color: '#e74c3c', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{organizeError}</div>}
+
+              {organizeResult && (
+                <div style={{ padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                  Done — {organizeResult.done} files moved.
+                  {organizeResult.errors.length > 0 && (
+                    <div style={{ color: '#e74c3c', marginTop: '4px' }}>
+                      {organizeResult.errors.length} errors: {organizeResult.errors.slice(0, 5).join('; ')}{organizeResult.errors.length > 5 ? '…' : ''}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {organizePlan && (
+                <>
+                  <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    <span>{organizePlan.stats.total} tracks</span>
+                    <span>{organizePlan.stats.toMove} to move/rename</span>
+                    <span>{organizePlan.stats.duplicates} duplicates</span>
+                    <span>{organizePlan.stats.alreadyOk} already in place</span>
+                  </div>
+                  {organizePlan.actions.length === 0 && (
+                    <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Everything already organized. Nothing to do.</div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '50vh', overflowY: 'auto' }}>
+                    {organizePlan.actions.map((a, i) => (
+                      <div key={i} style={{ padding: '0.5rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                        <span style={{ color: a.type === 'duplicate' ? '#e7a63c' : 'var(--text-muted)' }}>
+                          {a.type === 'duplicate' ? '⧉ dup ' : '→ '}
+                        </span>
+                        <span style={{ wordBreak: 'break-all' }}>{a.from.slice(organizeRoot.length + 1)}</span>
+                        <span style={{ color: 'var(--text-muted)' }}> → </span>
+                        <span style={{ wordBreak: 'break-all', color: 'var(--text-main)' }}>{a.to.slice(organizeRoot.length + 1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {!organizeRoot && (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Pick a music folder to scan. Nothing is moved until you review the plan and click Apply.
+                </div>
               )}
             </div>
           )}
