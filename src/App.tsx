@@ -40,7 +40,6 @@ function App() {
   // Per-list search filters
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
-  const [transferSearch, setTransferSearch] = useState('');
 
   // Direct Download & Torrent States
   const [downloadSource, setDownloadSource] = useState('soulseek'); // 'soulseek' | 'direct'
@@ -1149,10 +1148,18 @@ function App() {
             const libraryFiltered = downloadedFiles.filter(f => f.name.toLowerCase().includes(librarySearch.toLowerCase().trim()));
             return (
             <div className="glass-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                 <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Library <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>{librarySearch.trim() ? `${libraryFiltered.length} / ${downloadedFiles.length}` : downloadedFiles.length} tracks</span></h3>
-                <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Search tracks…" className="glass-input" style={{ flex: 1, maxWidth: '360px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
-                <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
+                <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Search tracks…" className="glass-input" style={{ flex: 1, minWidth: '160px', maxWidth: '360px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {selectedFiles.length > 0 && (
+                    <>
+                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed Selected ({selectedFiles.length})</button>
+                      <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
+                    </>
+                  )}
+                  <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
+                </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {libraryFiltered.map((file, i) => {
@@ -1160,11 +1167,17 @@ function App() {
                   const folder = file.name.includes('/') || file.name.includes('\\')
                     ? file.name.substring(0, file.name.lastIndexOf(file.name.includes('\\') ? '\\' : '/'))
                     : null;
+                  const isSeeding = !!file.magnetUri;
                   return (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', transition: 'background 0.15s' }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                     >
+                      {isSeeding ? (
+                        <div style={{ width: '18px', textAlign: 'center', color: '#2ecc71', fontSize: '0.9rem', flexShrink: 0 }} title="Already seeding">✓</div>
+                      ) : (
+                        <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={e => setSelectedFiles(prev => e.target.checked ? [...prev, file.path] : prev.filter(p => p !== file.path))} style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }} />
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{basename}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', gap: '10px' }}>
@@ -1172,9 +1185,16 @@ function App() {
                           {folder && <span style={{ opacity: 0.7 }}>📁 {folder}</span>}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary" onClick={() => playTrack(basename, file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
                         <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
+                        <button className="btn btn-accent" onClick={() => handleUploadFile(file.path)} disabled={uploadingFilePath !== null} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>{uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TC'}</button>
+                        {file.magnetUri ? (
+                          <button className="btn btn-secondary" onClick={() => { navigator.clipboard.writeText(file.magnetUri); alert('Magnet URI copied to clipboard!'); }} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem', color: '#2ecc71', borderColor: '#2ecc71' }}>🟢 Copy Link</button>
+                        ) : (
+                          <button className="btn btn-secondary" onClick={() => handleSeedFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>🧲 Seed</button>
+                        )}
+                        <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} disabled={uploadingFilePath === file.path} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Delete</button>
                       </div>
                     </div>
                   );
@@ -1182,6 +1202,14 @@ function App() {
                 {libraryFiltered.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() ? 'No tracks match your search.' : 'No music files in library.'}</div>
                 )}
+              </div>
+
+              <div className="terminal-log" style={{ marginTop: '2rem' }}>
+                <div className="terminal-header">Library Activity Logs</div>
+                <div className="terminal-body" style={{ height: '180px' }}>
+                  {libraryLogs.map((log, i) => <div key={i} className="log-line">{log}</div>)}
+                  {libraryLogs.length === 0 && <div className="log-line dim">No library activity logs...</div>}
+                </div>
               </div>
             </div>
             );
@@ -1752,123 +1780,6 @@ function App() {
                 )}
               </div>
 
-              {/* Local Downloads Library Section */}
-              <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
-                <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Local Downloads Library</h3>
-                <input type="text" value={transferSearch} onChange={e => setTransferSearch(e.target.value)} placeholder="Search files…" className="glass-input" style={{ flex: 1, maxWidth: '320px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {selectedFiles.length > 0 && (
-                    <>
-                      <button className="btn btn-accent" onClick={handleSeedSelectedClick}>
-                        🧲 Seed Selected ({selectedFiles.length})
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => setSelectedFiles([])}>
-                        Clear Selection
-                      </button>
-                    </>
-                  )}
-                  <button className="btn btn-secondary" onClick={loadDownloadedFiles}>Refresh</button>
-                </div>
-              </div>
-
-              <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '5px' }}>
-                {downloadedFiles.filter(file => file.name.toLowerCase().includes(transferSearch.toLowerCase().trim())).map((file, i) => {
-                  const isSeeding = !!file.magnetUri;
-                  return (
-                    <div key={i} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      {!isSeeding && (
-                        <input 
-                          type="checkbox" 
-                          checked={selectedFiles.includes(file.path)} 
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedFiles(prev => [...prev, file.path]);
-                            } else {
-                              setSelectedFiles(prev => prev.filter(p => p !== file.path));
-                            }
-                          }}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                      )}
-                      {isSeeding && (
-                        <div style={{ width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2ecc71', fontSize: '0.9rem' }} title="Already seeding">
-                          ✓
-                        </div>
-                      )}
-                      
-                      <div className="result-info" style={{ flex: 1 }}>
-                        <div className="result-filename" style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all' }}>
-                          {file.name}
-                        </div>
-                        <div className="result-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                          {(file.size / 1024 / 1024).toFixed(2)} MB • {new Date(file.ctime).toLocaleString()}
-                        </div>
-                      </div>
-                      
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button 
-                          className="btn btn-primary" 
-                          onClick={() => playTrack(file.name, file.path)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                        >
-                          Play
-                        </button>
-                        <button 
-                          className="btn btn-accent" 
-                          onClick={() => handleUploadFile(file.path)}
-                          disabled={uploadingFilePath !== null}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                        >
-                          {uploadingFilePath === file.path ? 'Uploading...' : 'Upload to TC'}
-                        </button>
-                        {file.magnetUri ? (
-                          <button 
-                            className="btn btn-secondary" 
-                            onClick={() => {
-                              navigator.clipboard.writeText(file.magnetUri);
-                              alert("Magnet URI copied to clipboard!");
-                            }}
-                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', color: '#2ecc71', borderColor: '#2ecc71' }}
-                          >
-                            🟢 Seeding (Copy Link)
-                          </button>
-                        ) : (
-                          <button 
-                            className="btn btn-secondary" 
-                            onClick={() => handleSeedFile(file.path)}
-                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                          >
-                            🧲 Seed Torrent
-                          </button>
-                        )}
-                        <button 
-                          className="btn btn-danger" 
-                          onClick={() => handleDeleteFile(file.path)}
-                          disabled={uploadingFilePath === file.path}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {downloadedFiles.length === 0 && (
-                  <div className="no-results" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    No music files found in Sidecamp's downloads folder.
-                  </div>
-                )}
-              </div>
-
-              {/* Logs di Libreria */}
-              <div className="terminal-log" style={{ marginTop: '2rem' }}>
-                <div className="terminal-header">Library Activity Logs</div>
-                <div className="terminal-body" style={{ height: '180px' }}>
-                  {libraryLogs.map((log, i) => <div key={i} className="log-line">{log}</div>)}
-                  {libraryLogs.length === 0 && <div className="log-line dim">No library activity logs...</div>}
-                </div>
-              </div>
             </div>
           )}
       </main>

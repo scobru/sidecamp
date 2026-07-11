@@ -114,6 +114,13 @@ const setSharedRoots = (roots: unknown) => {
   if (!Array.isArray(roots)) return;
   sharedRoots = roots.filter(r => typeof r === 'string' && r).map(r => path.resolve(r as string));
 };
+// A path is serveable/deletable if it sits inside the music dir, the download
+// dir, or any configured shared root.
+const allowedRoots = () => [path.resolve(musicDir), path.resolve(downloadDir), ...sharedRoots];
+const isUnderAllowedRoot = (p: string) => {
+  const abs = path.resolve(p);
+  return allowedRoots().some(base => abs === base || abs.startsWith(base + path.sep));
+};
 
 const slsk = new SoulseekService(musicDir, downloadDir);
 const torrent = new TorrentService(downloadDir);
@@ -242,17 +249,16 @@ ipcMain.handle('downloads:list', async (event, extraRoots?: string[]) => {
 ipcMain.handle('downloads:delete', async (event, filePath) => {
   try {
     const normalizedPath = path.resolve(filePath);
-    const normalizedDownloadDir = path.resolve(downloadDir);
-    if (!normalizedPath.startsWith(normalizedDownloadDir + path.sep)) {
+    if (!isUnderAllowedRoot(normalizedPath) || allowedRoots().includes(normalizedPath)) {
       throw new Error("Access denied: invalid path");
     }
 
     const exists = await fs.promises.access(normalizedPath).then(() => true).catch(() => false);
     if (exists) {
       await fs.promises.unlink(normalizedPath);
-      // Clean up empty directories
+      // Clean up empty directories, but never remove an allowed root itself.
       const dir = path.dirname(normalizedPath);
-      if (dir !== downloadDir) {
+      if (!allowedRoots().includes(dir)) {
         const dirExists = await fs.promises.access(dir).then(() => true).catch(() => false);
         if (dirExists) {
           const files = await fs.promises.readdir(dir);
@@ -273,7 +279,7 @@ ipcMain.handle('downloads:delete', async (event, filePath) => {
 ipcMain.handle('downloads:open', async (event, filePath) => {
   try {
     const resolvedPath = path.resolve(filePath);
-    if (!resolvedPath.startsWith(downloadDir + path.sep) && resolvedPath !== downloadDir) {
+    if (!isUnderAllowedRoot(resolvedPath)) {
       throw new Error("Access denied: Path is outside the download directory");
     }
     await shell.openPath(resolvedPath);
@@ -551,10 +557,7 @@ app.whenReady().then(() => {
   protocol.handle('media', async (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
     const absolutePath = path.resolve(filePath);
-    const under = (base: string) => absolutePath === base || absolutePath.startsWith(base + path.sep);
-    const allowed = under(musicDir) || under(downloadDir) || sharedRoots.some(under);
-
-    if (!allowed) {
+    if (!isUnderAllowedRoot(absolutePath)) {
       return new Response('Access Denied', { status: 403 });
     }
 
