@@ -96,7 +96,13 @@ import { TuneCampUploader } from './uploader';
 import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork, searchArchiveOrg } from './providers/search';
 import path from 'path';
 import fs from 'fs';
+import { Readable } from 'stream';
 import NodeID3 from 'node-id3';
+
+const AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.webm': 'audio/webm',
+};
 
 let daemon: PeerDaemon | null = null;
 const musicDir = path.join(app.getPath('music'), 'Sidecamp');
@@ -542,7 +548,7 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
 app.whenReady().then(() => {
   buildMenu();
 
-  protocol.handle('media', (request) => {
+  protocol.handle('media', async (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
     const absolutePath = path.resolve(filePath);
     const under = (base: string) => absolutePath === base || absolutePath.startsWith(base + path.sep);
@@ -552,7 +558,42 @@ app.whenReady().then(() => {
       return new Response('Access Denied', { status: 403 });
     }
 
-    return net.fetch(pathToFileURL(absolutePath).toString());
+    // Serve with byte-range support so the <audio> element can read duration
+    // and seek. net.fetch(file://) ignores Range, which left tracks unseekable
+    // and showing 0:00 duration.
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(absolutePath);
+    } catch {
+      return new Response('Not Found', { status: 404 });
+    }
+    const total = stat.size;
+    const mime = AUDIO_MIME[path.extname(absolutePath).toLowerCase()] || 'application/octet-stream';
+    const rangeHeader = request.headers.get('Range');
+    const m = rangeHeader && /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+    if (m) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : total - 1;
+      if (!Number.isFinite(start) || start < 0) start = 0;
+      if (!Number.isFinite(end) || end >= total) end = total - 1;
+      if (start > end) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${total}` } });
+      }
+      const stream = fs.createReadStream(absolutePath, { start, end });
+      return new Response(Readable.toWeb(stream) as any, {
+        status: 206,
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(end - start + 1),
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
+    return new Response(Readable.toWeb(fs.createReadStream(absolutePath)) as any, {
+      status: 200,
+      headers: { 'Content-Type': mime, 'Content-Length': String(total), 'Accept-Ranges': 'bytes' },
+    });
   });
 
   // Proxy remote audio streams from the TuneCamp server so the renderer can play
