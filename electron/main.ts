@@ -49,7 +49,7 @@ import { TorrentService } from './providers/torrent';
 import { YtdlpService } from './providers/ytdlp';
 import { NetworkService } from './providers/network';
 import { TuneCampUploader } from './uploader';
-import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork } from './providers/search';
+import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork, searchArchiveOrg } from './providers/search';
 import path from 'path';
 import fs from 'fs';
 import NodeID3 from 'node-id3';
@@ -97,6 +97,8 @@ ipcMain.handle('search:web', async (event, query, source, server, token) => {
     return await searchTorrents(query);
   } else if (source === 'network') {
     return await searchPeerNetwork(query, server, token);
+  } else if (source === 'archive') {
+    return await searchArchiveOrg(query);
   }
   return [];
 });

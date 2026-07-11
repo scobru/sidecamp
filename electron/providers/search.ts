@@ -119,6 +119,58 @@ export async function searchBandcamp(query: string): Promise<any[]> {
     }
 }
 
+// Search free audio on the Internet Archive (archive.org). Each hit resolves to
+// a direct file URL, downloaded via yt-dlp's generic extractor like other web URLs.
+const ARCHIVE_AUDIO_EXTS = ['.mp3', '.flac', '.ogg', '.wav', '.m4a', '.opus', '.wma', '.aac'];
+function isArchiveAudio(name: string, format?: string): boolean {
+    const lower = name.toLowerCase();
+    if (ARCHIVE_AUDIO_EXTS.some(ext => lower.endsWith(ext))) return true;
+    const fmt = (format || '').toLowerCase();
+    return /mp3|flac|ogg|wav|vorbis|audio/.test(fmt);
+}
+
+export async function searchArchiveOrg(query: string): Promise<any[]> {
+    try {
+        const q = `(${query}) AND mediatype:audio`;
+        const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier,title,creator&rows=10&output=json`;
+        const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+        if (!res.ok) { console.error(`Archive.org search error: ${res.status}`); return []; }
+        const docs = ((await res.json()) as any)?.response?.docs || [];
+
+        const nested = await Promise.all(docs.map(async (doc: any) => {
+            try {
+                const fRes = await fetch(`https://archive.org/metadata/${doc.identifier}/files`, {
+                    headers: { "User-Agent": USER_AGENT }
+                });
+                if (!fRes.ok) return [];
+                const files = ((await fRes.json()) as any)?.result || [];
+                return files
+                    .filter((f: any) => f.name && isArchiveAudio(f.name, f.format))
+                    .map((f: any) => {
+                        const encoded = f.name.split('/').map(encodeURIComponent).join('/');
+                        return {
+                            id: `archive_${doc.identifier}_${f.name}`,
+                            title: f.title || doc.title || f.name,
+                            artist: doc.creator || 'Unknown Artist',
+                            url: `https://archive.org/download/${doc.identifier}/${encoded}`,
+                            source: 'archive',
+                            size: parseInt(f.size) || 0,
+                            bitrate: 0,
+                            user: 'Archive.org'
+                        };
+                    });
+            } catch (e) {
+                console.error(`Archive.org files fetch failed for ${doc.identifier}:`, e);
+                return [];
+            }
+        }));
+        return nested.flat();
+    } catch (e) {
+        console.error("Archive.org search error:", e);
+        return [];
+    }
+}
+
 export async function searchTorrents(query: string): Promise<any[]> {
     const results: any[] = [];
 

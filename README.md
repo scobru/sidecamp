@@ -14,7 +14,8 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 
 ## Features
 
-- 🔎 **Unified Search** — Search Soulseek, SoundCloud, Bandcamp, torrents, and the TuneCamp peer network from one bar — all sources at once ("All Platforms") or one at a time.
+- 🔎 **Unified Search** — Search Soulseek, SoundCloud, Bandcamp, torrents, the Internet Archive (archive.org), and the TuneCamp peer network from one bar — all sources at once ("All Platforms") or one at a time.
+- 🏛️ **Internet Archive** — Search and download free/public-domain audio from archive.org (ingestion moved here from the TuneCamp server).
 - 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop with live progress.
 - 🎬 **yt-dlp Audio Ripping** — Rip audio from YouTube, SoundCloud, Bandcamp, and other platforms.
 - 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel.
@@ -109,7 +110,7 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 └─────────────┘                            └──────────────────┘
 ```
 
-- **Providers** (`electron/providers/`): Soulseek, Torrent, yt-dlp, and network modules.
+- **Providers** (`electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
 - **Uploader** (`electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
 - **Peer** (`electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
 - **Frontend** (`src/`): React + Vite UI rendered inside the Electron window.
