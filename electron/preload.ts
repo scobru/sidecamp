@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ytdlpDownload: (url: string) => ipcRenderer.invoke('ytdlp:download', url),
   
   // Local downloads library
-  listDownloads: () => ipcRenderer.invoke('downloads:list'),
+  listDownloads: (extraRoots?: string[]) => ipcRenderer.invoke('downloads:list', extraRoots),
   deleteDownload: (filePath: string) => ipcRenderer.invoke('downloads:delete', filePath),
   
   // Peer Daemon

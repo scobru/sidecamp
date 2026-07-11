@@ -101,6 +101,13 @@ import NodeID3 from 'node-id3';
 let daemon: PeerDaemon | null = null;
 const musicDir = path.join(app.getPath('music'), 'Sidecamp');
 const downloadDir = path.join(app.getPath('downloads'), 'Sidecamp');
+// Extra shared-folder roots (resolved) the user configured. Kept in sync from
+// peer:start and downloads:list so the media:// protocol can serve their files.
+let sharedRoots: string[] = [];
+const setSharedRoots = (roots: unknown) => {
+  if (!Array.isArray(roots)) return;
+  sharedRoots = roots.filter(r => typeof r === 'string' && r).map(r => path.resolve(r as string));
+};
 
 const slsk = new SoulseekService(musicDir, downloadDir);
 const torrent = new TorrentService(downloadDir);
@@ -195,16 +202,31 @@ async function scanAudioFiles(dir: string, baseDir: string): Promise<{ name: str
   return result;
 }
 
-ipcMain.handle('downloads:list', async () => {
+ipcMain.handle('downloads:list', async (event, extraRoots?: string[]) => {
   try {
-    try {
-      await fs.promises.access(downloadDir, fs.constants.F_OK);
-    } catch {
-      return [];
-    }
+    // Scan the download dir plus any configured shared folders, deduped by
+    // resolved path so a shared folder that equals downloadDir isn't double-scanned.
+    if (extraRoots) setSharedRoots(extraRoots);
+    const roots = [downloadDir, ...(Array.isArray(extraRoots) ? extraRoots : [])]
+      .map(r => path.resolve(r))
+      .filter((r, i, a) => a.indexOf(r) === i);
 
-    const result = await scanAudioFiles(downloadDir, downloadDir);
-    return result.sort((a, b) => b.ctime - a.ctime);
+    const seen = new Set<string>();
+    const merged: Awaited<ReturnType<typeof scanAudioFiles>> = [];
+    for (const root of roots) {
+      try {
+        await fs.promises.access(root, fs.constants.F_OK);
+      } catch {
+        continue;
+      }
+      const files = await scanAudioFiles(root, root);
+      for (const f of files) {
+        if (seen.has(f.path)) continue;
+        seen.add(f.path);
+        merged.push(f);
+      }
+    }
+    return merged.sort((a, b) => b.ctime - a.ctime);
   } catch (e) {
     console.error("Error reading downloads directory:", e);
     return [];
@@ -324,6 +346,7 @@ ipcMain.handle('ytdlp:download', async (event, url) => {
 // --- Peer Daemon IPC ---
 ipcMain.handle('peer:start', async (event, config: PeerConfig) => {
   if (daemon) daemon.stop();
+  setSharedRoots(config.folders);
   daemon = new PeerDaemon(config, (filePath) => torrent.getMagnetUriForFile(filePath));
   
   daemon.on('log', (msg) => win?.webContents.send('peer:log', msg));
@@ -522,10 +545,10 @@ app.whenReady().then(() => {
   protocol.handle('media', (request) => {
     const filePath = decodeURIComponent(request.url.slice('media://'.length));
     const absolutePath = path.resolve(filePath);
-    const isMusic = absolutePath.startsWith(musicDir + path.sep) || absolutePath === musicDir;
-    const isDownload = absolutePath.startsWith(downloadDir + path.sep) || absolutePath === downloadDir;
+    const under = (base: string) => absolutePath === base || absolutePath.startsWith(base + path.sep);
+    const allowed = under(musicDir) || under(downloadDir) || sharedRoots.some(under);
 
-    if (!isMusic && !isDownload) {
+    if (!allowed) {
       return new Response('Access Denied', { status: 403 });
     }
 

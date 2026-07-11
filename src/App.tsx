@@ -440,7 +440,8 @@ function App() {
 
   const loadDownloadedFiles = async () => {
     try {
-      const res = await window.electronAPI.listDownloads();
+      const roots = folder.split(/[,;]/).map(f => f.trim()).filter(Boolean);
+      const res = await window.electronAPI.listDownloads(roots);
       setDownloadedFiles(res);
       setSelectedFiles([]);
     } catch (e) {
