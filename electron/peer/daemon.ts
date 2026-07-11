@@ -40,7 +40,7 @@ export class PeerDaemon extends EventEmitter {
         const allFolders = (Array.isArray(this.config.folders) 
             ? this.config.folders 
             : [this.config.folders as any])
-            .flatMap(f => f.split(';'))
+            .flatMap(f => f.split(/[,;]/))
             .map(f => f.trim())
             .filter(f => f.length > 0);
 

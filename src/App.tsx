@@ -527,7 +527,7 @@ function App() {
     await window.electronAPI.startPeer({
       server,
       token,
-      folders: folder.split(',').map(f => f.trim()).filter(Boolean),
+      folders: folder.split(/[,;]/).map(f => f.trim()).filter(Boolean),
       allowDownloads: true
     });
   };
@@ -812,7 +812,7 @@ function App() {
     setTimeout(() => setSettingsSaved(false), 3000);
   };
 
-  const validFolders = folder.split(',').map(f => f.trim()).filter(Boolean);
+  const validFolders = folder.split(/[,;]/).map(f => f.trim()).filter(Boolean);
   const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
   const browserRoots = [
     ...(downloadsDir ? [{ label: 'Downloads', path: downloadsDir }] : []),
