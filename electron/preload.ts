@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Library Organizer
   organizeScan: (root: string, mode: string) => ipcRenderer.invoke('organize:scan', root, mode),
   organizeApply: (root: string, actions: any[]) => ipcRenderer.invoke('organize:apply', root, actions),
+  organizeFillGenres: (root: string) => ipcRenderer.invoke('organize:fill-genres', root),
+  organizeFillGenresCancel: () => ipcRenderer.invoke('organize:fill-genres-cancel'),
+  onGenreProgress: (callback: (data: { current: number; total: number; file: string; genre: string | null }) => void) => { ipcRenderer.removeAllListeners('organize:genre-progress'); ipcRenderer.on('organize:genre-progress', (_, data) => callback(data)); },
 
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),

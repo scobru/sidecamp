@@ -90,6 +90,9 @@ function App() {
   const [organizeBusy, setOrganizeBusy] = useState(false);
   const [organizeError, setOrganizeError] = useState('');
   const [organizeResult, setOrganizeResult] = useState<{ done: number; errors: string[] } | null>(null);
+  const [genreProgress, setGenreProgress] = useState<{ current: number; total: number; file: string; genre: string | null } | null>(null);
+  const [genreSummary, setGenreSummary] = useState<{ missing: number; found: number; written: number; cancelled: boolean } | null>(null);
+  const [genreBusy, setGenreBusy] = useState(false);
 
   // Auto-Upload Watcher States
   const [autoUpload, _setAutoUpload] = useState(() => {
@@ -850,6 +853,28 @@ function App() {
     }
   };
 
+  const handleFillGenres = async () => {
+    if (!organizeRoot || genreBusy) return;
+    setGenreBusy(true);
+    setGenreSummary(null);
+    setGenreProgress(null);
+    setOrganizeError('');
+    window.electronAPI.onGenreProgress((data: any) => setGenreProgress(data));
+    try {
+      const res = await window.electronAPI.organizeFillGenres(organizeRoot);
+      if (res?.error) setOrganizeError(res.error);
+      else {
+        setGenreSummary(res);
+        if (organizePlan) await handleOrganizeScan(); // refresh plan with new genres
+      }
+    } catch (e: any) {
+      setOrganizeError(e.message);
+    } finally {
+      setGenreBusy(false);
+      setGenreProgress(null);
+    }
+  };
+
   const handleOrganizeApply = async () => {
     if (!organizeRoot || !organizePlan?.actions.length) return;
     setOrganizeBusy(true);
@@ -1034,6 +1059,30 @@ function App() {
                       Apply {organizePlan.actions.length} changes
                     </button>
                   )}
+                  {!genreBusy && (
+                    <button className="btn btn-secondary" onClick={handleFillGenres} disabled={organizeBusy} title="Look up missing genres on Beatport (~1.4s per track)">
+                      Fill genres (Beatport)
+                    </button>
+                  )}
+                  {genreBusy && (
+                    <button className="btn btn-secondary" onClick={() => window.electronAPI.organizeFillGenresCancel()}>
+                      Cancel genre lookup
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {genreBusy && (
+                <div style={{ padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(179,102,255,0.12)', border: '1px solid var(--primary)', borderRadius: '8px', fontSize: '0.85rem', fontFamily: 'monospace' }}>
+                  {genreProgress
+                    ? <>Beatport {genreProgress.current}/{genreProgress.total} — {genreProgress.file} → {genreProgress.genre || 'no match'}</>
+                    : 'Scanning for tracks with missing genre…'}
+                </div>
+              )}
+
+              {genreSummary && (
+                <div style={{ padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                  Genres{genreSummary.cancelled ? ' (cancelled)' : ''} — {genreSummary.missing} tracks missing genre, {genreSummary.found} found on Beatport, {genreSummary.written} written to mp3 tags.
                 </div>
               )}
 

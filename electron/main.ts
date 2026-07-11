@@ -381,8 +381,9 @@ ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: s
 });
 
 // --- Library Organizer IPC ---
-import { scanDir, buildPlan, applyPlan, OrganizeMode } from './organizer';
+import { scanDir, buildPlan, applyPlan, OrganizeMode, Track } from './organizer';
 import { cacheGet, cachePut } from './organizer-cache';
+import { lookupGenre } from './beatport';
 
 ipcMain.handle('organize:scan', async (event, root: string, mode: OrganizeMode) => {
   if (!root) return { error: 'No folder selected' };
@@ -407,6 +408,44 @@ ipcMain.handle('organize:apply', async (event, root: string, actions: any[]) => 
     const dirMtime = (await fs.promises.stat(root)).mtimeMs;
     await cachePut(root, dirMtime, await scanDir(root));
     return result;
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
+// Beatport genre fill: long-running (~1.4s/track, polite rate limit), so it
+// streams progress events and supports cancellation via a simple flag.
+let genreFillCancelled = false;
+
+ipcMain.handle('organize:fill-genres-cancel', () => { genreFillCancelled = true; return true; });
+
+ipcMain.handle('organize:fill-genres', async (event, root: string) => {
+  if (!root) return { error: 'No folder selected' };
+  genreFillCancelled = false;
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+  try {
+    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
+    const tracks: Track[] = (await cacheGet(root, dirMtime)) ?? await scanDir(root);
+    const missing = tracks.filter(t => !t.genre && t.title);
+    let found = 0, written = 0;
+    for (let i = 0; i < missing.length; i++) {
+      if (genreFillCancelled) break;
+      const t = missing[i];
+      const genre = await lookupGenre(t.artist, t.title, net.fetch);
+      if (genre) {
+        found++;
+        t.genre = genre;
+        // node-id3 only writes mp3; other formats keep the genre in the scan
+        // cache so genre-mode organizing still works this session.
+        if (t.ext === '.mp3') {
+          try { if (NodeID3.update({ genre }, t.path) === true) written++; } catch { /* tag write is best-effort */ }
+        }
+      }
+      win?.webContents.send('organize:genre-progress', { current: i + 1, total: missing.length, file: path.basename(t.path), genre: genre || null });
+      await sleep(1400);
+    }
+    await cachePut(root, dirMtime, tracks);
+    return { missing: missing.length, found, written, cancelled: genreFillCancelled };
   } catch (err: any) {
     return { error: err.message };
   }
