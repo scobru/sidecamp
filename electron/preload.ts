@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveShared: (srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => ipcRenderer.invoke('fs:move', srcRoot, srcSub, name, destRoot, destSub),
   getDownloadsDir: () => ipcRenderer.invoke('app:downloads-dir'),
 
+  // Update check
+  checkForUpdate: () => ipcRenderer.invoke('app:update-check'),
+  openReleasesPage: () => ipcRenderer.invoke('app:open-releases'),
+
   // Events listener (log, progress, status). Each is a single logical
   // subscription — clear any previous listener first so a re-subscribe (React
   // StrictMode double-mount / remount) replaces it instead of stacking, which
