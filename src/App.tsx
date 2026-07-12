@@ -3,7 +3,7 @@ import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  Disc3, ChevronUp, ChevronDown
+  Disc3, ChevronUp, ChevronDown, ArrowUpCircle
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -116,6 +116,8 @@ function App() {
   const [autoUpload, _setAutoUpload] = useState(() => {
     return localStorage.getItem('auto_upload') === 'true';
   });
+  const [update, setUpdate] = useState<{ currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   useEffect(() => {
     // Listen to Peer Daemon logs
@@ -135,6 +137,9 @@ function App() {
     });
 
     window.electronAPI.getDownloadsDir().then((dir: string) => setDownloadsDir(dir || ''));
+
+    // One check per launch — result is cached in the main process.
+    window.electronAPI.checkForUpdate?.().then(setUpdate).catch(() => {});
 
     // Listen to download logs and progress
     window.electronAPI.onDownloadLog((msg: string) => {
@@ -1067,6 +1072,20 @@ function App() {
       </div>
 
       <main className="main-content">
+          {update?.updateAvailable && !updateDismissed && (
+            <div className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 1rem', marginBottom: '1rem' }}>
+              <ArrowUpCircle size={18} style={{ color: 'var(--accent, #4ade80)', flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: '0.9rem' }}>
+                Sidecamp <strong>{update.latestVersion}</strong> is available (you have {update.currentVersion}).
+              </span>
+              <button className="btn btn-primary" style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem' }} onClick={() => window.electronAPI.openReleasesPage()}>
+                Download
+              </button>
+              <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }} onClick={() => setUpdateDismissed(true)} title="Dismiss">
+                <X size={14} />
+              </button>
+            </div>
+          )}
           {activeTab === 'peer' && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>

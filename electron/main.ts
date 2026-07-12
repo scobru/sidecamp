@@ -463,6 +463,38 @@ ipcMain.handle('fs:delete', async (event, root: string, subpath: string, name: s
 
 ipcMain.handle('app:downloads-dir', () => downloadDir);
 
+// --- Update check against GitHub releases ---
+// Cached for the process lifetime: one GitHub API hit per app launch.
+const RELEASES_URL = 'https://github.com/scobru/sidecamp/releases/latest';
+let updateCheckResult: { currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null = null;
+
+ipcMain.handle('app:update-check', async () => {
+  if (updateCheckResult) return updateCheckResult;
+  const currentVersion = app.getVersion();
+  let latestVersion: string | null = null;
+  try {
+    const res = await fetch('https://api.github.com/repos/scobru/sidecamp/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) latestVersion = ((await res.json() as { tag_name?: string }).tag_name ?? '').replace(/^v/, '') || null;
+  } catch { /* offline: report no update, retry next launch */ }
+  const cmp = (a: string, b: string) => {
+    const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+    const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+    return 0;
+  };
+  updateCheckResult = {
+    currentVersion,
+    latestVersion,
+    updateAvailable: latestVersion !== null && cmp(latestVersion, currentVersion) > 0,
+  };
+  return updateCheckResult;
+});
+
+ipcMain.handle('app:open-releases', () => shell.openExternal(RELEASES_URL));
+
 ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => {
   if (!name) return { error: 'Nothing to move' };
   const src = path.resolve(srcRoot, srcSub || '', name);
