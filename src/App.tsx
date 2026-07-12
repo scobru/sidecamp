@@ -1095,9 +1095,15 @@ function App() {
                         <input type="text" value={browserSearch} onChange={e => setBrowserSearch(e.target.value)} placeholder="Search in this folder…" className="glass-input" style={{ width: '100%', marginBottom: '0.75rem', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {browserEntries.filter(en => en.name.toLowerCase().includes(browserSearch.toLowerCase().trim())).map((en, i) => (
+                        {(() => {
+                          const visible = browserEntries.filter(en => en.name.toLowerCase().includes(browserSearch.toLowerCase().trim()));
+                          const isAudio = (n: string) => /\.(mp3|flac|wav|ogg|m4a|mp4|webm)$/i.test(n);
+                          const audio = visible.filter(en => !en.isDir && isAudio(en.name));
+                          // Queue = the audio files of the folder view, so next/prev walk the folder.
+                          const browserQueue = audio.map(en => libraryQueueItem({ name: en.name, path: `${browserRoot}${browserPath ? '/' + browserPath : ''}/${en.name}` }));
+                          return visible.map((en, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
-                            <div onClick={() => en.isDir && openBrowserFolder(en.name)} style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, cursor: en.isDir ? 'pointer' : 'default' }}>
+                            <div onClick={() => en.isDir ? openBrowserFolder(en.name) : isAudio(en.name) && playAt(browserQueue, audio.indexOf(en))} title={en.isDir ? 'Open folder' : isAudio(en.name) ? 'Play' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, cursor: en.isDir || isAudio(en.name) ? 'pointer' : 'default' }}>
                               <span>{en.isDir ? '📁' : '🎵'}</span>
                               <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
                               {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
@@ -1117,7 +1123,8 @@ function App() {
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))}
+                          ));
+                        })()}
                         {browserEntries.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>Empty folder.</div>}
                       </div>
                     </>

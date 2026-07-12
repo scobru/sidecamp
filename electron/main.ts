@@ -110,6 +110,10 @@ const setSharedRoots = (roots: unknown) => {
   if (!Array.isArray(roots)) return;
   sharedRoots = roots.filter(r => typeof r === 'string' && r).map(r => path.resolve(r as string));
 };
+const addSharedRoot = (root: string) => {
+  const r = path.resolve(root);
+  if (!sharedRoots.includes(r)) sharedRoots.push(r);
+};
 // A path is serveable/deletable if it sits inside the music dir, the download
 // dir, or any configured shared root.
 const allowedRoots = () => [path.resolve(musicDir), path.resolve(downloadDir), ...sharedRoots];
@@ -415,6 +419,9 @@ function insideRoot(root: string, target: string): boolean {
 
 ipcMain.handle('fs:list', async (event, root: string, subpath: string) => {
   if (!root) return { error: 'No folder selected' };
+  // Browsing a root also whitelists it for media:// playback, so clicking a
+  // track in Shared Files works even if the Library scan never ran.
+  addSharedRoot(root);
   const target = path.resolve(root, subpath || '');
   if (!insideRoot(root, target)) return { error: 'Invalid path' };
   try {
