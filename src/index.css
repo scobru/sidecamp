@@ -922,11 +922,49 @@ body {
 .track-table .cell-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; }
 .track-table .seed-check { color: var(--success); font-size: 0.85rem; }
 
-.track-table th:nth-child(7), .track-table td:nth-child(7) { width: 56px; }  /* BPM */
-.track-table th:nth-child(8), .track-table td:nth-child(8) { width: 52px; }  /* Key */
-.track-table th:nth-child(9), .track-table td:nth-child(9) { width: 56px; }  /* Time */
-.track-table th:nth-child(10), .track-table td:nth-child(10) { width: 60px; } /* Size */
-.track-table th:nth-child(11), .track-table td:nth-child(11) { width: 86px; } /* Added */
+.track-table .col-bpm { width: 54px; }
+.track-table .col-key { width: 48px; }
+.track-table .col-time { width: 52px; }
+.track-table .col-year { width: 48px; }
+.track-table .col-kbps { width: 48px; }
+.track-table .col-size { width: 56px; }
+.track-table .col-added { width: 84px; }
+
+/* Collection pane (rekordbox-style category filter) next to the table */
+.library-body { display: flex; gap: 12px; align-items: stretch; }
+.library-body .track-table-wrap { flex: 1; min-width: 0; }
+.collection-pane {
+  flex: 0 0 180px;
+  max-height: calc(100vh - 340px);
+  overflow-y: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  background: var(--terminal-bg);
+  padding: 4px;
+  font-size: 0.8rem;
+}
+.coll-header {
+  padding: 8px 8px 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+}
+.coll-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.coll-item:hover { background: var(--row-hover-bg); color: var(--text-main); }
+.coll-item.active { background: rgba(168, 85, 247, 0.18); color: var(--primary); }
+.coll-item .coll-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll-item .coll-count { font-size: 0.68rem; color: var(--text-subtle); font-family: 'JetBrains Mono', monospace; }
+.coll-item.coll-all { font-weight: 600; }
 
 .track-table .col-actions { width: 158px; text-align: right; }
 .track-table .col-actions button {

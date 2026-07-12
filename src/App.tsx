@@ -53,6 +53,9 @@ function App() {
   // BPM auto-analysis (Web Audio decode + beat detection), one file at a time
   const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
   const analyzeCancelRef = useRef(false);
+  // Collection pane filter (artist / genre / top-level folder) + shift-click anchor
+  const [libFilter, setLibFilter] = useState<{ type: 'all' | 'artist' | 'genre' | 'folder'; value: string }>({ type: 'all', value: '' });
+  const lastCheckRef = useRef<number | null>(null);
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
   type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
   const [showPlaylists, setShowPlaylists] = useState(false);
@@ -520,6 +523,28 @@ function App() {
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
     }
+  };
+
+  // Bulk actions on the selection (checkbox column)
+  const handleDeleteSelected = async () => {
+    if (!confirm(`Delete ${selectedFiles.length} selected files? This cannot be undone.`)) return;
+    for (const p of selectedFiles) {
+      try { await window.electronAPI.deleteDownload(p); } catch (e) { console.error('Delete failed:', p, e); }
+    }
+    setDlLogs(prev => [...prev, `[Library] Deleted ${selectedFiles.length} selected files.`]);
+    setSelectedFiles([]);
+    loadDownloadedFiles();
+  };
+
+  const addSelectedToPlaylist = () => {
+    if (!activePlaylist) {
+      setShowPlaylists(true);
+      alert('Select or create a playlist first (Playlists panel just opened).');
+      return;
+    }
+    const byPath = new Map(downloadedFiles.map((f: any) => [f.path, f]));
+    selectedFiles.forEach(p => { const f = byPath.get(p); if (f) addTrackToActive(f); });
+    setSelectedFiles([]);
   };
 
   // Detect BPM for every library track that has none: decode with Web Audio
@@ -1422,6 +1447,7 @@ function App() {
 
           {activeTab === 'library' && (() => {
             const q = librarySearch.toLowerCase().trim();
+            const folderOf = (name: string) => { const parts = name.split(/[/\\]/); return parts.length > 1 ? parts[0] : '(root)'; };
             const rows = downloadedFiles.map(f => {
               const m = trackMeta[f.path];
               const basename = f.name.split(/[/\\]/).pop() || f.name;
@@ -1435,10 +1461,26 @@ function App() {
                 bpm: m?.bpm ?? null,
                 key: m?.key || '',
                 duration: m?.duration || 0,
+                year: m?.year ?? null,
+                kbps: m?.bitrate ? Math.round(m.bitrate / 1000) : 0,
               };
             });
+            // Collection pane data: counts over the whole library, not the filtered view
+            const countBy = (get: (r: typeof rows[0]) => string) => {
+              const map = new Map<string, number>();
+              rows.forEach(r => { const k = get(r) || '(unknown)'; map.set(k, (map.get(k) || 0) + 1); });
+              return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+            };
+            const artists = countBy(r => r.artist);
+            const genres = countBy(r => r.genre);
+            const folders = countBy(r => folderOf(r.file.name));
+            const catFiltered = rows.filter(r =>
+              libFilter.type === 'all' ? true :
+              libFilter.type === 'artist' ? (r.artist || '(unknown)') === libFilter.value :
+              libFilter.type === 'genre' ? (r.genre || '(unknown)') === libFilter.value :
+              folderOf(r.file.name) === libFilter.value);
             const cmpStr = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
-            const libraryFiltered = rows
+            const libraryFiltered = catFiltered
               .filter(r => `${r.title} ${r.artist} ${r.album} ${r.genre} ${r.file.name}`.toLowerCase().includes(q))
               .sort((a, b) => sortDir * (
                 sortCol === 'title' ? cmpStr(a.title, b.title) :
@@ -1448,10 +1490,34 @@ function App() {
                 sortCol === 'bpm' ? (a.bpm || 0) - (b.bpm || 0) :
                 sortCol === 'key' ? cmpStr(a.key, b.key) :
                 sortCol === 'time' ? a.duration - b.duration :
+                sortCol === 'year' ? (a.year || 0) - (b.year || 0) :
+                sortCol === 'kbps' ? a.kbps - b.kbps :
                 sortCol === 'size' ? a.file.size - b.file.size :
                 a.file.ctime - b.file.ctime
               ));
             const libraryQueue = libraryFiltered.map(r => libraryQueueItem(r.file));
+            // Checkbox with shift-click range selection over the current sorted view
+            const rowCheck = (i: number, shift: boolean) => {
+              const p = libraryFiltered[i].file.path;
+              const willCheck = !selectedFiles.includes(p);
+              if (shift && lastCheckRef.current !== null && lastCheckRef.current < libraryFiltered.length) {
+                const [a, b] = [Math.min(lastCheckRef.current, i), Math.max(lastCheckRef.current, i)];
+                const range = libraryFiltered.slice(a, b + 1).filter(r => !r.file.magnetUri).map(r => r.file.path);
+                setSelectedFiles(prev => willCheck ? [...new Set([...prev, ...range])] : prev.filter(x => !range.includes(x)));
+              } else {
+                setSelectedFiles(prev => willCheck ? [...prev, p] : prev.filter(x => x !== p));
+              }
+              lastCheckRef.current = i;
+            };
+            const coll = (type: 'artist' | 'genre' | 'folder', entries: [string, number][]) => entries.map(([name, n]) => (
+              <div
+                key={name}
+                className={`coll-item ${libFilter.type === type && libFilter.value === name ? 'active' : ''}`}
+                onClick={() => setLibFilter(f => f.type === type && f.value === name ? { type: 'all', value: '' } : { type, value: name })}
+              >
+                <span className="coll-name">{name}</span><span className="coll-count">{n}</span>
+              </div>
+            ));
             const th = (id: string, label: string, cls?: string) => (
               <th className={cls} onClick={() => toggleSort(id)}>
                 {label}{sortCol === id ? <span className="sort-arrow">{sortDir === 1 ? '▲' : '▼'}</span> : null}
@@ -1465,7 +1531,9 @@ function App() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {selectedFiles.length > 0 && (
                     <>
-                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed Selected ({selectedFiles.length})</button>
+                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed ({selectedFiles.length})</button>
+                      <button className="btn btn-secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>➕ Playlist</button>
+                      <button className="btn btn-danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗑 Delete ({selectedFiles.length})</button>
                       <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
                     </>
                   )}
@@ -1482,6 +1550,18 @@ function App() {
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
               </div>
+              <div className="library-body">
+                <div className="collection-pane">
+                  <div className={`coll-item coll-all ${libFilter.type === 'all' ? 'active' : ''}`} onClick={() => setLibFilter({ type: 'all', value: '' })}>
+                    <span className="coll-name">All Tracks</span><span className="coll-count">{rows.length}</span>
+                  </div>
+                  <div className="coll-header">Artists</div>
+                  {coll('artist', artists)}
+                  <div className="coll-header">Genres</div>
+                  {coll('genre', genres)}
+                  <div className="coll-header">Folders</div>
+                  {coll('folder', folders)}
+                </div>
               <div className="track-table-wrap">
                 <table className="track-table">
                   <thead>
@@ -1492,11 +1572,13 @@ function App() {
                       {th('artist', 'Artist')}
                       {th('album', 'Album')}
                       {th('genre', 'Genre')}
-                      {th('bpm', 'BPM', 'col-right')}
-                      {th('key', 'Key')}
-                      {th('time', 'Time', 'col-right')}
-                      {th('size', 'Size', 'col-right')}
-                      {th('added', 'Added')}
+                      {th('bpm', 'BPM', 'col-bpm col-right')}
+                      {th('key', 'Key', 'col-key')}
+                      {th('time', 'Time', 'col-time col-right')}
+                      {th('year', 'Year', 'col-year col-right')}
+                      {th('kbps', 'kbps', 'col-kbps col-right')}
+                      {th('size', 'Size', 'col-size col-right')}
+                      {th('added', 'Added', 'col-added')}
                       <th className="col-actions"></th>
                     </tr>
                   </thead>
@@ -1511,7 +1593,7 @@ function App() {
                             {isSeeding ? (
                               <span className="seed-check" title="Already seeding">✓</span>
                             ) : (
-                              <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={e => setSelectedFiles(prev => e.target.checked ? [...prev, file.path] : prev.filter(p => p !== file.path))} />
+                              <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={() => {}} onClick={e => { e.stopPropagation(); rowCheck(i, e.shiftKey); }} />
                             )}
                           </td>
                           <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
@@ -1522,6 +1604,8 @@ function App() {
                           <td className="col-right cell-mono">{r.bpm ?? ''}</td>
                           <td className="cell-mono">{r.key}</td>
                           <td className="col-right cell-mono">{r.duration ? formatTime(r.duration) : ''}</td>
+                          <td className="col-right cell-mono cell-muted">{r.year ?? ''}</td>
+                          <td className="col-right cell-mono cell-muted">{r.kbps || ''}</td>
                           <td className="col-right cell-mono cell-muted">{(file.size / 1024 / 1024).toFixed(1)}M</td>
                           <td className="cell-mono cell-muted">{new Date(file.ctime).toLocaleDateString()}</td>
                           <td className="col-actions">
@@ -1542,8 +1626,9 @@ function App() {
                   </tbody>
                 </table>
                 {libraryFiltered.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() ? 'No tracks match your search.' : 'No music files in library.'}</div>
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() || libFilter.type !== 'all' ? 'No tracks match your filter.' : 'No music files in library.'}</div>
                 )}
+              </div>
               </div>
 
               <div className="terminal-log" style={{ marginTop: '2rem' }}>
