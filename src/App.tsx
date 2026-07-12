@@ -1972,19 +1972,21 @@ function App() {
           </div>
           
           <div className="player-controls-center">
-            {queue.length > 1 && (
-              <button className="player-btn" onClick={playPrev} disabled={queueIndex <= 0} title="Previous" style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}>
-                <SkipBack size={18} />
+            <div className="player-buttons">
+              {queue.length > 1 && (
+                <button className="player-btn" onClick={playPrev} disabled={queueIndex <= 0} title="Previous" style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}>
+                  <SkipBack size={18} />
+                </button>
+              )}
+              <button className="player-btn toggle-play" onClick={togglePlay}>
+                {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '4px' }} />}
               </button>
-            )}
-            <button className="player-btn toggle-play" onClick={togglePlay}>
-              {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '4px' }} />}
-            </button>
-            {queue.length > 1 && (
-              <button className="player-btn" onClick={playNext} disabled={queueIndex + 1 >= queue.length} title="Next" style={{ opacity: queueIndex + 1 >= queue.length ? 0.4 : 1 }}>
-                <SkipForward size={18} />
-              </button>
-            )}
+              {queue.length > 1 && (
+                <button className="player-btn" onClick={playNext} disabled={queueIndex + 1 >= queue.length} title="Next" style={{ opacity: queueIndex + 1 >= queue.length ? 0.4 : 1 }}>
+                  <SkipForward size={18} />
+                </button>
+              )}
+            </div>
 
             <div className="player-seeker">
               <span className="time-display">{formatTime(currentTime)}</span>

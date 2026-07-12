@@ -720,6 +720,14 @@ body {
   gap: 8px;
 }
 
+.player-buttons {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
 .player-btn {
   background: transparent;
   border: none;
