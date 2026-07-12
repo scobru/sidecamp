@@ -1071,8 +1071,8 @@ function App() {
                     </button>
                   )}
                   {!genreBusy && (
-                    <button className="btn btn-secondary" onClick={handleFillGenres} disabled={organizeBusy} title="Look up missing genres on Beatport (~1.4s per track)">
-                      Fill genres (Beatport)
+                    <button className="btn btn-secondary" onClick={handleFillGenres} disabled={organizeBusy} title="Look up missing genres — Beatport for electronic, MusicBrainz for the rest (~1.4s per track)">
+                      Fill genres
                     </button>
                   )}
                   {genreBusy && (
@@ -1086,14 +1086,14 @@ function App() {
               {genreBusy && (
                 <div style={{ padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(179,102,255,0.12)', border: '1px solid var(--primary)', borderRadius: '8px', fontSize: '0.85rem', fontFamily: 'monospace' }}>
                   {genreProgress
-                    ? <>Beatport {genreProgress.current}/{genreProgress.total} — {genreProgress.file} → {genreProgress.genre || 'no match'}</>
+                    ? <>Genres {genreProgress.current}/{genreProgress.total} — {genreProgress.file} → {genreProgress.genre || 'no match'}</>
                     : 'Scanning for tracks with missing genre…'}
                 </div>
               )}
 
               {genreSummary && (
                 <div style={{ padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.85rem' }}>
-                  Genres{genreSummary.cancelled ? ' (cancelled)' : ''} — {genreSummary.missing} tracks missing genre, {genreSummary.found} found on Beatport, {genreSummary.written} written to mp3 tags.
+                  Genres{genreSummary.cancelled ? ' (cancelled)' : ''} — {genreSummary.missing} tracks missing genre, {genreSummary.found} found, {genreSummary.written} written to mp3 tags.
                 </div>
               )}
 

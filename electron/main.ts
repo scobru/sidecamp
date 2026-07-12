@@ -463,6 +463,7 @@ ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: s
 import { scanDir, buildPlan, applyPlan, OrganizeMode, Track } from './organizer';
 import { cacheGet, cachePut } from './organizer-cache';
 import { lookupGenre } from './beatport';
+import { lookupGenre as lookupGenreMB } from './musicbrainz';
 
 ipcMain.handle('organize:scan', async (event, root: string, mode: OrganizeMode) => {
   if (!root) return { error: 'No folder selected' };
@@ -510,7 +511,10 @@ ipcMain.handle('organize:fill-genres', async (event, root: string) => {
     for (let i = 0; i < missing.length; i++) {
       if (genreFillCancelled) break;
       const t = missing[i];
-      const genre = await lookupGenre(t.artist, t.title, net.fetch);
+      // Beatport is authoritative for electronic/DJ tracks; anything it can't
+      // classify (rock/pop/jazz/classical) falls back to MusicBrainz.
+      const genre = await lookupGenre(t.artist, t.title, net.fetch)
+        ?? await lookupGenreMB(t.artist, t.title, net.fetch);
       if (genre) {
         found++;
         t.genre = genre;
