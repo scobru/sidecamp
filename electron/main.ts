@@ -94,7 +94,7 @@ import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
 import NodeID3 from 'node-id3';
-import { getTracksMeta } from './track-meta';
+import { getTracksMeta, setCachedBpm } from './track-meta';
 
 const AUDIO_MIME: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
@@ -300,6 +300,17 @@ ipcMain.handle('downloads:read-tags', async (event, filePath) => {
 ipcMain.handle('downloads:tracks-meta', async (event, paths: string[]) => {
   if (!Array.isArray(paths)) return {};
   return getTracksMeta(paths.filter(p => typeof p === 'string' && isUnderAllowedRoot(p)));
+});
+
+// Persist a BPM detected by the renderer's Web Audio analysis: TBPM tag for mp3, cache for all.
+ipcMain.handle('downloads:set-bpm', async (event, filePath: string, bpm: number) => {
+  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath)) return false;
+  if (!Number.isFinite(bpm) || bpm < 40 || bpm > 300) return false;
+  if (path.extname(filePath).toLowerCase() === '.mp3') {
+    try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
+  }
+  await setCachedBpm(filePath, bpm);
+  return true;
 });
 
 ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {

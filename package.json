@@ -37,6 +37,7 @@
     "react-dom": "^19.2.7",
     "slsk-client": "^1.1.0",
     "socket.io-client": "^4.8.3",
+    "web-audio-beat-detector": "^8.2.37",
     "webtorrent": "^3.0.16",
     "ws": "^8.21.0"
   },

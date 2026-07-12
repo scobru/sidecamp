@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
   readTags: (filePath: string) => ipcRenderer.invoke('downloads:read-tags', filePath),
   getTracksMeta: (paths: string[]) => ipcRenderer.invoke('downloads:tracks-meta', paths),
+  setTrackBpm: (filePath: string, bpm: number) => ipcRenderer.invoke('downloads:set-bpm', filePath, bpm),
   writeTags: (filePath: string, tags: any) => ipcRenderer.invoke('downloads:write-tags', filePath, tags),
   renameDownload: (filePath: string, newFilename: string) => ipcRenderer.invoke('downloads:rename', filePath, newFilename),
   moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),

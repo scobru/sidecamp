@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { _setCacheFile, getTracksMeta } from '../electron/track-meta';
+import { _setCacheFile, getTracksMeta, setCachedBpm } from '../electron/track-meta';
 
 let tmp: string;
 let cacheFile: string;
@@ -31,6 +31,20 @@ describe('track-meta', () => {
   it('skips vanished files without throwing', async () => {
     const metas = await getTracksMeta([path.join(tmp, 'gone.mp3')]);
     expect(metas).toEqual({});
+  });
+
+  it('setCachedBpm upserts bpm and survives a re-read', async () => {
+    const f = path.join(tmp, 'DJ Test - Loop.mp3');
+    await fs.writeFile(f, 'x');
+    await getTracksMeta([f]);
+    await setCachedBpm(f, 128.5012);
+    const metas = await getTracksMeta([f]); // must hit cache, not re-parse
+    expect(metas[f].bpm).toBe(128.5);
+    expect(metas[f].artist).toBe('DJ Test');
+  });
+
+  it('setCachedBpm on a vanished file is a no-op', async () => {
+    await expect(setCachedBpm(path.join(tmp, 'gone.mp3'), 120)).resolves.toBeUndefined();
   });
 
   it('persists to cache and serves hits on unchanged mtime', async () => {

@@ -5,6 +5,7 @@ import {
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag
 } from 'lucide-react';
+import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
 
@@ -49,6 +50,9 @@ function App() {
     if (sortCol === col) setSortDir(d => (d === 1 ? -1 : 1));
     else { setSortCol(col); setSortDir(col === 'added' || col === 'size' ? -1 : 1); }
   };
+  // BPM auto-analysis (Web Audio decode + beat detection), one file at a time
+  const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
+  const analyzeCancelRef = useRef(false);
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
   type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
   const [showPlaylists, setShowPlaylists] = useState(false);
@@ -516,6 +520,34 @@ function App() {
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
     }
+  };
+
+  // Detect BPM for every library track that has none: decode with Web Audio
+  // (Chromium built-in, all formats the player supports), detect on a 60s
+  // middle window, persist via IPC (TBPM tag for mp3 + meta cache).
+  const analyzeBpm = async () => {
+    const targets = downloadedFiles.filter(f => trackMeta[f.path] && !trackMeta[f.path].bpm);
+    if (targets.length === 0) {
+      alert('No tracks missing BPM (or metadata is still loading).');
+      return;
+    }
+    analyzeCancelRef.current = false;
+    setAnalyzing({ done: 0, total: targets.length });
+    for (const f of targets) {
+      if (analyzeCancelRef.current) break;
+      try {
+        const raw = await (await fetch(`media://${encodeURIComponent(f.path)}`)).arrayBuffer();
+        const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
+        const offset = Math.max(0, (decoded.duration - 60) / 2);
+        const { bpm } = await guess(decoded, offset, Math.min(60, decoded.duration));
+        await window.electronAPI.setTrackBpm(f.path, bpm);
+        setTrackMeta(prev => ({ ...prev, [f.path]: { ...prev[f.path], bpm } }));
+      } catch (e) {
+        console.warn('BPM analysis failed for', f.path, e); // undecodable / no clear tempo — skip
+      }
+      setAnalyzing(s => (s ? { done: s.done + 1, total: s.total } : s));
+    }
+    setAnalyzing(null);
   };
 
   // Tag metadata (BPM/key/duration…) resolved in chunks so first rows appear fast;
@@ -1436,6 +1468,11 @@ function App() {
                       <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed Selected ({selectedFiles.length})</button>
                       <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
                     </>
+                  )}
+                  {analyzing ? (
+                    <button className="btn btn-secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ BPM {analyzing.done}/{analyzing.total}</button>
+                  ) : (
+                    <button className="btn btn-secondary" onClick={analyzeBpm} title="Detect BPM for tracks without one (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🎧 Analyze BPM</button>
                   )}
                   {libraryFiltered.length > 0 && (
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>

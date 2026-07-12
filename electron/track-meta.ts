@@ -86,6 +86,18 @@ async function parseOne(filePath: string): Promise<TrackMeta> {
   return meta;
 }
 
+/** Upsert an analyzed BPM into the cache (called after the renderer's Web Audio analysis).
+ *  Stats the file AFTER any tag write so the stored mtime matches the on-disk state. */
+export async function setCachedBpm(filePath: string, bpm: number): Promise<void> {
+  const c = await loadCache();
+  let st;
+  try { st = await fs.stat(filePath); } catch { return; }
+  const meta = c[filePath]?.meta ?? await parseOne(filePath);
+  meta.bpm = Math.round(bpm * 100) / 100;
+  c[filePath] = { mtime: st.mtimeMs, meta };
+  persistCache();
+}
+
 /** Batch-resolve metadata for a list of files. Cache hit = free, miss = parse (bounded concurrency). */
 export async function getTracksMeta(paths: string[]): Promise<Record<string, TrackMeta>> {
   const c = await loadCache();
