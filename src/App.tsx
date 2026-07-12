@@ -927,6 +927,19 @@ function App() {
     ...validFolders.map(f => ({ label: f.split(/[/\\]/).pop() || f, path: f })),
   ];
 
+  // Jump from a Library track to its folder in the Shared Files browser.
+  const revealInSharedFiles = (filePath: string) => {
+    const norm = (p: string) => p.replace(/[\\/]+/g, '/').toLowerCase();
+    const root = browserRoots.find(r => norm(filePath).startsWith(norm(r.path) + '/'));
+    if (!root) return;
+    const rel = filePath.slice(root.path.length).replace(/^[\\/]/, '');
+    const dir = rel.split(/[\\/]/).slice(0, -1).join('/');
+    setBrowserRoot(root.path);
+    setBrowserPath(dir);
+    loadBrowser(root.path, dir);
+    setActiveTab('peer');
+  };
+
   useEffect(() => {
     if (activeTab === 'peer' && browserRoots.length > 0 && !browserRoot) {
       selectBrowserRoot(browserRoots[0].path);
@@ -1374,6 +1387,7 @@ function App() {
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary" onClick={() => playAt(libraryQueue, i)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
+                        <button className="btn btn-secondary" onClick={() => revealInSharedFiles(file.path)} title="Show in Shared Files" style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center' }}><Folder size={14} /></button>
                         <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
                         <button className="btn btn-accent" onClick={() => handleUploadFile(file.path)} disabled={uploadingFilePath !== null} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>{uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TC'}</button>
                         {file.magnetUri ? (
