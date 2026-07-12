@@ -599,6 +599,13 @@ app.whenReady().then(() => {
     const mime = AUDIO_MIME[path.extname(absolutePath).toLowerCase()] || 'application/octet-stream';
     const rangeHeader = request.headers.get('Range');
     const m = rangeHeader && /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+    // Chromium aborts the in-flight request on every seek; destroy the file
+    // stream then, or each seek leaks an open stream that keeps reading.
+    const openStream = (opts?: { start: number; end: number }) => {
+      const stream = fs.createReadStream(absolutePath, opts);
+      request.signal.addEventListener('abort', () => stream.destroy());
+      return Readable.toWeb(stream) as any;
+    };
     if (m) {
       let start = m[1] ? parseInt(m[1], 10) : 0;
       let end = m[2] ? parseInt(m[2], 10) : total - 1;
@@ -607,8 +614,7 @@ app.whenReady().then(() => {
       if (start > end) {
         return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${total}` } });
       }
-      const stream = fs.createReadStream(absolutePath, { start, end });
-      return new Response(Readable.toWeb(stream) as any, {
+      return new Response(openStream({ start, end }), {
         status: 206,
         headers: {
           'Content-Type': mime,
@@ -618,7 +624,7 @@ app.whenReady().then(() => {
         },
       });
     }
-    return new Response(Readable.toWeb(fs.createReadStream(absolutePath)) as any, {
+    return new Response(openStream(), {
       status: 200,
       headers: { 'Content-Type': mime, 'Content-Length': String(total), 'Accept-Ranges': 'bytes' },
     });

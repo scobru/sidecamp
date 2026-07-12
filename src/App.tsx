@@ -397,9 +397,12 @@ function App() {
     setCurrentTime(time);
   };
 
-  const handleSeekCommit = () => {
+  // Commit from the slider's own value (not state) so a fast drag can't land
+  // on a stale position.
+  const handleSeekCommit = (e: React.PointerEvent<HTMLInputElement>) => {
     if (!audioRef.current) return;
-    audioRef.current.currentTime = currentTime;
+    const t = parseFloat(e.currentTarget.value);
+    if (isFinite(t)) audioRef.current.currentTime = t;
     setIsSeeking(false);
   };
 
@@ -1996,11 +1999,12 @@ function App() {
                 max={duration || 100}
                 value={duration ? Math.min(currentTime, duration) : 0}
                 disabled={!duration}
-                onMouseDown={() => setIsSeeking(true)}
-                onChange={(e) => handleSeekChange(parseFloat(e.target.value))} 
-                onMouseUp={handleSeekCommit}
-                onTouchStart={() => setIsSeeking(true)}
-                onTouchEnd={handleSeekCommit}
+                // Pointer events: range inputs get implicit pointer capture, so
+                // pointerup still reaches the input when released off the bar
+                // (mouseup did not — seeking got stuck and the bar froze).
+                onPointerDown={() => setIsSeeking(true)}
+                onChange={(e) => handleSeekChange(parseFloat(e.target.value))}
+                onPointerUp={handleSeekCommit}
                 className="seeker-slider"
               />
               <span className="time-display">{formatTime(duration)}</span>
