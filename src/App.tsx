@@ -85,6 +85,8 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // One retry per track for transient network blips on remote/federated streams.
+  const streamRetryRef = useRef<{ src: string; count: number }>({ src: '', count: 0 });
   // Play queue: resolved tracks (src ready to feed <audio>) + current index.
   // Playing from Library queues the filtered list; from Network, the peer's track list.
   const [queue, setQueue] = useState<{ name: string; src: string; path: string }[]>([]);
@@ -343,7 +345,8 @@ function App() {
     setIsSeeking(false);
     if (audioRef.current) {
       audioRef.current.src = src;
-      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+      // AbortError fires whenever a newer load pre-empts this one (fast skip) — expected, not a real failure.
+      audioRef.current.play().catch(e => { if (e.name !== 'AbortError') console.error("Playback failed:", e); });
     }
   };
 
@@ -393,7 +396,8 @@ function App() {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+      // AbortError fires whenever a newer load pre-empts this one (fast skip) — expected, not a real failure.
+      audioRef.current.play().catch(e => { if (e.name !== 'AbortError') console.error("Playback failed:", e); });
       setIsPlaying(true);
     }
   };
@@ -1987,6 +1991,18 @@ function App() {
       <audio
         ref={audioRef}
         style={{ display: 'none' }}
+        onError={() => {
+          const el = audioRef.current;
+          if (!el || !el.src) return;
+          // Remote/network streams occasionally fail to load (transient blip) — retry
+          // once per track before giving up. Local media:// files don't hit this.
+          const retry = streamRetryRef.current;
+          if (retry.src !== el.src) { retry.src = el.src; retry.count = 0; }
+          if (retry.count >= 1) { console.error('Playback failed after retry:', el.error); return; }
+          retry.count++;
+          el.load();
+          el.play().catch(e => { if (e.name !== 'AbortError') console.error('Playback failed:', e); });
+        }}
         onTimeUpdate={() => {
           if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
         }}
