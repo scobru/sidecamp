@@ -1107,7 +1107,8 @@ function App() {
                       {browserEntries.length > 0 && (
                         <input type="text" value={browserSearch} onChange={e => setBrowserSearch(e.target.value)} placeholder="Search in this folder…" className="glass-input" style={{ width: '100%', marginBottom: '0.75rem', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
                       )}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {/* Capped height so a big folder doesn't push the sharing controls below off-screen. */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '50vh', overflowY: 'auto', paddingRight: '4px' }}>
                         {(() => {
                           const visible = browserEntries.filter(en => en.name.toLowerCase().includes(browserSearch.toLowerCase().trim()));
                           const isAudio = (n: string) => /\.(mp3|flac|wav|ogg|m4a|mp4|webm)$/i.test(n);
