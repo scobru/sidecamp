@@ -673,17 +673,23 @@ app.whenReady().then(() => {
   // network tracks without exposing the token to the page origin or tripping CSP.
   // URL: stream://audio?url=<encoded server stream URL>&token=<encoded token>
   protocol.handle('stream', async (request) => {
-    try {
-      const u = new URL(request.url);
-      const target = u.searchParams.get('url');
-      const token = u.searchParams.get('token') || '';
-      if (!target) return new Response('Bad Request', { status: 400 });
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-      const range = request.headers.get('range');
-      if (range) headers['Range'] = range;
-      return net.fetch(target, { headers });
-    } catch (err: any) {
-      return new Response('Stream error: ' + err.message, { status: 500 });
+    const u = new URL(request.url);
+    const target = u.searchParams.get('url');
+    const token = u.searchParams.get('token') || '';
+    if (!target) return new Response('Bad Request', { status: 400 });
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    const range = request.headers.get('range');
+    if (range) headers['Range'] = range;
+    // Remote federated streams occasionally drop the connection (transient
+    // network blip) — one retry after a short delay covers most of those
+    // instead of surfacing net::ERR_FAILED / NotSupportedError to the player.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await net.fetch(target, { headers });
+      } catch (err: any) {
+        if (attempt > 0) return new Response('Stream error: ' + err.message, { status: 502 });
+        await new Promise(r => setTimeout(r, 400));
+      }
     }
   });
 
