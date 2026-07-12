@@ -966,6 +966,20 @@ body {
 .coll-item .coll-count { font-size: 0.68rem; color: var(--text-subtle); font-family: 'JetBrains Mono', monospace; }
 .coll-item.coll-all { font-weight: 600; }
 
+/* Inline tag editing in the track table */
+.track-table .cell-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 1px 5px;
+  outline: none;
+}
+
 .track-table .col-actions { width: 158px; text-align: right; }
 .track-table .col-actions button {
   background: transparent;

@@ -56,6 +56,20 @@ function App() {
   // Collection pane filter (artist / genre / top-level folder) + shift-click anchor
   const [libFilter, setLibFilter] = useState<{ type: 'all' | 'artist' | 'genre' | 'folder'; value: string }>({ type: 'all', value: '' });
   const lastCheckRef = useRef<number | null>(null);
+  // Inline tag edit: double-click a title/artist/album/genre cell (mp3 only for the actual write)
+  const [cellEdit, setCellEdit] = useState<{ path: string; field: 'title' | 'artist' | 'album' | 'genre'; value: string } | null>(null);
+  const saveCellEdit = async () => {
+    if (!cellEdit) return;
+    const { path: p, field, value } = cellEdit;
+    setCellEdit(null);
+    try {
+      await window.electronAPI.writeTags(p, { [field]: value });
+      setTrackMeta(prev => prev[p] ? { ...prev, [p]: { ...prev[p], [field]: value } } : prev);
+      setDlLogs(prev => [...prev, `[Library] Tag ${field} updated: ${value}`]);
+    } catch (e: any) {
+      alert('Tag write failed: ' + (e.message || e));
+    }
+  };
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
   type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
   const [showPlaylists, setShowPlaylists] = useState(false);
@@ -534,6 +548,18 @@ function App() {
     setDlLogs(prev => [...prev, `[Library] Deleted ${selectedFiles.length} selected files.`]);
     setSelectedFiles([]);
     loadDownloadedFiles();
+  };
+
+  // Drop target for rows dragged from the Library table
+  const addTracksToPlaylist = (id: string, paths: string[]) => {
+    const byPath = new Map(downloadedFiles.map((f: any) => [f.path, f]));
+    updatePlaylist(id, p => {
+      const existing = new Set(p.tracks.map(t => t.path));
+      const add = paths
+        .filter(x => byPath.has(x) && !existing.has(x))
+        .map(x => { const f = byPath.get(x)!; return { path: f.path, name: (f.name.split(/[/\\]/).pop() || f.name) as string }; });
+      return add.length ? { ...p, tracks: [...p.tracks, ...add] } : p;
+    });
   };
 
   const addSelectedToPlaylist = () => {
@@ -1271,7 +1297,16 @@ function App() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {playlists.map(p => (
-                      <div key={p.id} onClick={() => setActivePlaylistId(p.id)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 0.8rem', borderRadius: '8px', cursor: 'pointer', background: p.id === activePlaylistId ? 'rgba(179,102,255,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${p.id === activePlaylistId ? 'var(--primary)' : 'var(--glass-border)'}` }}>
+                      <div
+                        key={p.id}
+                        onClick={() => setActivePlaylistId(p.id)}
+                        onDragOver={e => { if (e.dataTransfer.types.includes('text/sidecamp-paths')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          try { addTracksToPlaylist(p.id, JSON.parse(e.dataTransfer.getData('text/sidecamp-paths'))); } catch { /* not our payload */ }
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 0.8rem', borderRadius: '8px', cursor: 'pointer', background: p.id === activePlaylistId ? 'rgba(179,102,255,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${p.id === activePlaylistId ? 'var(--primary)' : 'var(--glass-border)'}` }}
+                      >
                         <Disc3 size={15} color="var(--text-muted)" />
                         <span style={{ flex: 1, minWidth: 0, fontSize: '0.88rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{p.tracks.length}</span>
@@ -1523,6 +1558,27 @@ function App() {
                 {label}{sortCol === id ? <span className="sort-arrow">{sortDir === 1 ? '▲' : '▼'}</span> : null}
               </th>
             );
+            const editableCell = (r: typeof rows[0], field: 'title' | 'artist' | 'album' | 'genre', cls?: string) => (
+              cellEdit && cellEdit.path === r.file.path && cellEdit.field === field ? (
+                <td className={cls}>
+                  <input
+                    className="cell-edit-input"
+                    autoFocus
+                    value={cellEdit.value}
+                    onChange={e => setCellEdit(c => (c ? { ...c, value: e.target.value } : c))}
+                    onKeyDown={e => { if (e.key === 'Enter') saveCellEdit(); if (e.key === 'Escape') setCellEdit(null); }}
+                    onBlur={() => setCellEdit(null)}
+                    onDoubleClick={e => e.stopPropagation()}
+                  />
+                </td>
+              ) : (
+                <td
+                  className={cls}
+                  title={`${r.file.name} — double-click to edit ${field}`}
+                  onDoubleClick={e => { e.stopPropagation(); setCellEdit({ path: r.file.path, field, value: r[field] || '' }); }}
+                >{r[field]}</td>
+              )
+            );
             return (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
@@ -1588,7 +1644,17 @@ function App() {
                       const isSeeding = !!file.magnetUri;
                       const isCurrent = currentPlayback?.path === file.path;
                       return (
-                        <tr key={file.path} className={isCurrent ? 'playing' : ''} onDoubleClick={() => playAt(libraryQueue, i)}>
+                        <tr
+                          key={file.path}
+                          className={isCurrent ? 'playing' : ''}
+                          onDoubleClick={() => playAt(libraryQueue, i)}
+                          draggable
+                          onDragStart={e => {
+                            const paths = selectedFiles.includes(file.path) ? selectedFiles : [file.path];
+                            e.dataTransfer.setData('text/sidecamp-paths', JSON.stringify(paths));
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                        >
                           <td className="col-check">
                             {isSeeding ? (
                               <span className="seed-check" title="Already seeding">✓</span>
@@ -1597,10 +1663,10 @@ function App() {
                             )}
                           </td>
                           <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
-                          <td className="col-title" title={file.name}>{r.title}</td>
-                          <td className="cell-ellipsis">{r.artist}</td>
-                          <td className="cell-ellipsis cell-muted">{r.album}</td>
-                          <td className="cell-ellipsis cell-muted">{r.genre}</td>
+                          {editableCell(r, 'title', 'col-title')}
+                          {editableCell(r, 'artist', 'cell-ellipsis')}
+                          {editableCell(r, 'album', 'cell-ellipsis cell-muted')}
+                          {editableCell(r, 'genre', 'cell-ellipsis cell-muted')}
                           <td className="col-right cell-mono">{r.bpm ?? ''}</td>
                           <td className="cell-mono">{r.key}</td>
                           <td className="col-right cell-mono">{r.duration ? formatTime(r.duration) : ''}</td>

@@ -316,8 +316,9 @@ ipcMain.handle('downloads:set-bpm', async (event, filePath: string, bpm: number)
 ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
-  const result = NodeID3.write(tags, filePath);
-  if (result !== true) throw new Error(`NodeID3.write failed: ${result}`);
+  // update (merge) instead of write (replace): keeps tags we don't edit, e.g. TBPM/genre.
+  const result = NodeID3.update(tags, filePath);
+  if (result !== true) throw new Error(`NodeID3.update failed: ${result}`);
   return true;
 });
 
