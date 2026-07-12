@@ -314,6 +314,31 @@ ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
   return destPath;
 });
 
+// Copy a playlist's tracks into a flat, CDJ-friendly folder: files renamed
+// with a numeric order prefix plus a playlist.m3u8 listing them in order.
+ipcMain.handle('playlist:export', async (event, destDir: string, folderName: string, items: { path: string; exportName: string }[]) => {
+  if (!destDir || !Array.isArray(items)) return { error: 'Nothing to export' };
+  const clean = String(folderName || 'Playlist').replace(/[<>:"/\\|?*]/g, '').trim() || 'Playlist';
+  const target = path.join(path.resolve(destDir), clean);
+  await fs.promises.mkdir(target, { recursive: true });
+  const m3u = ['#EXTM3U'];
+  let copied = 0;
+  const errors: string[] = [];
+  for (const it of items) {
+    try {
+      if (!isUnderAllowedRoot(it.path)) throw new Error('source outside library');
+      await fs.promises.copyFile(it.path, path.join(target, it.exportName));
+      m3u.push(it.exportName);
+      copied++;
+    } catch (e: any) {
+      errors.push(`${it.exportName}: ${e.message}`);
+    }
+  }
+  // CRLF + UTF-8 for maximum USB/CDJ compatibility.
+  await fs.promises.writeFile(path.join(target, 'playlist.m3u8'), m3u.join('\r\n') + '\r\n', 'utf8');
+  return { target, copied, total: items.length, errors };
+});
+
 ipcMain.handle('dialog:pick-folder', async () => {
   // Parent the dialog to the window and re-focus the webContents afterward.
   // Without this, on Windows the renderer loses input focus when the native

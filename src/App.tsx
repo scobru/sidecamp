@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
-  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon
+  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
+  Disc3, ChevronUp, ChevronDown
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -39,6 +40,16 @@ function App() {
   // Per-list search filters
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
+  // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
+  type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
+  const [showPlaylists, setShowPlaylists] = useState(false);
+  const [playlists, setPlaylists] = useState<Playlist[]>(() => {
+    try { return JSON.parse(localStorage.getItem('playlists') || '[]'); } catch { return []; }
+  });
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [playlistPickerSearch, setPlaylistPickerSearch] = useState('');
+  const [exportMsg, setExportMsg] = useState('');
 
   // Direct Download & Torrent States
   const [downloadSource, setDownloadSource] = useState('soulseek'); // 'soulseek' | 'direct'
@@ -482,6 +493,62 @@ function App() {
       setSelectedFiles([]);
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
+    }
+  };
+
+  // --- Playlists ---
+  useEffect(() => { localStorage.setItem('playlists', JSON.stringify(playlists)); }, [playlists]);
+  const activePlaylist = playlists.find(p => p.id === activePlaylistId) || null;
+  const updatePlaylist = (id: string, fn: (p: Playlist) => Playlist) =>
+    setPlaylists(prev => prev.map(p => (p.id === id ? fn(p) : p)));
+  const createPlaylist = () => {
+    const name = newPlaylistName.trim();
+    if (!name) return;
+    const id = crypto.randomUUID();
+    setPlaylists(prev => [...prev, { id, name, tracks: [] }]);
+    setActivePlaylistId(id);
+    setNewPlaylistName('');
+  };
+  const deletePlaylist = (id: string) => {
+    if (!window.confirm('Delete this playlist? (files are not touched)')) return;
+    setPlaylists(prev => prev.filter(p => p.id !== id));
+    if (activePlaylistId === id) setActivePlaylistId(null);
+  };
+  const addTrackToActive = (file: { path: string; name: string }) => {
+    if (!activePlaylist) return;
+    const basename = file.name.split(/[/\\]/).pop() || file.name;
+    updatePlaylist(activePlaylist.id, p =>
+      p.tracks.some(t => t.path === file.path) ? p : { ...p, tracks: [...p.tracks, { path: file.path, name: basename }] });
+  };
+  const removeTrackAt = (idx: number) => {
+    if (!activePlaylist) return;
+    updatePlaylist(activePlaylist.id, p => ({ ...p, tracks: p.tracks.filter((_, i) => i !== idx) }));
+  };
+  const moveTrack = (idx: number, dir: -1 | 1) => {
+    if (!activePlaylist) return;
+    const j = idx + dir;
+    if (j < 0 || j >= activePlaylist.tracks.length) return;
+    updatePlaylist(activePlaylist.id, p => {
+      const t = [...p.tracks];
+      [t[idx], t[j]] = [t[j], t[idx]];
+      return { ...p, tracks: t };
+    });
+  };
+  const handleExportPlaylist = async () => {
+    if (!activePlaylist || activePlaylist.tracks.length === 0) return;
+    const dest = await window.electronAPI.pickFolder();
+    if (!dest) return;
+    const items = activePlaylist.tracks.map((t, i) => {
+      const base = (t.name.split(/[/\\]/).pop() || t.name).replace(/[<>:"/\\|?*]/g, '');
+      return { path: t.path, exportName: `${String(i + 1).padStart(2, '0')} - ${base}` };
+    });
+    setExportMsg('Exporting…');
+    try {
+      const res = await window.electronAPI.exportPlaylist(dest, activePlaylist.name, items);
+      if (res?.error) { setExportMsg(`Export failed: ${res.error}`); return; }
+      setExportMsg(`Exported ${res.copied}/${res.total} → ${res.target}${res.errors.length ? ` (${res.errors.length} errors)` : ''}`);
+    } catch (e: any) {
+      setExportMsg(`Export failed: ${e.message || e}`);
     }
   };
 
@@ -1057,6 +1124,89 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'library' && showPlaylists && (() => {
+            const pickerFiltered = downloadedFiles.filter(f => f.name.toLowerCase().includes(playlistPickerSearch.toLowerCase().trim()));
+            const playlistQueue = activePlaylist ? activePlaylist.tracks.map(libraryQueueItem) : [];
+            return (
+            <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0 }}>Playlists <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>build a DJ set & export to a CDJ-ready folder</span></h3>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: '0 0 260px', minWidth: '220px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+                    <input type="text" value={newPlaylistName} onChange={e => setNewPlaylistName(e.target.value)} placeholder="New playlist name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && createPlaylist()} />
+                    <button className="btn btn-primary" onClick={createPlaylist} disabled={!newPlaylistName.trim()} title="Create playlist"><FolderPlus size={16} /></button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {playlists.map(p => (
+                      <div key={p.id} onClick={() => setActivePlaylistId(p.id)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 0.8rem', borderRadius: '8px', cursor: 'pointer', background: p.id === activePlaylistId ? 'rgba(179,102,255,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${p.id === activePlaylistId ? 'var(--primary)' : 'var(--glass-border)'}` }}>
+                        <Disc3 size={15} color="var(--text-muted)" />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.88rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{p.tracks.length}</span>
+                        <button onClick={e => { e.stopPropagation(); deletePlaylist(p.id); }} title="Delete playlist" style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '2px', display: 'inline-flex' }}><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                    {playlists.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>No playlists yet.</div>}
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, minWidth: '320px' }}>
+                  {!activePlaylist ? (
+                    <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '2rem 0' }}>Select or create a playlist to start.</div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                        <h4 style={{ margin: 0 }}>{activePlaylist.name} <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)' }}>({activePlaylist.tracks.length} tracks)</span></h4>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {activePlaylist.tracks.length > 0 && <button className="btn btn-primary" onClick={() => playAt(playlistQueue, 0)} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>▶ Play</button>}
+                          <button className="btn btn-accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>⬇ Export (CDJ)</button>
+                        </div>
+                      </div>
+                      {exportMsg && <div style={{ padding: '0.5rem 0.8rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.82rem', wordBreak: 'break-all' }}>{exportMsg}</div>}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1.5rem' }}>
+                        {activePlaylist.tracks.map((t, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.5rem 0.8rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                            <span style={{ width: '24px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>{String(i + 1).padStart(2, '0')}</span>
+                            <span style={{ flex: 1, minWidth: 0, fontSize: '0.88rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                            <button onClick={() => playAt(playlistQueue, i)} title="Play" style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '3px', display: 'inline-flex' }}><Play size={15} /></button>
+                            <button onClick={() => moveTrack(i, -1)} disabled={i === 0} title="Move up" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, padding: '3px', display: 'inline-flex' }}><ChevronUp size={16} /></button>
+                            <button onClick={() => moveTrack(i, 1)} disabled={i === activePlaylist.tracks.length - 1} title="Move down" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: i === activePlaylist.tracks.length - 1 ? 'default' : 'pointer', opacity: i === activePlaylist.tracks.length - 1 ? 0.3 : 1, padding: '3px', display: 'inline-flex' }}><ChevronDown size={16} /></button>
+                            <button onClick={() => removeTrackAt(i)} title="Remove" style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '3px', display: 'inline-flex' }}><X size={15} /></button>
+                          </div>
+                        ))}
+                        {activePlaylist.tracks.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>Empty — add tracks from your library below.</div>}
+                      </div>
+
+                      <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '0.75rem' }}>
+                          <strong style={{ fontSize: '0.9rem' }}>Add from Library</strong>
+                          <input type="text" value={playlistPickerSearch} onChange={e => setPlaylistPickerSearch(e.target.value)} placeholder="Search library…" className="glass-input" style={{ flex: 1, maxWidth: '280px', padding: '0.35rem 0.7rem', fontSize: '0.82rem' }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+                          {pickerFiltered.map((file, i) => {
+                            const basename = file.name.split(/[/\\]/).pop() || file.name;
+                            const already = activePlaylist.tracks.some(t => t.path === file.path);
+                            return (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.45rem 0.8rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                                <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename}</span>
+                                <button className="btn btn-secondary" onClick={() => addTrackToActive(file)} disabled={already} style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }}>{already ? '✓ Added' : '+ Add'}</button>
+                              </div>
+                            );
+                          })}
+                          {pickerFiltered.length === 0 && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>No library tracks. Add music first.</div>}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            );
+          })()}
+
           {activeTab === 'library' && showOrganize && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1183,6 +1333,7 @@ function App() {
                   {libraryFiltered.length > 0 && (
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
                   )}
+                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowPlaylists(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>💿 Playlists</button>
                   <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗂 Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
