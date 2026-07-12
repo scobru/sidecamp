@@ -2056,12 +2056,17 @@ function App() {
                 max={duration || 100}
                 value={duration ? Math.min(currentTime, duration) : 0}
                 disabled={!duration}
-                // Pointer events: range inputs get implicit pointer capture, so
-                // pointerup still reaches the input when released off the bar
-                // (mouseup did not — seeking got stuck and the bar froze).
-                onPointerDown={() => setIsSeeking(true)}
+                // Explicit pointer capture guarantees onPointerUp fires on this
+                // element even if the drag ends outside the bar or the window
+                // loses focus mid-drag. Without it, isSeeking could get stuck
+                // true (no matching pointerup) and the bar would stop following
+                // playback until the next reload — onPointerCancel/LostPointerCapture
+                // are the fallback release for whatever interrupts the drag.
+                onPointerDown={(e) => { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ } setIsSeeking(true); }}
                 onChange={(e) => handleSeekChange(parseFloat(e.target.value))}
                 onPointerUp={handleSeekCommit}
+                onPointerCancel={() => setIsSeeking(false)}
+                onLostPointerCapture={() => setIsSeeking(false)}
                 className="seeker-slider"
               />
               <span className="time-display">{formatTime(duration)}</span>
