@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Radio, Globe, Download, FolderSync, Settings, Info,
-  Play, Pause, X, Volume2, Music, Magnet, Cloud,
-  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  ListMusic
+  Radio, Globe, Download, FolderSync, Settings,
+  Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
+  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -26,7 +25,7 @@ function App() {
   const [chatText, setChatText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('peer');
+  const [activeTab, setActiveTab] = useState('download');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   // File browser (shared folders)
@@ -75,6 +74,10 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Play queue: resolved tracks (src ready to feed <audio>) + current index.
+  // Playing from Library queues the filtered list; from Network, the peer's track list.
+  const [queue, setQueue] = useState<{ name: string; src: string; path: string }[]>([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
 
   // Edit Tags Modal States
   const [editTagsFile, setEditTagsFile] = useState<{ name: string, path: string } | null>(null);
@@ -87,6 +90,7 @@ function App() {
   const [metadataAlbum, setMetadataAlbum] = useState('');
   
   // Library Organizer States
+  const [showOrganize, setShowOrganize] = useState(false);
   const [organizeRoot, setOrganizeRoot] = useState('');
   const [organizeMode, setOrganizeMode] = useState<'artist' | 'artist-album' | 'genre'>('artist');
   const [organizePlan, setOrganizePlan] = useState<{ actions: { type: string; from: string; to: string }[]; stats: any } | null>(null);
@@ -191,7 +195,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'files' || activeTab === 'library') {
+    if (activeTab === 'download' || activeTab === 'library') {
       loadDownloadedFiles();
     }
   }, [activeTab]);
@@ -327,17 +331,44 @@ function App() {
     }
   };
 
-  const playTrack = (name: string, path: string) => {
-    startPlayback(name, `media://${encodeURIComponent(path)}`, path);
+  const playAt = (tracks: { name: string; src: string; path: string }[], index: number) => {
+    const t = tracks[index];
+    if (!t) return;
+    setQueue(tracks);
+    setQueueIndex(index);
+    startPlayback(t.name, t.src, t.path);
   };
 
-  const playNetworkTrack = (peer: any, track: any) => {
+  const playNext = () => {
+    if (queueIndex + 1 < queue.length) playAt(queue, queueIndex + 1);
+  };
+
+  const playPrev = () => {
+    if (queueIndex > 0) playAt(queue, queueIndex - 1);
+  };
+
+  const libraryQueueItem = (file: { name: string; path: string }) => ({
+    name: file.name.split(/[/\\]/).pop() || file.name,
+    src: `media://${encodeURIComponent(file.path)}`,
+    path: file.path
+  });
+
+  const networkQueueItem = (peer: any, track: any) => {
     const cleanServer = server.replace(/\/$/, '');
     const streamUrl = peer.id === 'server'
       ? `${cleanServer}/api/tracks/${track.id}/stream`
       : `${cleanServer}/api/peers/${peer.id}/tracks/${track.id}/stream`;
-    const src = `stream://audio?url=${encodeURIComponent(streamUrl)}&token=${encodeURIComponent(token)}`;
-    startPlayback(`${track.artist} - ${track.title}`, src, `${peer.username} (Network)`);
+    return {
+      name: `${track.artist} - ${track.title}`,
+      src: `stream://audio?url=${encodeURIComponent(streamUrl)}&token=${encodeURIComponent(token)}`,
+      path: `${peer.username} (Network)`
+    };
+  };
+
+  const playNetworkTrack = (peer: any, track: any) => {
+    const idx = peerTracks.indexOf(track);
+    const list = idx >= 0 ? peerTracks : [track];
+    playAt(list.map(t => networkQueueItem(peer, t)), Math.max(idx, 0));
   };
 
   const togglePlay = () => {
@@ -376,6 +407,8 @@ function App() {
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setQueue([]);
+    setQueueIndex(-1);
   };
 
   const formatTime = (secs: number) => {
@@ -825,7 +858,7 @@ function App() {
   ];
 
   useEffect(() => {
-    if (activeTab === 'browser' && browserRoots.length > 0 && !browserRoot) {
+    if (activeTab === 'peer' && browserRoots.length > 0 && !browserRoot) {
       selectBrowserRoot(browserRoots[0].path);
     }
   }, [activeTab, downloadsDir]);
@@ -917,32 +950,20 @@ function App() {
         </div>
 
         <nav className="nav-menu">
-          <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')} title="Peer Node">
-            <span className="icon"><Radio size={16} /></span> {!sidebarCollapsed && 'Peer Node'}
-          </button>
-          <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
-            <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && 'Network'}
-          </button>
-          <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Downloader">
-            <span className="icon"><Download size={16} /></span> {!sidebarCollapsed && 'Downloader'}
+          <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Search & Download">
+            <span className="icon"><Download size={16} /></span> {!sidebarCollapsed && 'Search'}
           </button>
           <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
             <span className="icon"><Music size={16} /></span> {!sidebarCollapsed && 'Library'}
           </button>
-          <button className={`nav-item ${activeTab === 'organize' ? 'active' : ''}`} onClick={() => setActiveTab('organize')} title="Organize">
-            <span className="icon"><ListMusic size={16} /></span> {!sidebarCollapsed && 'Organize'}
+          <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
+            <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && 'Network'}
           </button>
-          <button className={`nav-item ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')} title="Shared Files">
-            <span className="icon"><Folder size={16} /></span> {!sidebarCollapsed && 'Shared Files'}
+          <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')} title="Sharing — peer node & shared files">
+            <span className="icon"><Radio size={16} /></span> {!sidebarCollapsed && 'Sharing'}
           </button>
-          <button className={`nav-item ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Transfers">
-            <span className="icon"><FolderSync size={16} /></span> {!sidebarCollapsed && 'Transfers'}
-          </button>
-          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuration">
-            <span className="icon"><Settings size={16} /></span> {!sidebarCollapsed && 'Configuration'}
-          </button>
-          <button className={`nav-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')} title="About">
-            <span className="icon"><Info size={16} /></span> {!sidebarCollapsed && 'About'}
+          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Settings">
+            <span className="icon"><Settings size={16} /></span> {!sidebarCollapsed && 'Settings'}
           </button>
         </nav>
 
@@ -963,7 +984,7 @@ function App() {
       </div>
 
       <main className="main-content">
-          {activeTab === 'browser' && (
+          {activeTab === 'peer' && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ margin: 0 }}>Shared Files <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>browse, move & organize your files</span></h3>
@@ -1036,7 +1057,7 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'organize' && (
+          {activeTab === 'library' && showOrganize && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ margin: 0 }}>Organize <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>rename, sort & deduplicate a music folder</span></h3>
@@ -1146,6 +1167,7 @@ function App() {
 
           {activeTab === 'library' && (() => {
             const libraryFiltered = downloadedFiles.filter(f => f.name.toLowerCase().includes(librarySearch.toLowerCase().trim()));
+            const libraryQueue = libraryFiltered.map(libraryQueueItem);
             return (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
@@ -1158,6 +1180,10 @@ function App() {
                       <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
                     </>
                   )}
+                  {libraryFiltered.length > 0 && (
+                    <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
+                  )}
+                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗂 Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
               </div>
@@ -1186,7 +1212,7 @@ function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-primary" onClick={() => playTrack(basename, file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
+                        <button className="btn btn-primary" onClick={() => playAt(libraryQueue, i)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
                         <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
                         <button className="btn btn-accent" onClick={() => handleUploadFile(file.path)} disabled={uploadingFilePath !== null} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>{uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TC'}</button>
                         {file.magnetUri ? (
@@ -1214,55 +1240,6 @@ function App() {
             </div>
             );
           })()}
-          {activeTab === 'about' && (
-            <div style={{ maxWidth: '720px' }}>
-              <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                  <img src={logo} alt="Sidecamp" style={{ width: '64px', height: '64px', borderRadius: '12px' }} />
-                  <div>
-                    <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)', fontSize: '1.8rem' }}>Sidecamp</h2>
-                    <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Powered by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>TuneCamp</span></p>
-                  </div>
-                </div>
-                <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                  <strong style={{ color: 'var(--text-main)' }}>Sidecamp</strong> is a desktop companion app for <strong style={{ color: 'var(--primary)' }}>TuneCamp</strong> — an independent music platform built for artists and listeners who believe in open, decentralized music distribution.
-                </p>
-                <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 0 }}>
-                  With Sidecamp you can discover and download music from the TuneCamp network and from peer-to-peer sources (Soulseek, BitTorrent, YouTube), manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
-                </p>
-              </div>
-
-              <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
-                <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1.2rem' }}>What you can do</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  {[
-                    { icon: '🌐', title: 'Network Explorer', desc: 'Browse tracks shared by TuneCamp peers and the server catalog. Download anything with one click.' },
-                    { icon: '⬇️', title: 'Multi-source Downloader', desc: 'Search and download via Soulseek, magnet links, torrents, or YouTube/SoundCloud/Bandcamp URLs.' },
-                    { icon: '🎵', title: 'Local Library', desc: 'Browse your downloaded tracks, edit ID3 tags, rename files, move them to folders.' },
-                    { icon: '📡', title: 'Peer Node', desc: 'Run a lightweight peer that shares your library with the TuneCamp network in real time.' },
-                    { icon: '☁️', title: 'Upload to TuneCamp', desc: 'Push tracks from your library directly to your TuneCamp account with custom metadata.' },
-                    { icon: '🔗', title: 'Torrent Seeding', desc: 'Seed individual tracks or full albums as torrents, making them available to the wider network.' },
-                  ].map(f => (
-                    <div key={f.title} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                      <div style={{ fontSize: '1.4rem', marginBottom: '0.5rem' }}>{f.icon}</div>
-                      <div style={{ fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-main)' }}>{f.title}</div>
-                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{f.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="glass-card">
-                <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1rem' }}>Tech stack</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {['Electron', 'React 19', 'TypeScript', 'Vite', 'Soulseek', 'WebTorrent', 'yt-dlp', 'node-id3', 'TuneCamp API'].map(t => (
-                    <span key={t} style={{ padding: '4px 10px', background: 'rgba(179,102,255,0.12)', border: '1px solid rgba(179,102,255,0.25)', borderRadius: '20px', fontSize: '0.8rem', color: 'var(--primary)' }}>{t}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'settings' && (
             <>
               <div className="settings-section" style={{ marginBottom: '2rem' }}>
@@ -1332,6 +1309,34 @@ function App() {
                   Save Configuration
                 </button>
                 {settingsSaved && <span style={{ color: 'var(--accent)', marginLeft: '1rem', fontWeight: 600 }}>✓ Configuration saved!</span>}
+              </div>
+
+              {/* About */}
+              <div style={{ maxWidth: '720px', marginTop: '2.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '2rem' }}>
+                <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                    <img src={logo} alt="Sidecamp" style={{ width: '64px', height: '64px', borderRadius: '12px' }} />
+                    <div>
+                      <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)', fontSize: '1.8rem' }}>Sidecamp</h2>
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Powered by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>TuneCamp</span></p>
+                    </div>
+                  </div>
+                  <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    <strong style={{ color: 'var(--text-main)' }}>Sidecamp</strong> is a desktop companion app for <strong style={{ color: 'var(--primary)' }}>TuneCamp</strong> — an independent music platform built for artists and listeners who believe in open, decentralized music distribution.
+                  </p>
+                  <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 0 }}>
+                    With Sidecamp you can discover and download music from the TuneCamp network and from peer-to-peer sources (Soulseek, BitTorrent, YouTube), manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
+                  </p>
+                </div>
+
+                <div className="glass-card">
+                  <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1rem' }}>Tech stack</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {['Electron', 'React 19', 'TypeScript', 'Vite', 'Soulseek', 'WebTorrent', 'yt-dlp', 'node-id3', 'TuneCamp API'].map(t => (
+                      <span key={t} style={{ padding: '4px 10px', background: 'rgba(179,102,255,0.12)', border: '1px solid rgba(179,102,255,0.25)', borderRadius: '20px', fontSize: '0.8rem', color: 'var(--primary)' }}>{t}</span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -1732,7 +1737,7 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'files' && (
+          {activeTab === 'download' && (
             <div className="glass-card files-card">
               
               {/* Transfer Queue Section */}
@@ -1799,7 +1804,8 @@ function App() {
           }
         }}
         onEnded={() => {
-          stopPlayback();
+          if (queueIndex + 1 < queue.length) playNext();
+          else stopPlayback();
         }}
       />
 
@@ -1810,15 +1816,25 @@ function App() {
             <span className="player-track-icon"><Music size={32} /></span>
             <div className="player-track-details">
               <span className="player-track-title">{currentPlayback.name}</span>
-              <span className="player-track-path">{currentPlayback.path}</span>
+              <span className="player-track-path">{queue.length > 1 ? `${queueIndex + 1}/${queue.length} — ` : ''}{currentPlayback.path}</span>
             </div>
           </div>
           
           <div className="player-controls-center">
+            {queue.length > 1 && (
+              <button className="player-btn" onClick={playPrev} disabled={queueIndex <= 0} title="Previous" style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}>
+                <SkipBack size={18} />
+              </button>
+            )}
             <button className="player-btn toggle-play" onClick={togglePlay}>
               {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '4px' }} />}
             </button>
-            
+            {queue.length > 1 && (
+              <button className="player-btn" onClick={playNext} disabled={queueIndex + 1 >= queue.length} title="Next" style={{ opacity: queueIndex + 1 >= queue.length ? 0.4 : 1 }}>
+                <SkipForward size={18} />
+              </button>
+            )}
+
             <div className="player-seeker">
               <span className="time-display">{formatTime(currentTime)}</span>
               <input

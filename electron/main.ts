@@ -14,15 +14,11 @@ let win: BrowserWindow | null
 
 // Native menu mirrors the sidebar sections with Ctrl+1..9 accelerators.
 const NAV_SECTIONS: [string, string][] = [
-  ['Peer Node', 'peer'],
-  ['Network', 'network'],
-  ['Downloader', 'download'],
+  ['Search', 'download'],
   ['Library', 'library'],
-  ['Organize', 'organize'],
-  ['Shared Files', 'browser'],
-  ['Transfers', 'files'],
-  ['Configuration', 'settings'],
-  ['About', 'about'],
+  ['Network', 'network'],
+  ['Sharing', 'peer'],
+  ['Settings', 'settings'],
 ];
 
 function buildMenu() {
