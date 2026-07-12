@@ -94,6 +94,7 @@ import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
 import NodeID3 from 'node-id3';
+import { getTracksMeta } from './track-meta';
 
 const AUDIO_MIME: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
@@ -293,6 +294,12 @@ ipcMain.handle('downloads:open', async (event, filePath) => {
 ipcMain.handle('downloads:read-tags', async (event, filePath) => {
   const tags = NodeID3.read(filePath);
   return { title: tags.title || '', artist: tags.artist || '', album: tags.album || '' };
+});
+
+// Batch tag metadata for the Library table (title/artist/BPM/key/duration…), disk-cached per file.
+ipcMain.handle('downloads:tracks-meta', async (event, paths: string[]) => {
+  if (!Array.isArray(paths)) return {};
+  return getTracksMeta(paths.filter(p => typeof p === 'string' && isUnderAllowedRoot(p)));
 });
 
 ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {

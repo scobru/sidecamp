@@ -3,7 +3,7 @@ import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  Disc3, ChevronUp, ChevronDown, ArrowUpCircle
+  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag
 } from 'lucide-react';
 import './index.css';
 import logo from './assets/logo.png';
@@ -40,6 +40,15 @@ function App() {
   // Per-list search filters
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
+  // Library table (rekordbox-style): tag metadata per file path + sort state
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number };
+  const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
+  const [sortCol, setSortCol] = useState('added');
+  const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir(d => (d === 1 ? -1 : 1));
+    else { setSortCol(col); setSortDir(col === 'added' || col === 'size' ? -1 : 1); }
+  };
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
   type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
   const [showPlaylists, setShowPlaylists] = useState(false);
@@ -503,8 +512,25 @@ function App() {
       const res = await window.electronAPI.listDownloads(roots);
       setDownloadedFiles(res);
       setSelectedFiles([]);
+      loadTrackMeta(res); // fire-and-forget: table fills in as chunks resolve
     } catch (e) {
       console.error("Failed to load local downloads list:", e);
+    }
+  };
+
+  // Tag metadata (BPM/key/duration…) resolved in chunks so first rows appear fast;
+  // main process caches per file, so repeat loads are instant.
+  const loadTrackMeta = async (files: { path: string }[]) => {
+    if (!window.electronAPI.getTracksMeta) return;
+    const CHUNK = 50;
+    for (let i = 0; i < files.length; i += CHUNK) {
+      try {
+        const metas = await window.electronAPI.getTracksMeta(files.slice(i, i + CHUNK).map(f => f.path));
+        setTrackMeta(prev => ({ ...prev, ...metas }));
+      } catch (e) {
+        console.error('Failed to load track metadata:', e);
+        return;
+      }
     }
   };
 
@@ -1363,8 +1389,42 @@ function App() {
           )}
 
           {activeTab === 'library' && (() => {
-            const libraryFiltered = downloadedFiles.filter(f => f.name.toLowerCase().includes(librarySearch.toLowerCase().trim()));
-            const libraryQueue = libraryFiltered.map(libraryQueueItem);
+            const q = librarySearch.toLowerCase().trim();
+            const rows = downloadedFiles.map(f => {
+              const m = trackMeta[f.path];
+              const basename = f.name.split(/[/\\]/).pop() || f.name;
+              return {
+                file: f,
+                basename,
+                title: m?.title || basename.replace(/\.[^/.]+$/, ''),
+                artist: m?.artist || '',
+                album: m?.album || '',
+                genre: m?.genre || '',
+                bpm: m?.bpm ?? null,
+                key: m?.key || '',
+                duration: m?.duration || 0,
+              };
+            });
+            const cmpStr = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
+            const libraryFiltered = rows
+              .filter(r => `${r.title} ${r.artist} ${r.album} ${r.genre} ${r.file.name}`.toLowerCase().includes(q))
+              .sort((a, b) => sortDir * (
+                sortCol === 'title' ? cmpStr(a.title, b.title) :
+                sortCol === 'artist' ? cmpStr(a.artist, b.artist) :
+                sortCol === 'album' ? cmpStr(a.album, b.album) :
+                sortCol === 'genre' ? cmpStr(a.genre, b.genre) :
+                sortCol === 'bpm' ? (a.bpm || 0) - (b.bpm || 0) :
+                sortCol === 'key' ? cmpStr(a.key, b.key) :
+                sortCol === 'time' ? a.duration - b.duration :
+                sortCol === 'size' ? a.file.size - b.file.size :
+                a.file.ctime - b.file.ctime
+              ));
+            const libraryQueue = libraryFiltered.map(r => libraryQueueItem(r.file));
+            const th = (id: string, label: string, cls?: string) => (
+              <th className={cls} onClick={() => toggleSort(id)}>
+                {label}{sortCol === id ? <span className="sort-arrow">{sortDir === 1 ? '▲' : '▼'}</span> : null}
+              </th>
+            );
             return (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
@@ -1385,45 +1445,65 @@ function App() {
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {libraryFiltered.map((file, i) => {
-                  const basename = file.name.split(/[/\\]/).pop() || file.name;
-                  const folder = file.name.includes('/') || file.name.includes('\\')
-                    ? file.name.substring(0, file.name.lastIndexOf(file.name.includes('\\') ? '\\' : '/'))
-                    : null;
-                  const isSeeding = !!file.magnetUri;
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px', transition: 'background 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-                    >
-                      {isSeeding ? (
-                        <div style={{ width: '18px', textAlign: 'center', color: '#2ecc71', fontSize: '0.9rem', flexShrink: 0 }} title="Already seeding">✓</div>
-                      ) : (
-                        <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={e => setSelectedFiles(prev => e.target.checked ? [...prev, file.path] : prev.filter(p => p !== file.path))} style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }} />
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{basename}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', gap: '10px' }}>
-                          <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                          {folder && <span style={{ opacity: 0.7 }}>📁 {folder}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-primary" onClick={() => playAt(libraryQueue, i)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Play</button>
-                        <button className="btn btn-secondary" onClick={() => revealInSharedFiles(file.path)} title="Show in Shared Files" style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center' }}><Folder size={14} /></button>
-                        <button className="btn btn-secondary" onClick={() => handleEditTags(file)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Edit Tags</button>
-                        <button className="btn btn-accent" onClick={() => handleUploadFile(file.path)} disabled={uploadingFilePath !== null} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>{uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TC'}</button>
-                        {file.magnetUri ? (
-                          <button className="btn btn-secondary" onClick={() => { navigator.clipboard.writeText(file.magnetUri); alert('Magnet URI copied to clipboard!'); }} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem', color: '#2ecc71', borderColor: '#2ecc71' }}>🟢 Copy Link</button>
-                        ) : (
-                          <button className="btn btn-secondary" onClick={() => handleSeedFile(file.path)} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>🧲 Seed</button>
-                        )}
-                        <button className="btn btn-danger" onClick={() => handleDeleteFile(file.path)} disabled={uploadingFilePath === file.path} style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>Delete</button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="track-table-wrap">
+                <table className="track-table">
+                  <thead>
+                    <tr>
+                      <th className="col-check"></th>
+                      <th className="col-num">#</th>
+                      {th('title', 'Title', 'col-title')}
+                      {th('artist', 'Artist')}
+                      {th('album', 'Album')}
+                      {th('genre', 'Genre')}
+                      {th('bpm', 'BPM', 'col-right')}
+                      {th('key', 'Key')}
+                      {th('time', 'Time', 'col-right')}
+                      {th('size', 'Size', 'col-right')}
+                      {th('added', 'Added')}
+                      <th className="col-actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {libraryFiltered.map((r, i) => {
+                      const file = r.file;
+                      const isSeeding = !!file.magnetUri;
+                      const isCurrent = currentPlayback?.path === file.path;
+                      return (
+                        <tr key={file.path} className={isCurrent ? 'playing' : ''} onDoubleClick={() => playAt(libraryQueue, i)}>
+                          <td className="col-check">
+                            {isSeeding ? (
+                              <span className="seed-check" title="Already seeding">✓</span>
+                            ) : (
+                              <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={e => setSelectedFiles(prev => e.target.checked ? [...prev, file.path] : prev.filter(p => p !== file.path))} />
+                            )}
+                          </td>
+                          <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
+                          <td className="col-title" title={file.name}>{r.title}</td>
+                          <td className="cell-ellipsis">{r.artist}</td>
+                          <td className="cell-ellipsis cell-muted">{r.album}</td>
+                          <td className="cell-ellipsis cell-muted">{r.genre}</td>
+                          <td className="col-right cell-mono">{r.bpm ?? ''}</td>
+                          <td className="cell-mono">{r.key}</td>
+                          <td className="col-right cell-mono">{r.duration ? formatTime(r.duration) : ''}</td>
+                          <td className="col-right cell-mono cell-muted">{(file.size / 1024 / 1024).toFixed(1)}M</td>
+                          <td className="cell-mono cell-muted">{new Date(file.ctime).toLocaleDateString()}</td>
+                          <td className="col-actions">
+                            <button title="Play" onClick={() => playAt(libraryQueue, i)}><Play size={13} /></button>
+                            <button title="Show in Shared Files" onClick={() => revealInSharedFiles(file.path)}><Folder size={13} /></button>
+                            <button title="Edit tags" onClick={() => handleEditTags(file)}><Tag size={13} /></button>
+                            <button title={uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TuneCamp'} disabled={uploadingFilePath !== null} onClick={() => handleUploadFile(file.path)}><Cloud size={13} /></button>
+                            {file.magnetUri ? (
+                              <button title="Copy magnet link" className="act-ok" onClick={() => { navigator.clipboard.writeText(file.magnetUri); alert('Magnet URI copied to clipboard!'); }}><Magnet size={13} /></button>
+                            ) : (
+                              <button title="Seed as torrent" onClick={() => handleSeedFile(file.path)}><Magnet size={13} /></button>
+                            )}
+                            <button title="Delete" className="act-danger" disabled={uploadingFilePath === file.path} onClick={() => handleDeleteFile(file.path)}><Trash2 size={13} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
                 {libraryFiltered.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() ? 'No tracks match your search.' : 'No music files in library.'}</div>
                 )}
