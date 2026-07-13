@@ -17,6 +17,8 @@ export interface TrackMeta {
   duration: number; // seconds
   year: number | null;
   bitrate: number;  // bps
+  /** waveform peaks 0-100, computed by the renderer's Analyze pass (not derivable from tags) */
+  peaks?: number[];
 }
 
 interface CacheEntry { mtime: number; meta: TrackMeta; }
@@ -42,16 +44,19 @@ export function _setCacheFile(p: string) { cacheFile = p; cache = null; }
 async function loadCache(): Promise<Record<string, CacheEntry>> {
   if (cache) return cache;
   try {
-    cache = (await fs.pathExists(getCacheFile())) ? await fs.readJson(getCacheFile()) : {};
+    cache = ((await fs.pathExists(getCacheFile())) ? await fs.readJson(getCacheFile()) : {}) || {};
   } catch { cache = {}; }
   return cache!;
 }
 
 function persistCache() {
-  // serialize writes so concurrent batches don't race the JSON file
+  // serialize writes so concurrent batches don't race the JSON file;
+  // snapshot file+data now so a later _setCacheFile can't redirect a queued write
+  const file = getCacheFile();
+  const snap = cache;
   writeQueue = writeQueue.then(async () => {
-    await fs.ensureDir(path.dirname(getCacheFile()));
-    await fs.writeJson(getCacheFile(), cache, { spaces: 0 });
+    await fs.ensureDir(path.dirname(file));
+    await fs.writeJson(file, snap, { spaces: 0 });
   }).catch(() => {});
 }
 
@@ -86,14 +91,17 @@ async function parseOne(filePath: string): Promise<TrackMeta> {
   return meta;
 }
 
-/** Upsert an analyzed BPM into the cache (called after the renderer's Web Audio analysis).
+/** Upsert analysis results (BPM and/or waveform peaks) into the cache.
  *  Stats the file AFTER any tag write so the stored mtime matches the on-disk state. */
-export async function setCachedBpm(filePath: string, bpm: number): Promise<void> {
+export async function setCachedAnalysis(filePath: string, data: { bpm?: number; peaks?: number[] }): Promise<void> {
   const c = await loadCache();
   let st;
   try { st = await fs.stat(filePath); } catch { return; }
   const meta = c[filePath]?.meta ?? await parseOne(filePath);
-  meta.bpm = Math.round(bpm * 100) / 100;
+  if (typeof data.bpm === 'number' && Number.isFinite(data.bpm)) meta.bpm = Math.round(data.bpm * 100) / 100;
+  if (Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400) {
+    meta.peaks = data.peaks.map(p => Math.max(0, Math.min(100, Math.round(Number(p) || 0))));
+  }
   c[filePath] = { mtime: st.mtimeMs, meta };
   persistCache();
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
@@ -15,6 +15,30 @@ declare global {
     electronAPI: any;
   }
 }
+
+// Per-row waveform (rekordbox-style). Memoized: only the playing row repaints
+// on the ~4Hz timeupdate ticks, the other N rows skip both render and draw.
+const Waveform = memo(function Waveform({ peaks, progress, active }: { peaks?: number[]; progress: number; active: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    if (!peaks || peaks.length === 0) return;
+    const n = peaks.length;
+    const bw = W / n;
+    const played = active ? Math.floor((n * progress) / 100) : 0;
+    for (let i = 0; i < n; i++) {
+      const h = Math.max(1, (peaks[i] / 100) * H);
+      ctx.fillStyle = i < played ? '#a855f7' : active ? 'rgba(168,85,247,0.45)' : 'rgba(148,163,184,0.45)';
+      ctx.fillRect(i * bw, (H - h) / 2, Math.max(0.6, bw - 0.4), h);
+    }
+  }, [peaks, progress, active]);
+  return <canvas ref={ref} width={140} height={22} className="wave-canvas" />;
+});
 
 function App() {
   const [server, setServer] = useState('');
@@ -42,7 +66,7 @@ function App() {
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
   // Library table (rekordbox-style): tag metadata per file path + sort state
-  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number };
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[] };
   const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
   const [sortCol, setSortCol] = useState('added');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -573,13 +597,37 @@ function App() {
     setSelectedFiles([]);
   };
 
-  // Detect BPM for every library track that has none: decode with Web Audio
-  // (Chromium built-in, all formats the player supports), detect on a 60s
-  // middle window, persist via IPC (TBPM tag for mp3 + meta cache).
-  const analyzeBpm = async () => {
-    const targets = downloadedFiles.filter(f => trackMeta[f.path] && !trackMeta[f.path].bpm);
+  // Analyze every library track missing BPM or waveform: one Web Audio decode
+  // (Chromium built-in, all formats the player supports) feeds both — BPM from
+  // a 60s middle window, waveform as 140 normalized peaks. Persisted via IPC
+  // (TBPM tag for mp3 + meta cache).
+  const computePeaks = (decoded: AudioBuffer): number[] => {
+    const ch = decoded.getChannelData(0);
+    const N = 140;
+    const bucket = Math.max(1, Math.floor(ch.length / N));
+    const peaks: number[] = [];
+    let top = 0;
+    for (let i = 0; i < N; i++) {
+      let max = 0;
+      const start = i * bucket;
+      const end = Math.min(start + bucket, ch.length);
+      for (let j = start; j < end; j += 32) { // stride sampling: plenty for a 140px strip
+        const v = Math.abs(ch[j]);
+        if (v > max) max = v;
+      }
+      peaks.push(max);
+      if (max > top) top = max;
+    }
+    return peaks.map(p => (top > 0 ? Math.round((p / top) * 100) : 0)); // normalize like rekordbox
+  };
+
+  const analyzeTracks = async () => {
+    const targets = downloadedFiles.filter(f => {
+      const m = trackMeta[f.path];
+      return m && (!m.bpm || !m.peaks?.length);
+    });
     if (targets.length === 0) {
-      alert('No tracks missing BPM (or metadata is still loading).');
+      alert('Nothing to analyze — all tracks have BPM and waveform (or metadata is still loading).');
       return;
     }
     analyzeCancelRef.current = false;
@@ -587,14 +635,24 @@ function App() {
     for (const f of targets) {
       if (analyzeCancelRef.current) break;
       try {
+        const m = trackMeta[f.path];
         const raw = await (await fetch(`media://${encodeURIComponent(f.path)}`)).arrayBuffer();
         const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
-        const offset = Math.max(0, (decoded.duration - 60) / 2);
-        const { bpm } = await guess(decoded, offset, Math.min(60, decoded.duration));
-        await window.electronAPI.setTrackBpm(f.path, bpm);
-        setTrackMeta(prev => ({ ...prev, [f.path]: { ...prev[f.path], bpm } }));
+        const data: { bpm?: number; peaks?: number[] } = {};
+        if (!m.peaks?.length) data.peaks = computePeaks(decoded);
+        if (!m.bpm) {
+          const offset = Math.max(0, (decoded.duration - 60) / 2);
+          try {
+            const { bpm } = await guess(decoded, offset, Math.min(60, decoded.duration));
+            data.bpm = bpm;
+          } catch { /* no clear tempo — keep the waveform anyway */ }
+        }
+        if (data.bpm || data.peaks) {
+          await window.electronAPI.setTrackAnalysis(f.path, data);
+          setTrackMeta(prev => ({ ...prev, [f.path]: { ...prev[f.path], ...(data.bpm ? { bpm: data.bpm } : {}), ...(data.peaks ? { peaks: data.peaks } : {}) } }));
+        }
       } catch (e) {
-        console.warn('BPM analysis failed for', f.path, e); // undecodable / no clear tempo — skip
+        console.warn('Analysis failed for', f.path, e); // undecodable — skip
       }
       setAnalyzing(s => (s ? { done: s.done + 1, total: s.total } : s));
     }
@@ -1498,6 +1556,7 @@ function App() {
                 duration: m?.duration || 0,
                 year: m?.year ?? null,
                 kbps: m?.bitrate ? Math.round(m.bitrate / 1000) : 0,
+                peaks: m?.peaks,
               };
             });
             // Collection pane data: counts over the whole library, not the filtered view
@@ -1594,9 +1653,9 @@ function App() {
                     </>
                   )}
                   {analyzing ? (
-                    <button className="btn btn-secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ BPM {analyzing.done}/{analyzing.total}</button>
+                    <button className="btn btn-secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ {analyzing.done}/{analyzing.total}</button>
                   ) : (
-                    <button className="btn btn-secondary" onClick={analyzeBpm} title="Detect BPM for tracks without one (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🎧 Analyze BPM</button>
+                    <button className="btn btn-secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🎧 Analyze</button>
                   )}
                   {libraryFiltered.length > 0 && (
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
@@ -1624,6 +1683,7 @@ function App() {
                     <tr>
                       <th className="col-check"></th>
                       <th className="col-num">#</th>
+                      <th className="col-wave">Wave</th>
                       {th('title', 'Title', 'col-title')}
                       {th('artist', 'Artist')}
                       {th('album', 'Album')}
@@ -1663,6 +1723,18 @@ function App() {
                             )}
                           </td>
                           <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
+                          <td
+                            className="col-wave"
+                            title={isCurrent ? 'Click to seek' : r.peaks?.length ? 'Double-click row to play' : 'Run 🎧 Analyze to render the waveform'}
+                            onClick={e => {
+                              if (!isCurrent || !audioRef.current || !duration) return;
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+                            }}
+                          >
+                            <Waveform peaks={r.peaks} active={isCurrent} progress={isCurrent && duration > 0 ? Math.round((currentTime / duration) * 100) : 0} />
+                          </td>
                           {editableCell(r, 'title', 'col-title')}
                           {editableCell(r, 'artist', 'cell-ellipsis')}
                           {editableCell(r, 'album', 'cell-ellipsis cell-muted')}

@@ -922,6 +922,8 @@ body {
 .track-table .cell-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; }
 .track-table .seed-check { color: var(--success); font-size: 0.85rem; }
 
+.track-table .col-wave { width: 148px; padding: 2px 4px; }
+.track-table .wave-canvas { display: block; width: 140px; height: 22px; }
 .track-table .col-bpm { width: 54px; }
 .track-table .col-key { width: 48px; }
 .track-table .col-time { width: 52px; }

@@ -3,8 +3,10 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
-  { scheme: 'stream', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } }
+  // corsEnabled: false — renderer fetch() of media:// (waveform/BPM analysis) comes from an
+  // http/file origin and would otherwise be blocked by CORS for custom schemes.
+  { scheme: 'media', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, corsEnabled: false } },
+  { scheme: 'stream', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, corsEnabled: false } }
 ]);
 
 process.env.DIST = join(import.meta.dirname, '../dist')
@@ -94,7 +96,7 @@ import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
 import NodeID3 from 'node-id3';
-import { getTracksMeta, setCachedBpm } from './track-meta';
+import { getTracksMeta, setCachedAnalysis } from './track-meta';
 
 const AUDIO_MIME: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
@@ -302,14 +304,16 @@ ipcMain.handle('downloads:tracks-meta', async (event, paths: string[]) => {
   return getTracksMeta(paths.filter(p => typeof p === 'string' && isUnderAllowedRoot(p)));
 });
 
-// Persist a BPM detected by the renderer's Web Audio analysis: TBPM tag for mp3, cache for all.
-ipcMain.handle('downloads:set-bpm', async (event, filePath: string, bpm: number) => {
-  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath)) return false;
-  if (!Number.isFinite(bpm) || bpm < 40 || bpm > 300) return false;
-  if (path.extname(filePath).toLowerCase() === '.mp3') {
+// Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
+ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[] }) => {
+  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;
+  const bpm = typeof data.bpm === 'number' && Number.isFinite(data.bpm) && data.bpm >= 40 && data.bpm <= 300 ? data.bpm : undefined;
+  const peaks = Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400 ? data.peaks : undefined;
+  if (!bpm && !peaks) return false;
+  if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
     try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
   }
-  await setCachedBpm(filePath, bpm);
+  await setCachedAnalysis(filePath, { bpm, peaks });
   return true;
 });
 
