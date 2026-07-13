@@ -16,6 +16,46 @@ declare global {
   }
 }
 
+// Big scrolling waveform (rekordbox-style): playhead fixed at center, wave
+// scrolls under it via requestAnimationFrame reading audio.currentTime
+// directly — no React state churn at 60fps. Click = seek.
+const ScrollWave = memo(function ScrollWave({ peaks, pps, audioRef }: { peaks: number[]; pps: number; audioRef: React.RefObject<HTMLAudioElement | null> }) {
+  const cvRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const cv = cvRef.current, audio = audioRef.current;
+      if (!cv || !audio) return;
+      if (cv.width !== cv.clientWidth) cv.width = cv.clientWidth || 800;
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      const W = cv.width, H = cv.height, center = W >> 1;
+      ctx.clearRect(0, 0, W, H);
+      const start = Math.round(audio.currentTime * pps) - center;
+      for (let x = 0; x < W; x++) {
+        const idx = start + x;
+        if (idx < 0 || idx >= peaks.length) continue;
+        const h = Math.max(1, (peaks[idx] / 100) * (H - 10));
+        ctx.fillStyle = x < center ? 'rgba(168,85,247,0.35)' : 'rgba(168,85,247,0.85)';
+        ctx.fillRect(x, (H - h) / 2, 1, h);
+      }
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(center - 1, 0, 2, H);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [peaks, pps, audioRef]);
+  const seek = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const audio = audioRef.current, cv = cvRef.current;
+    if (!audio || !cv) return;
+    const rect = cv.getBoundingClientRect();
+    const t = audio.currentTime + ((e.clientX - rect.left) - rect.width / 2) / pps;
+    audio.currentTime = Math.max(0, Math.min(t, audio.duration || t));
+  };
+  return <canvas ref={cvRef} height={80} className="scrollwave-canvas" onClick={seek} title="Click to seek" />;
+});
+
 // Per-row waveform (rekordbox-style). Memoized: only the playing row repaints
 // on the ~4Hz timeupdate ticks, the other N rows skip both render and draw.
 const Waveform = memo(function Waveform({ peaks, progress, active }: { peaks?: number[]; progress: number; active: boolean }) {
@@ -601,9 +641,8 @@ function App() {
   // (Chromium built-in, all formats the player supports) feeds both — BPM from
   // a 60s middle window, waveform as 140 normalized peaks. Persisted via IPC
   // (TBPM tag for mp3 + meta cache).
-  const computePeaks = (decoded: AudioBuffer): number[] => {
+  const computePeaks = (decoded: AudioBuffer, N = 140): number[] => {
     const ch = decoded.getChannelData(0);
-    const N = 140;
     const bucket = Math.max(1, Math.floor(ch.length / N));
     const peaks: number[] = [];
     let top = 0;
@@ -620,6 +659,28 @@ function App() {
     }
     return peaks.map(p => (top > 0 ? Math.round((p / top) * 100) : 0)); // normalize like rekordbox
   };
+
+  // Hi-res peaks (50/sec) for the big scrolling waveform, computed per played
+  // track on demand — local files only, network streams have no local bytes.
+  const SCROLL_PPS = 50;
+  const [scrollWave, setScrollWave] = useState<{ path: string; peaks: number[] } | null>(null);
+  useEffect(() => {
+    const p = currentPlayback?.path;
+    setScrollWave(null);
+    if (!p || !/[/\\]/.test(p)) return;
+    let stale = false;
+    (async () => {
+      try {
+        const u8: Uint8Array = await window.electronAPI.readAudioFile(p);
+        if (stale) return;
+        const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
+        const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
+        if (stale) return;
+        setScrollWave({ path: p, peaks: computePeaks(decoded, Math.max(1, Math.ceil(decoded.duration * SCROLL_PPS))) });
+      } catch { /* not a local decodable file — no scroll wave */ }
+    })();
+    return () => { stale = true; };
+  }, [currentPlayback?.path]);
 
   const analyzeTracks = async () => {
     const targets = downloadedFiles.filter(f => {
@@ -1245,6 +1306,11 @@ function App() {
       </div>
 
       <main className="main-content">
+          {currentPlayback && scrollWave && scrollWave.path === currentPlayback.path && (
+            <div className="scrollwave-wrap">
+              <ScrollWave peaks={scrollWave.peaks} pps={SCROLL_PPS} audioRef={audioRef} />
+            </div>
+          )}
           {update?.updateAvailable && !updateDismissed && (
             <div className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 1rem', marginBottom: '1rem' }}>
               <ArrowUpCircle size={18} style={{ color: 'var(--accent, #4ade80)', flexShrink: 0 }} />
