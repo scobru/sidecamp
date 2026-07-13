@@ -2024,45 +2024,37 @@ function App() {
                       className="glass-input"
                       style={{ marginBottom: '1rem' }}
                     />
-                  <div className="peer-tracks-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '5px' }}>
-                    {filtered.map((t) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '1rem 1.2rem',
-                          background: 'rgba(0,0,0,0.15)',
-                          border: '1px solid var(--glass-border)',
-                          borderRadius: '8px',
-                          transition: 'background 0.2s ease'
-                        }}
-                        className="peer-track-item"
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>{t.title || 'Unknown Title'}</span>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t.artist || 'Unknown Artist'} • {t.album || 'Unknown Album'} ({t.format})</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => playNetworkTrack(selectedPeer, t)}
-                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                          >
-                            Play
-                          </button>
-                          <button
-                            className="btn btn-accent"
-                            onClick={() => handleDownloadPeerTrack(t)}
-                            disabled={downloadingTrackId === t.id}
-                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                          >
-                            {downloadingTrackId === t.id ? 'Downloading...' : 'Download'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="track-table-wrap" style={{ maxHeight: '420px' }}>
+                    <table className="track-table">
+                      <thead>
+                        <tr>
+                          <th className="col-num">#</th>
+                          <th>Title</th>
+                          <th>Artist</th>
+                          <th>Album</th>
+                          <th className="col-key">Fmt</th>
+                          <th className="col-actions" style={{ width: '64px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map((t, i) => {
+                          const isCurrent = currentPlayback?.name === `${t.artist} - ${t.title}`;
+                          return (
+                            <tr key={t.id} className={isCurrent ? 'playing' : ''} onDoubleClick={() => playNetworkTrack(selectedPeer, t)}>
+                              <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
+                              <td className="cell-ellipsis" style={{ fontWeight: 500 }} title={t.title}>{t.title || 'Unknown Title'}</td>
+                              <td className="cell-ellipsis">{t.artist || 'Unknown Artist'}</td>
+                              <td className="cell-ellipsis cell-muted">{t.album || ''}</td>
+                              <td className="cell-mono cell-muted">{t.format}</td>
+                              <td className="col-actions">
+                                <button title="Play" onClick={() => playNetworkTrack(selectedPeer, t)}><Play size={13} /></button>
+                                <button title={downloadingTrackId === t.id ? 'Downloading…' : 'Download'} disabled={downloadingTrackId === t.id} onClick={() => handleDownloadPeerTrack(t)}><Download size={13} /></button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                     {filtered.length === 0 && (
                       <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem' }}>No tracks match "{networkQuery}".</div>
                     )}
@@ -2255,30 +2247,42 @@ function App() {
                     <button className="btn btn-primary" onClick={handleSearch}>Search</button>
                   </div>
 
-                  <div className="results-list">
-                    {searchResults.map((res, i) => (
-                      <div key={i} className="result-item">
-                        <div className="result-info">
-                          <div className="result-filename">
-                            {res.title || (res.file && res.file.split(/[/\\]/).pop()) || 'Unknown Track'}
-                          </div>
-                          <div className="result-meta">
-                            {res.source === 'soulseek' && `${(res.size / 1024 / 1024).toFixed(2)} MB • ${res.bitrate || '?'} kbps • User: ${res.user}`}
-                            {res.source === 'peer' && `${res.size ? (res.size / 1024 / 1024).toFixed(2) + ' MB • ' : ''}${res.user}`}
-                            {res.source !== 'soulseek' && res.source !== 'peer' && `Platform: ${res.user || res.source}`}
-                          </div>
-                        </div>
-                        <button 
-                          className="btn btn-accent" 
-                          onClick={() => handleDownload(res)}
-                          disabled={activeDownloads.some(d => d.id === res.id && d.status === 'downloading')}
-                        >
-                          {activeDownloads.some(d => d.id === res.id && d.status === 'downloading') ? 'Downloading...' : 'Download'}
-                        </button>
-                      </div>
-                    ))}
-                    {searchResults.length === 0 && <div className="no-results">No results.</div>}
-                  </div>
+                  {searchResults.length === 0 ? (
+                    <div className="no-results">No results.</div>
+                  ) : (
+                    <div className="track-table-wrap" style={{ maxHeight: '55vh' }}>
+                      <table className="track-table">
+                        <thead>
+                          <tr>
+                            <th className="col-num">#</th>
+                            <th>Title</th>
+                            <th className="col-size col-right">Size</th>
+                            <th className="col-kbps col-right">kbps</th>
+                            <th style={{ width: '220px' }}>Source / User</th>
+                            <th className="col-actions" style={{ width: '40px' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {searchResults.map((res, i) => {
+                            const busy = activeDownloads.some(d => d.id === res.id && d.status === 'downloading');
+                            const name = res.title || (res.file && res.file.split(/[/\\]/).pop()) || 'Unknown Track';
+                            return (
+                              <tr key={i} onDoubleClick={() => !busy && handleDownload(res)}>
+                                <td className="col-num">{i + 1}</td>
+                                <td className="cell-ellipsis" style={{ fontWeight: 500 }} title={res.file || name}>{name}</td>
+                                <td className="col-right cell-mono cell-muted">{res.size ? (res.size / 1024 / 1024).toFixed(1) + 'M' : ''}</td>
+                                <td className="col-right cell-mono cell-muted">{res.bitrate || ''}</td>
+                                <td className="cell-ellipsis cell-muted">{res.source === 'soulseek' || res.source === 'peer' ? `${res.source} • ${res.user}` : (res.user || res.source)}</td>
+                                <td className="col-actions">
+                                  <button title={busy ? 'Downloading…' : 'Download'} disabled={busy} onClick={() => handleDownload(res)}><Download size={13} /></button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </>
               )}
 
