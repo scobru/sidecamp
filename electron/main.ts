@@ -304,6 +304,13 @@ ipcMain.handle('downloads:tracks-meta', async (event, paths: string[]) => {
   return getTracksMeta(paths.filter(p => typeof p === 'string' && isUnderAllowedRoot(p)));
 });
 
+// Raw audio bytes for the renderer's Web Audio analysis. fetch('media://…') is CORS-blocked
+// for non-standard schemes, so the renderer gets the bytes over IPC instead.
+ipcMain.handle('downloads:read-file', async (event, filePath: string) => {
+  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath)) throw new Error('Access denied: invalid path');
+  return fs.promises.readFile(filePath);
+});
+
 // Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
 ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[] }) => {
   if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;

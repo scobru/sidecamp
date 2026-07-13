@@ -636,7 +636,9 @@ function App() {
       if (analyzeCancelRef.current) break;
       try {
         const m = trackMeta[f.path];
-        const raw = await (await fetch(`media://${encodeURIComponent(f.path)}`)).arrayBuffer();
+        // bytes over IPC — fetch('media://…') is CORS-blocked for non-standard schemes
+        const u8: Uint8Array = await window.electronAPI.readAudioFile(f.path);
+        const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
         const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
         const data: { bpm?: number; peaks?: number[] } = {};
         if (!m.peaks?.length) data.peaks = computePeaks(decoded);

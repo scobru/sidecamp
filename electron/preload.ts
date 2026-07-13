@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readTags: (filePath: string) => ipcRenderer.invoke('downloads:read-tags', filePath),
   getTracksMeta: (paths: string[]) => ipcRenderer.invoke('downloads:tracks-meta', paths),
   setTrackAnalysis: (filePath: string, data: { bpm?: number; peaks?: number[] }) => ipcRenderer.invoke('downloads:set-analysis', filePath, data),
+  readAudioFile: (filePath: string) => ipcRenderer.invoke('downloads:read-file', filePath),
   writeTags: (filePath: string, tags: any) => ipcRenderer.invoke('downloads:write-tags', filePath, tags),
   renameDownload: (filePath: string, newFilename: string) => ipcRenderer.invoke('downloads:rename', filePath, newFilename),
   moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),
