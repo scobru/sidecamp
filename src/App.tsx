@@ -3,8 +3,9 @@ import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User
+  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2
 } from 'lucide-react';
+import GraphView from './GraphView';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
@@ -135,8 +136,9 @@ function App() {
     }
   };
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
-  type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
+  type Playlist = { id: string; name: string; tracks: { path: string; name: string }[]; edges?: [string, string][] };
   const [showPlaylists, setShowPlaylists] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     try { return JSON.parse(localStorage.getItem('playlists') || '[]'); } catch { return []; }
   });
@@ -1532,6 +1534,42 @@ function App() {
             );
           })()}
 
+          {activeTab === 'library' && showGraph && (
+            <div className="glass-card">
+              <h3 style={{ marginTop: 0 }}>Playlist Graph{activePlaylist ? ` — ${activePlaylist.name}` : ''}</h3>
+              {!activePlaylist ? (
+                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Select or create a playlist in the Playlists panel first — the graph edits the active playlist.
+                </div>
+              ) : (
+                <GraphView
+                  tracks={activePlaylist.tracks}
+                  edges={activePlaylist.edges || []}
+                  meta={trackMeta}
+                  library={downloadedFiles.map((f: any) => ({ path: f.path, name: f.name }))}
+                  onAddTrack={(t, edgeFrom) => updatePlaylist(activePlaylist.id, p => ({
+                    ...p,
+                    tracks: p.tracks.some(x => x.path === t.path) ? p.tracks : [...p.tracks, { path: t.path, name: t.name.split(/[/\\]/).pop() || t.name }],
+                    edges: edgeFrom ? [...(p.edges || []), [edgeFrom, t.path] as [string, string]] : p.edges,
+                  }))}
+                  onAddEdge={(from, to) => updatePlaylist(activePlaylist.id, p => ({
+                    ...p,
+                    edges: (p.edges || []).some(([a, b]) => a === from && b === to) ? p.edges : [...(p.edges || []), [from, to]],
+                  }))}
+                  onRemoveEdge={(from, to) => updatePlaylist(activePlaylist.id, p => ({
+                    ...p,
+                    edges: (p.edges || []).filter(([a, b]) => !(a === from && b === to)),
+                  }))}
+                  onRemoveTrack={path => updatePlaylist(activePlaylist.id, p => ({
+                    ...p,
+                    tracks: p.tracks.filter(t => t.path !== path),
+                    edges: (p.edges || []).filter(([a, b]) => a !== path && b !== path),
+                  }))}
+                />
+              )}
+            </div>
+          )}
+
           {activeTab === 'library' && showOrganize && (
             <div className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1764,6 +1802,7 @@ function App() {
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
                   )}
                   <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowPlaylists(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</button>
+                  <button className={`btn ${showGraph ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowGraph(v => !v)} title="Graph view of the active playlist: link tracks, get BPM/key/genre suggestions, play the path with crossfade" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Share2 size={14} /> Graph</button>
                   <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
