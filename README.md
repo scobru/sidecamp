@@ -26,6 +26,9 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
 - 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with light/dark themes and a collapsible sidebar.
+- 🕸️ **Graph Playlist View** — Visualize your library as a track graph; edges are auto-suggested by BPM/key/genre compatibility, with beat-synced crossfade transitions and one-click A→B preview.
+- 🎚️ **DJ Mixing Tools** — Hot cues, zoomable waveform preview, cue points, and EQ-based transition presets (bass-swap, echo-out) for smooth track blending.
+- 🔴 **Set Recording** — Record your live mix session to a file as you play through the graph.
 
 ## Prerequisites
 
@@ -114,6 +117,7 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 - **Uploader** (`electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
 - **Peer** (`electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
 - **Frontend** (`src/`): React + Vite UI rendered inside the Electron window.
+- **Graph View** (`src/GraphView.tsx`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, crossfade playback engine, and set recording.
 
 ## Ecosystem
 
