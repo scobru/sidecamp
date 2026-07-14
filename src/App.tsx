@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
@@ -9,6 +9,9 @@ import GraphView from './GraphView';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
+
+// Shared collator: options are parsed once, not on every comparison.
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
 
 // Declare global for TypeScript
 declare global {
@@ -1203,6 +1206,63 @@ function App() {
 
   const validFolders = folder.split(/[,;]/).map(f => f.trim()).filter(Boolean);
   const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
+
+  // Library table derivations, memoized: without this the whole block re-ran on
+  // every App render — including the ~4Hz timeupdate ticks during playback.
+  const lib = useMemo(() => {
+    const q = librarySearch.toLowerCase().trim();
+    const folderOf = (name: string) => { const parts = name.split(/[/\\]/); return parts.length > 1 ? parts[0] : '(root)'; };
+    const rows = downloadedFiles.map(f => {
+      const m = trackMeta[f.path];
+      const basename = f.name.split(/[/\\]/).pop() || f.name;
+      return {
+        file: f,
+        basename,
+        title: m?.title || basename.replace(/\.[^/.]+$/, ''),
+        artist: m?.artist || '',
+        album: m?.album || '',
+        genre: m?.genre || '',
+        bpm: m?.bpm ?? null,
+        key: m?.key || '',
+        duration: m?.duration || 0,
+        year: m?.year ?? null,
+        kbps: m?.bitrate ? Math.round(m.bitrate / 1000) : 0,
+        peaks: m?.peaks,
+      };
+    });
+    // Collection pane data: counts over the whole library, not the filtered view
+    const countBy = (get: (r: typeof rows[0]) => string) => {
+      const map = new Map<string, number>();
+      rows.forEach(r => { const k = get(r) || '(unknown)'; map.set(k, (map.get(k) || 0) + 1); });
+      return [...map.entries()].sort((a, b) => collator.compare(a[0], b[0]));
+    };
+    const artists = countBy(r => r.artist);
+    const genres = countBy(r => r.genre);
+    const folders = countBy(r => folderOf(r.file.name));
+    const catFiltered = rows.filter(r =>
+      libFilter.type === 'all' ? true :
+      libFilter.type === 'artist' ? (r.artist || '(unknown)') === libFilter.value :
+      libFilter.type === 'genre' ? (r.genre || '(unknown)') === libFilter.value :
+      folderOf(r.file.name) === libFilter.value);
+    const libraryFiltered = catFiltered
+      .filter(r => `${r.title} ${r.artist} ${r.album} ${r.genre} ${r.file.name}`.toLowerCase().includes(q))
+      .sort((a, b) => sortDir * (
+        sortCol === 'title' ? collator.compare(a.title, b.title) :
+        sortCol === 'artist' ? collator.compare(a.artist, b.artist) :
+        sortCol === 'album' ? collator.compare(a.album, b.album) :
+        sortCol === 'genre' ? collator.compare(a.genre, b.genre) :
+        sortCol === 'bpm' ? (a.bpm || 0) - (b.bpm || 0) :
+        sortCol === 'key' ? collator.compare(a.key, b.key) :
+        sortCol === 'time' ? a.duration - b.duration :
+        sortCol === 'year' ? (a.year || 0) - (b.year || 0) :
+        sortCol === 'kbps' ? a.kbps - b.kbps :
+        sortCol === 'size' ? a.file.size - b.file.size :
+        a.file.ctime - b.file.ctime
+      ));
+    const libraryQueue = libraryFiltered.map(r => libraryQueueItem(r.file));
+    return { rows, artists, genres, folders, libraryFiltered, libraryQueue };
+  }, [downloadedFiles, trackMeta, librarySearch, libFilter, sortCol, sortDir]);
+  const selectedSet = useMemo(() => new Set(selectedFiles), [selectedFiles]);
   const browserRoots = [
     ...(downloadsDir ? [{ label: 'Downloads', path: downloadsDir }] : []),
     ...validFolders.map(f => ({ label: f.split(/[/\\]/).pop() || f, path: f })),
@@ -1696,57 +1756,7 @@ function App() {
           )}
 
           {activeTab === 'library' && (() => {
-            const q = librarySearch.toLowerCase().trim();
-            const folderOf = (name: string) => { const parts = name.split(/[/\\]/); return parts.length > 1 ? parts[0] : '(root)'; };
-            const rows = downloadedFiles.map(f => {
-              const m = trackMeta[f.path];
-              const basename = f.name.split(/[/\\]/).pop() || f.name;
-              return {
-                file: f,
-                basename,
-                title: m?.title || basename.replace(/\.[^/.]+$/, ''),
-                artist: m?.artist || '',
-                album: m?.album || '',
-                genre: m?.genre || '',
-                bpm: m?.bpm ?? null,
-                key: m?.key || '',
-                duration: m?.duration || 0,
-                year: m?.year ?? null,
-                kbps: m?.bitrate ? Math.round(m.bitrate / 1000) : 0,
-                peaks: m?.peaks,
-              };
-            });
-            // Collection pane data: counts over the whole library, not the filtered view
-            const countBy = (get: (r: typeof rows[0]) => string) => {
-              const map = new Map<string, number>();
-              rows.forEach(r => { const k = get(r) || '(unknown)'; map.set(k, (map.get(k) || 0) + 1); });
-              return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
-            };
-            const artists = countBy(r => r.artist);
-            const genres = countBy(r => r.genre);
-            const folders = countBy(r => folderOf(r.file.name));
-            const catFiltered = rows.filter(r =>
-              libFilter.type === 'all' ? true :
-              libFilter.type === 'artist' ? (r.artist || '(unknown)') === libFilter.value :
-              libFilter.type === 'genre' ? (r.genre || '(unknown)') === libFilter.value :
-              folderOf(r.file.name) === libFilter.value);
-            const cmpStr = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
-            const libraryFiltered = catFiltered
-              .filter(r => `${r.title} ${r.artist} ${r.album} ${r.genre} ${r.file.name}`.toLowerCase().includes(q))
-              .sort((a, b) => sortDir * (
-                sortCol === 'title' ? cmpStr(a.title, b.title) :
-                sortCol === 'artist' ? cmpStr(a.artist, b.artist) :
-                sortCol === 'album' ? cmpStr(a.album, b.album) :
-                sortCol === 'genre' ? cmpStr(a.genre, b.genre) :
-                sortCol === 'bpm' ? (a.bpm || 0) - (b.bpm || 0) :
-                sortCol === 'key' ? cmpStr(a.key, b.key) :
-                sortCol === 'time' ? a.duration - b.duration :
-                sortCol === 'year' ? (a.year || 0) - (b.year || 0) :
-                sortCol === 'kbps' ? a.kbps - b.kbps :
-                sortCol === 'size' ? a.file.size - b.file.size :
-                a.file.ctime - b.file.ctime
-              ));
-            const libraryQueue = libraryFiltered.map(r => libraryQueueItem(r.file));
+            const { rows, artists, genres, folders, libraryFiltered, libraryQueue } = lib;
             // Checkbox with shift-click range selection over the current sorted view
             const rowCheck = (i: number, shift: boolean) => {
               const p = libraryFiltered[i].file.path;
@@ -1869,7 +1879,7 @@ function App() {
                           onDoubleClick={() => playAt(libraryQueue, i)}
                           draggable
                           onDragStart={e => {
-                            const paths = selectedFiles.includes(file.path) ? selectedFiles : [file.path];
+                            const paths = selectedSet.has(file.path) ? selectedFiles : [file.path];
                             e.dataTransfer.setData('text/sidecamp-paths', JSON.stringify(paths));
                             e.dataTransfer.effectAllowed = 'copy';
                           }}
@@ -1878,7 +1888,7 @@ function App() {
                             {isSeeding ? (
                               <span className="seed-check" title="Already seeding">✓</span>
                             ) : (
-                              <input type="checkbox" checked={selectedFiles.includes(file.path)} onChange={() => {}} onClick={e => { e.stopPropagation(); rowCheck(i, e.shiftKey); }} />
+                              <input type="checkbox" checked={selectedSet.has(file.path)} onChange={() => {}} onClick={e => { e.stopPropagation(); rowCheck(i, e.shiftKey); }} />
                             )}
                           </td>
                           <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
