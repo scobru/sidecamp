@@ -6,7 +6,7 @@ import { Play, Square, SkipForward, X } from 'lucide-react';
 // or Camelot key. Playing walks the out-edges from the selected node with a
 // crossfade + tempo-match between tracks.
 
-export type GraphMeta = { bpm: number | null; key: string; genre: string; artist?: string; title?: string };
+export type GraphMeta = { bpm: number | null; key: string; genre: string; artist?: string; title?: string; duration?: number; beatOffset?: number | null };
 export type GraphTrack = { path: string; name: string };
 export type GraphEdge = [string, string]; // [fromPath, toPath]
 
@@ -47,96 +47,165 @@ const bpmClose = (a: number | null, b: number | null, tol = 0.06) =>
   !!a && !!b && Math.abs(bpmRatio(a, b) - 1) <= tol;
 
 // --- Crossfade player -------------------------------------------------------
+// Web Audio, not <audio>: tracks are decoded to AudioBuffers over IPC (same
+// proven path as the Analyze pass), which gives seek-anywhere previews and
+// sample-accurate beat alignment. The media:// protocol aborts ranged
+// requests, so HTMLAudioElement cannot seek outside its buffer at all.
 const FADE_S = 8;
+const PREVIEW_LEAD_S = 5;  // seconds of A heard before the fade starts
+const PREVIEW_TAIL_S = 6;  // seconds of B heard after the fade completes
+type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null };
 type NowPlaying = { index: number; path: string; name: string } | null;
+type Deck = { src: AudioBufferSourceNode; gain: GainNode; buf: AudioBuffer; startCtx: number; startOffset: number; rate: number };
 
 class CrossfadePlayer {
-  private els: [HTMLAudioElement, HTMLAudioElement];
-  private cur = 0;
-  private queue: { path: string; name: string; bpm: number | null }[] = [];
+  private ctx: AudioContext | null = null;
+  private deck: Deck | null = null;
+  private queue: QueueItem[] = [];
   private idx = -1;
   private fading = false;
+  private previewing = false;
   private raf = 0;
+  private session = 0; // bumped on stop/play; async loads from older sessions are discarded
+  private bufCache = new Map<string, AudioBuffer>();
   onChange: (np: NowPlaying) => void = () => {};
 
-  constructor() {
-    this.els = [new Audio(), new Audio()];
-    this.els.forEach(el => { el.preservesPitch = true; });
+  private getCtx() {
+    if (!this.ctx) this.ctx = new AudioContext();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
   }
-  private src(path: string) { return `media://${encodeURIComponent(path)}`; }
 
-  play(queue: { path: string; name: string; bpm: number | null }[]) {
+  private async load(path: string): Promise<AudioBuffer> {
+    const hit = this.bufCache.get(path);
+    if (hit) return hit;
+    const u8: Uint8Array = await (window as any).electronAPI.readAudioFile(path);
+    const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
+    const buf = await this.getCtx().decodeAudioData(raw);
+    this.bufCache.set(path, buf);
+    // decoded PCM is big — keep only the last few tracks
+    while (this.bufCache.size > 3) this.bufCache.delete(this.bufCache.keys().next().value!);
+    return buf;
+  }
+
+  /** media position (seconds into the buffer) of a playing deck */
+  private pos(d: Deck) { return d.startOffset + (this.getCtx().currentTime - d.startCtx) * d.rate; }
+
+  private startDeck(buf: AudioBuffer, offset: number, rate: number, gain0: number, when = 0): Deck {
+    const ctx = this.getCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const gain = ctx.createGain();
+    gain.gain.value = gain0;
+    src.connect(gain).connect(ctx.destination);
+    const at = when || ctx.currentTime;
+    src.start(at, offset);
+    return { src, gain, buf, startCtx: at, startOffset: offset, rate };
+  }
+
+  /** firstOffset < 0 means "seconds from the end of the first track" */
+  play(queue: QueueItem[], firstOffset = 0) {
     this.stop();
+    const sess = ++this.session;
     this.queue = queue;
     this.idx = 0;
-    const el = this.els[this.cur];
-    el.src = this.src(queue[0].path);
-    el.volume = 1;
-    el.playbackRate = 1;
-    el.play().catch(() => {});
     this.onChange({ index: 0, path: queue[0].path, name: queue[0].name });
-    this.tick();
+    this.load(queue[0].path).then(buf => {
+      if (sess !== this.session) return;
+      const off = firstOffset < 0 ? buf.duration + firstOffset : firstOffset;
+      this.deck = this.startDeck(buf, Math.max(0, Math.min(off, buf.duration - 1)), 1, 1);
+      this.tick();
+    }).catch(() => { if (sess === this.session) this.stop(); });
   }
 
-  skip() { if (this.idx >= 0 && this.idx + 1 < this.queue.length && !this.fading) this.startFade(); }
+  /** Play just the A→B transition: the tail of A, the fade, a few seconds of B. */
+  preview(from: QueueItem, to: QueueItem) {
+    this.play([from, to], -(FADE_S + PREVIEW_LEAD_S));
+    this.previewing = true;
+  }
+
+  skip() { if (this.idx >= 0 && this.idx + 1 < this.queue.length && !this.fading && this.deck) this.startFade(); }
 
   stop() {
+    this.session++;
     cancelAnimationFrame(this.raf);
     this.fading = false;
+    this.previewing = false;
     this.idx = -1;
-    this.els.forEach(el => { el.pause(); el.removeAttribute('src'); });
+    if (this.deck) { try { this.deck.src.stop(); } catch { /* already stopped */ } this.deck = null; }
     this.onChange(null);
   }
 
   private tick = () => {
     this.raf = requestAnimationFrame(this.tick);
-    const el = this.els[this.cur];
-    if (this.idx < 0 || this.fading || !isFinite(el.duration)) return;
-    const remaining = el.duration - el.currentTime;
+    if (this.idx < 0 || this.fading || !this.deck) return;
+    const remaining = this.deck.buf.duration - this.pos(this.deck);
     if (this.idx + 1 < this.queue.length) {
-      if (remaining <= FADE_S) this.startFade();
-    } else if (el.ended) {
+      // decode of the next track takes a moment — lead with extra slack
+      if (remaining <= FADE_S + 1.5) this.startFade();
+    } else if (remaining <= 0.05) {
       this.stop();
     }
   };
 
-  private startFade() {
+  private async startFade() {
+    const sess = this.session;
     const from = this.queue[this.idx];
     const to = this.queue[this.idx + 1];
-    const a = this.els[this.cur];
-    const b = this.els[1 - this.cur];
-    b.src = this.src(to.path);
-    b.volume = 0;
+    const a = this.deck!;
+    this.fading = true;
+
+    let buf: AudioBuffer;
+    try { buf = await this.load(to.path); } catch { if (sess === this.session) this.stop(); return; }
+    if (sess !== this.session) return;
+
+    const ctx = this.getCtx();
     // Tempo match: incoming track starts at the outgoing tempo (within ±8%),
     // then eases back to its own tempo after the fade.
-    let rate = 1;
-    if (from.bpm && to.bpm) {
-      rate = Math.min(1.08, Math.max(0.92, bpmRatio(from.bpm, to.bpm)));
+    const rawRatio = from.bpm && to.bpm ? bpmRatio(from.bpm, to.bpm) : 1;
+    const rate = Math.min(1.08, Math.max(0.92, rawRatio));
+    const canSync = rate === rawRatio && from.beatOffset != null && to.beatOffset != null && !!from.bpm && !!to.bpm;
+
+    // Fade start: next beat of A (sample-accurate), or "shortly after now".
+    let t0 = ctx.currentTime + 0.15;
+    let bOffset = 0;
+    if (canSync) {
+      const pMedia = 60 / from.bpm!; // beat period in A's media time
+      const posMedia = (((this.pos(a) - from.beatOffset!) % pMedia) + pMedia) % pMedia;
+      t0 = ctx.currentTime + (pMedia - posMedia) / a.rate; // next beat, wall clock
+      while (t0 < ctx.currentTime + 0.1) t0 += pMedia / a.rate;
+      bOffset = Math.min(to.beatOffset!, Math.max(0, buf.duration - 1));
     }
-    b.playbackRate = rate;
-    b.play().catch(() => {});
-    this.fading = true;
-    const t0 = performance.now();
-    const fade = (now: number) => {
-      const k = Math.min(1, (now - t0) / (FADE_S * 1000));
-      a.volume = 1 - k;
-      b.volume = k;
-      if (k < 1 && this.idx >= 0) { requestAnimationFrame(fade); return; }
-      a.pause(); a.removeAttribute('src');
-      this.cur = 1 - this.cur;
+
+    const b = this.startDeck(buf, bOffset, rate, 0, t0);
+    const tEnd = t0 + FADE_S;
+    a.gain.gain.setValueAtTime(1, t0);
+    a.gain.gain.linearRampToValueAtTime(0, tEnd);
+    b.gain.gain.setValueAtTime(0, t0);
+    b.gain.gain.linearRampToValueAtTime(1, tEnd);
+    // ease the incoming track back to its own tempo after the fade
+    if (rate !== 1) {
+      b.src.playbackRate.setValueAtTime(rate, tEnd);
+      b.src.playbackRate.linearRampToValueAtTime(1, tEnd + 4);
+      // pos() assumes a constant rate; after the ramp settles it is 1 for good.
+      // The small drift during the 4s ramp only affects the fade trigger point.
+      b.rate = 1;
+      b.startOffset = bOffset + (tEnd + 2 - t0) * ((rate + 1) / 2); // midpoint approximation
+      b.startCtx = tEnd + 2;
+    }
+    a.src.stop(tEnd + 0.05);
+
+    const finish = () => {
+      if (sess !== this.session) return;
+      if (ctx.currentTime < tEnd) { requestAnimationFrame(finish); return; }
+      this.deck = b;
       this.idx += 1;
       this.fading = false;
-      if (this.idx >= 0) this.onChange({ index: this.idx, path: to.path, name: to.name });
-      // ease the rate back to 1 over 4s
-      const r0 = b.playbackRate, rt0 = performance.now();
-      const ease = (n: number) => {
-        const kk = Math.min(1, (n - rt0) / 4000);
-        b.playbackRate = r0 + (1 - r0) * kk;
-        if (kk < 1 && this.idx >= 0) requestAnimationFrame(ease);
-      };
-      if (rate !== 1) requestAnimationFrame(ease);
+      this.onChange({ index: this.idx, path: to.path, name: to.name });
+      if (this.previewing) setTimeout(() => { if (this.previewing && sess === this.session) this.stop(); }, PREVIEW_TAIL_S * 1000);
     };
-    requestAnimationFrame(fade);
+    requestAnimationFrame(finish);
   }
 }
 
@@ -163,6 +232,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const svgRef = useRef<SVGSVGElement>(null);
 
   if (!playerRef.current) playerRef.current = new CrossfadePlayer();
+  (window as any).__cf = playerRef.current; // debug/inspection handle
   useEffect(() => {
     const p = playerRef.current!;
     p.onChange = setNowPlaying;
@@ -265,12 +335,18 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     return walk;
   };
 
+  const queueItem = (p: string): QueueItem => {
+    const t = tracks.find(x => x.path === p)!;
+    return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null, beatOffset: meta[p]?.beatOffset };
+  };
+
   const playFrom = (start: string) => {
-    const q = pathFrom(start).map(p => {
-      const t = tracks.find(x => x.path === p)!;
-      return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null };
-    });
+    const q = pathFrom(start).map(queueItem);
     if (q.length) playerRef.current!.play(q);
+  };
+
+  const previewEdge = (from: string, to: string) => {
+    playerRef.current!.preview(queueItem(from), queueItem(to));
   };
 
   const nodeClick = (e: React.MouseEvent, path: string) => {
@@ -303,7 +379,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             </span>
           </>
         ) : (
-          <span className="graph-hint">Click a node to select it. Compatible nodes light up; suggestions appear below.</span>
+          <span className="graph-hint">Click a node to select it — compatible nodes light up, suggestions appear below. Click an arrow to preview that transition.</span>
         )}
         {nowPlaying && (
           <span className="graph-nowplaying">
@@ -337,15 +413,18 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           if (!na || !nb) return null;
           const dx = nb.x - na.x, dy = nb.y - na.y, d = Math.max(1, Math.hypot(dx, dy));
           const x2 = nb.x - (dx / d) * (R + 4), y2 = nb.y - (dy / d) * (R + 4);
+          const x1 = na.x + (dx / d) * R, y1 = na.y + (dy / d) * R;
           return (
-            <line
+            <g
               key={a + '→' + b}
-              x1={na.x + (dx / d) * R} y1={na.y + (dy / d) * R} x2={x2} y2={y2}
-              className="graph-edge" markerEnd="url(#arrow)"
-              onClick={e => { e.stopPropagation(); onRemoveEdge(a, b); }}
+              className="graph-edge-hit"
+              onClick={e => { e.stopPropagation(); (e.ctrlKey || e.metaKey) ? onRemoveEdge(a, b) : previewEdge(a, b); }}
             >
-              <title>Click to remove this transition</title>
-            </line>
+              <title>Click: preview this transition — Ctrl+click: remove it</title>
+              {/* fat invisible line = clickable area */}
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={14} />
+              <line x1={x1} y1={y1} x2={x2} y2={y2} className="graph-edge" markerEnd="url(#arrow)" />
+            </g>
           );
         })}
         {tracks.map(t => {

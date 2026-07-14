@@ -107,7 +107,7 @@ function App() {
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
   // Library table (rekordbox-style): tag metadata per file path + sort state
-  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[] };
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null };
   const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
   const [sortCol, setSortCol] = useState('added');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -721,7 +721,7 @@ function App() {
   const analyzeTracks = async () => {
     const targets = downloadedFiles.filter(f => {
       const m = trackMeta[f.path];
-      return m && (!m.bpm || !m.peaks?.length);
+      return m && (!m.bpm || !m.peaks?.length || m.beatOffset == null);
     });
     if (targets.length === 0) {
       alert('Nothing to analyze — all tracks have BPM and waveform (or metadata is still loading).');
@@ -737,18 +737,21 @@ function App() {
         const u8: Uint8Array = await window.electronAPI.readAudioFile(f.path);
         const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
         const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
-        const data: { bpm?: number; peaks?: number[] } = {};
+        const data: { bpm?: number; peaks?: number[]; beatOffset?: number } = {};
         if (!m.peaks?.length) data.peaks = computePeaks(decoded);
-        if (!m.bpm) {
-          const offset = Math.max(0, (decoded.duration - 60) / 2);
+        if (!m.bpm || m.beatOffset == null) {
+          const windowStart = Math.max(0, (decoded.duration - 60) / 2);
           try {
-            const { bpm } = await guess(decoded, offset, Math.min(60, decoded.duration));
+            const { bpm, offset } = await guess(decoded, windowStart, Math.min(60, decoded.duration));
+            // bpm and beatOffset must come from the same detection pass or the
+            // beat grid is meaningless — store both, overwriting a tag BPM.
             data.bpm = bpm;
+            data.beatOffset = (windowStart + offset) % (60 / bpm);
           } catch { /* no clear tempo — keep the waveform anyway */ }
         }
         if (data.bpm || data.peaks) {
           await window.electronAPI.setTrackAnalysis(f.path, data);
-          setTrackMeta(prev => ({ ...prev, [f.path]: { ...prev[f.path], ...(data.bpm ? { bpm: data.bpm } : {}), ...(data.peaks ? { peaks: data.peaks } : {}) } }));
+          setTrackMeta(prev => ({ ...prev, [f.path]: { ...prev[f.path], ...(data.bpm ? { bpm: data.bpm, beatOffset: data.beatOffset } : {}), ...(data.peaks ? { peaks: data.peaks } : {}) } }));
         }
       } catch (e) {
         console.warn('Analysis failed for', f.path, e); // undecodable — skip

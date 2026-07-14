@@ -1025,9 +1025,9 @@ body {
 .graph-edge {
   stroke: var(--text-subtle);
   stroke-width: 1.5;
-  cursor: pointer;
 }
-.graph-edge:hover { stroke: #ef4444; }
+.graph-edge-hit { cursor: pointer; }
+.graph-edge-hit:hover .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
 .graph-node { cursor: pointer; }
 .graph-node circle {
   fill: var(--panel-bg, rgba(255,255,255,0.05));

@@ -312,15 +312,16 @@ ipcMain.handle('downloads:read-file', async (event, filePath: string) => {
 });
 
 // Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
-ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[] }) => {
+ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number }) => {
   if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;
   const bpm = typeof data.bpm === 'number' && Number.isFinite(data.bpm) && data.bpm >= 40 && data.bpm <= 300 ? data.bpm : undefined;
   const peaks = Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400 ? data.peaks : undefined;
-  if (!bpm && !peaks) return false;
+  const beatOffset = typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3 ? data.beatOffset : undefined;
+  if (!bpm && !peaks && beatOffset === undefined) return false;
   if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
     try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
   }
-  await setCachedAnalysis(filePath, { bpm, peaks });
+  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset });
   return true;
 });
 
