@@ -970,6 +970,10 @@ body {
 
 /* Big scrolling waveform above the content (rekordbox-style) */
 .scrollwave-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  flex-shrink: 0; /* main-content is a flex column: tall tabs would crush the wave to its borders */
   margin-bottom: 1rem;
   border: 1px solid var(--glass-border);
   border-radius: var(--border-radius);
