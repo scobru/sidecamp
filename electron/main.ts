@@ -312,17 +312,18 @@ ipcMain.handle('downloads:read-file', async (event, filePath: string) => {
 });
 
 // Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
-ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number }) => {
+ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number; hotCues?: (number | null)[] }) => {
   if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;
   const bpm = typeof data.bpm === 'number' && Number.isFinite(data.bpm) && data.bpm >= 40 && data.bpm <= 300 ? data.bpm : undefined;
   const peaks = Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400 ? data.peaks : undefined;
   const beatOffset = typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3 ? data.beatOffset : undefined;
   const cuePoint = typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0 ? data.cuePoint : undefined;
-  if (!bpm && !peaks && beatOffset === undefined && cuePoint === undefined) return false;
+  const hotCues = Array.isArray(data.hotCues) && data.hotCues.length <= 8 ? data.hotCues : undefined;
+  if (!bpm && !peaks && beatOffset === undefined && cuePoint === undefined && hotCues === undefined) return false;
   if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
     try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
   }
-  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset, cuePoint });
+  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset, cuePoint, hotCues });
   return true;
 });
 

@@ -107,7 +107,7 @@ function App() {
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
   // Library table (rekordbox-style): tag metadata per file path + sort state
-  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null; cuePoint?: number | null };
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null; cuePoint?: number | null; hotCues?: (number | null)[] };
   const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
   const [sortCol, setSortCol] = useState('added');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -1574,6 +1574,13 @@ function App() {
                   onSetCue={(path, cue) => {
                     setTrackMeta(prev => prev[path] ? { ...prev, [path]: { ...prev[path], cuePoint: cue } } : prev);
                     window.electronAPI.setTrackAnalysis(path, { cuePoint: cue }).catch(() => {});
+                  }}
+                  onSetHotCue={(path, index, value) => {
+                    const full = [...(trackMeta[path]?.hotCues ?? [null, null, null, null])];
+                    while (full.length <= index) full.push(null);
+                    full[index] = value;
+                    setTrackMeta(prev => prev[path] ? { ...prev, [path]: { ...prev[path], hotCues: full } } : prev);
+                    window.electronAPI.setTrackAnalysis(path, { hotCues: full }).catch(() => {});
                   }}
                 />
               )}
