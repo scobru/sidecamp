@@ -3,7 +3,7 @@ import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag
+  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User
 } from 'lucide-react';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
@@ -298,9 +298,9 @@ function App() {
       window.electronAPI.slskConnect(savedSlskUser, savedSlskPass)
         .then((connected: boolean) => {
           if (connected) {
-            setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ Auto-connected to Soulseek.`]);
+            setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Auto-connected to Soulseek.`]);
           } else {
-            setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ Soulseek auto-connection failed.`]);
+            setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Soulseek auto-connection failed.`]);
           }
         });
     }
@@ -413,7 +413,7 @@ function App() {
           track.title
         );
       }
-      setDlLogs(prev => [...prev, `${logPrefix} ✅ Download completed! Saved to: ${filePath}`]);
+      setDlLogs(prev => [...prev, `${logPrefix} Download completed! Saved to: ${filePath}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'completed' } : d));
       loadDownloadedFiles();
       
@@ -421,7 +421,7 @@ function App() {
         handleUploadFileAuto(filePath);
       }
     } catch (e: any) {
-      setDlLogs(prev => [...prev, `${logPrefix} ❌ Error during download: ${e.message || e}`]);
+      setDlLogs(prev => [...prev, `${logPrefix} Error during download: ${e.message || e}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
     } finally {
       setDownloadingTrackId(null);
@@ -538,7 +538,7 @@ function App() {
   // Auto-Upload Trigger
   const handleUploadFileAuto = async (filePath: string) => {
     if (!server || !token) {
-      setDlLogs(prev => [...prev, `[Auto-Upload] ⚠️ Server/Token not configured, skipping auto-upload.`]);
+      setDlLogs(prev => [...prev, `[Auto-Upload] Server/Token not configured, skipping auto-upload.`]);
       return;
     }
     const filename = filePath.split(/[/\\]/).pop() || '';
@@ -554,9 +554,9 @@ function App() {
     try {
       await window.electronAPI.setUploadConfig(server, token);
       await window.electronAPI.uploadTrack(filePath, { artist, title });
-      setDlLogs(prev => [...prev, `[Auto-Upload] ✅ Auto-upload completed successfully!`]);
+      setDlLogs(prev => [...prev, `[Auto-Upload] Auto-upload completed successfully!`]);
     } catch (e: any) {
-      setDlLogs(prev => [...prev, `[Auto-Upload] ❌ Auto-upload failed: ${e.message || e}`]);
+      setDlLogs(prev => [...prev, `[Auto-Upload] Auto-upload failed: ${e.message || e}`]);
     }
   };
 
@@ -581,10 +581,10 @@ function App() {
         title: metadataTitle || metadataModalFile.name, 
         album: metadataAlbum || undefined 
       });
-      setDlLogs(prev => [...prev, `[Library] ✅ Upload completed successfully!`]);
+      setDlLogs(prev => [...prev, `[Library] Upload completed successfully!`]);
       alert("Track successfully uploaded to TuneCamp!");
     } catch (e: any) {
-      setDlLogs(prev => [...prev, `[Library] ❌ Error during upload: ${e.message || e}`]);
+      setDlLogs(prev => [...prev, `[Library] Error during upload: ${e.message || e}`]);
       alert("Error uploading file: " + (e.message || e));
     } finally {
       setUploadingFilePath(null);
@@ -640,7 +640,7 @@ function App() {
         ok++;
       } catch (e: any) {
         fail++;
-        setDlLogs(prev => [...prev, `[Library] ❌ Upload failed for ${filename}: ${e.message || e}`]);
+        setDlLogs(prev => [...prev, `[Library] Upload failed for ${filename}: ${e.message || e}`]);
       }
     }
     setUploadingFilePath(null);
@@ -1019,7 +1019,7 @@ function App() {
       setSearchResults(res);
       setDlLogs(prev => [...prev, `[Search] Search completed! Found ${res.length} results.`]);
     } catch (err: any) {
-      setDlLogs(prev => [...prev, `[Search] ❌ Error during search: ${err.message || err}`]);
+      setDlLogs(prev => [...prev, `[Search] Error during search: ${err.message || err}`]);
     }
   };
 
@@ -1051,7 +1051,7 @@ function App() {
       } else {
         filePath = await window.electronAPI.slskDownload(result);
       }
-      setDlLogs(prev => [...prev, `[${source.toUpperCase()}] ✅ Download completed! Saved to: ${filePath}`]);
+      setDlLogs(prev => [...prev, `[${source.toUpperCase()}] Download completed! Saved to: ${filePath}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'completed' } : d));
       loadDownloadedFiles(); // Refresh downloads list automatically!
       
@@ -1059,7 +1059,7 @@ function App() {
         handleUploadFileAuto(filePath);
       }
     } catch (err: any) {
-      setDlLogs(prev => [...prev, `[${source.toUpperCase()}] ❌ Error during download: ${err.message || err}`]);
+      setDlLogs(prev => [...prev, `[${source.toUpperCase()}] Error during download: ${err.message || err}`]);
       setActiveDownloads(prev => prev.map(d => d.id === downloadId ? { ...d, status: 'failed' } : d));
     } finally {
       // Removed setTimeout to keep items in queue for the Transfers tab
@@ -1108,7 +1108,7 @@ function App() {
         }
       }
     } catch (err: any) {
-      setDlLogs(prev => [...prev, `❌ Error during process: ${err.message || err}`]);
+      setDlLogs(prev => [...prev, `Error during process: ${err.message || err}`]);
       setActiveDownloads(prev => prev.map(d => d.id === tempId ? { ...d, status: 'failed' } : d));
     } finally {
       setIsDownloading(false);
@@ -1131,12 +1131,12 @@ function App() {
     setDlLogs(prev => [...prev, `[Library] Starting seed for: ${filename}...`]);
     try {
       const magnetUri = await window.electronAPI.torrentSeed(filePath);
-      setDlLogs(prev => [...prev, `[Library] ✅ Torrent seeding! Magnet Link: ${magnetUri}`]);
+      setDlLogs(prev => [...prev, `[Library] Torrent seeding! Magnet Link: ${magnetUri}`]);
       alert(`Started seeding torrent!\n\nMagnet URI:\n${magnetUri}\n\nCopied to clipboard!`);
       navigator.clipboard.writeText(magnetUri).catch(() => {});
       loadDownloadedFiles();
     } catch (e: any) {
-      setDlLogs(prev => [...prev, `[Library] ❌ Seeding failed: ${e.message || e}`]);
+      setDlLogs(prev => [...prev, `[Library] Seeding failed: ${e.message || e}`]);
       alert("Error seeding file: " + (e.message || e));
     }
   };
@@ -1152,13 +1152,13 @@ function App() {
     setDlLogs(prev => [...prev, `[Library] Starting seed for album: "${albumSeedName}" with ${selectedFiles.length} files...`]);
     try {
       const magnetUri = await window.electronAPI.torrentSeed(selectedFiles, albumSeedName);
-      setDlLogs(prev => [...prev, `[Library] ✅ Album Torrent seeding! Magnet Link: ${magnetUri}`]);
+      setDlLogs(prev => [...prev, `[Library] Album Torrent seeding! Magnet Link: ${magnetUri}`]);
       alert(`Started seeding album torrent!\n\nMagnet URI:\n${magnetUri}\n\nCopied to clipboard!`);
       navigator.clipboard.writeText(magnetUri).catch(() => {});
       setSelectedFiles([]);
       loadDownloadedFiles();
     } catch (e: any) {
-      setDlLogs(prev => [...prev, `[Library] ❌ Seeding failed: ${e.message || e}`]);
+      setDlLogs(prev => [...prev, `[Library] Seeding failed: ${e.message || e}`]);
       alert("Error seeding album: " + (e.message || e));
     }
   };
@@ -1184,9 +1184,9 @@ function App() {
     setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Connecting to Soulseek...`]);
     const connected = await window.electronAPI.slskConnect(slskUser, slskPass);
     if (connected) {
-      setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ Successfully connected to Soulseek.`]);
+      setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Successfully connected to Soulseek.`]);
     } else {
-      setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ Soulseek connection failed (check credentials).`]);
+      setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Soulseek connection failed (check credentials).`]);
     }
 
     setSettingsSaved(true);
@@ -1372,14 +1372,14 @@ function App() {
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
                     {browserRoots.map((r, i) => (
                       <button key={i} className={`btn ${browserRoot === r.path ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(r.path)}>
-                        {r.path === downloadsDir ? '⬇ ' : '📁 '}{r.label}
+                        <Folder size={13} /> {r.label}
                       </button>
                     ))}
                   </div>
                   {browserRoot && (
                     <>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}>⬆ Up</button>
+                        <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}><ChevronUp size={13} /> Up</button>
                         <span>{(browserRoot.split(/[/\\]/).pop() || browserRoot)}{browserPath ? ' / ' + browserPath.replace(/\//g, ' / ') : ''}</span>
                       </div>
                       {movingItem && (
@@ -1410,7 +1410,7 @@ function App() {
                           return visible.map((en, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.6rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
                             <div onClick={() => en.isDir ? openBrowserFolder(en.name) : isAudio(en.name) && playAt(browserQueue, audio.indexOf(en))} title={en.isDir ? 'Open folder' : isAudio(en.name) ? 'Play' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, cursor: en.isDir || isAudio(en.name) ? 'pointer' : 'default' }}>
-                              <span>{en.isDir ? '📁' : '🎵'}</span>
+                              <span style={{ display: 'inline-flex' }}>{en.isDir ? <Folder size={15} /> : <Music size={15} />}</span>
                               <span style={{ flex: 1, color: 'var(--text-main)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{en.name}</span>
                               {en.isDir && <ChevronRight size={16} color="var(--text-muted)" />}
                             </div>
@@ -1486,7 +1486,7 @@ function App() {
                         <h4 style={{ margin: 0 }}>{activePlaylist.name} <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)' }}>({activePlaylist.tracks.length} tracks)</span></h4>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           {activePlaylist.tracks.length > 0 && <button className="btn btn-primary" onClick={() => playAt(playlistQueue, 0)} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>▶ Play</button>}
-                          <button className="btn btn-accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>⬇ Export (CDJ)</button>
+                          <button className="btn btn-accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}><Download size={14} /> Export (CDJ)</button>
                         </div>
                       </div>
                       {exportMsg && <div style={{ padding: '0.5rem 0.8rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.82rem', wordBreak: 'break-all' }}>{exportMsg}</div>}
@@ -1748,23 +1748,23 @@ function App() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {selectedFiles.length > 0 && (
                     <>
-                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed ({selectedFiles.length})</button>
-                      <button className="btn btn-accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>☁ Upload ({selectedFiles.length})</button>
-                      <button className="btn btn-secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>➕ Playlist</button>
-                      <button className="btn btn-danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗑 Delete ({selectedFiles.length})</button>
+                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Magnet size={14} /> Seed ({selectedFiles.length})</button>
+                      <button className="btn btn-accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Cloud size={14} /> Upload ({selectedFiles.length})</button>
+                      <button className="btn btn-secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Plus size={14} /> Playlist</button>
+                      <button className="btn btn-danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Trash2 size={14} /> Delete ({selectedFiles.length})</button>
                       <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
                     </>
                   )}
                   {analyzing ? (
                     <button className="btn btn-secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ {analyzing.done}/{analyzing.total}</button>
                   ) : (
-                    <button className="btn btn-secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🎧 Analyze</button>
+                    <button className="btn btn-secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Headphones size={14} /> Analyze</button>
                   )}
                   {libraryFiltered.length > 0 && (
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
                   )}
-                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowPlaylists(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>💿 Playlists</button>
-                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗂 Organize</button>
+                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowPlaylists(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</button>
+                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
               </div>
@@ -1828,7 +1828,7 @@ function App() {
                           <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
                           <td
                             className="col-wave"
-                            title={isCurrent ? 'Click to seek' : r.peaks?.length ? 'Double-click row to play' : 'Run 🎧 Analyze to render the waveform'}
+                            title={isCurrent ? 'Click to seek' : r.peaks?.length ? 'Double-click row to play' : 'Run Analyze to render the waveform'}
                             onClick={e => {
                               if (!isCurrent || !audioRef.current || !duration) return;
                               e.stopPropagation();
@@ -2020,7 +2020,7 @@ function App() {
                         }}
                       >
                         <span style={{ fontWeight: 600, color: selectedPeer?.id === p.id ? 'var(--primary)' : 'var(--text-main)', fontSize: '0.95rem' }}>
-                          {p.id === 'server' ? '☁️ ' : '👤 '}
+                          {p.id === 'server' ? <Cloud size={14} style={{ verticalAlign: '-2px', marginRight: '6px' }} /> : <User size={14} style={{ verticalAlign: '-2px', marginRight: '6px' }} />}
                           {p.username || 'Unknown'}
                         </span>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.04)', padding: '2px 8px', borderRadius: '12px' }}>{p.trackCount || 0} tracks</span>
@@ -2109,7 +2109,7 @@ function App() {
                   <div style={{ padding: '0.8rem 1rem', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--glass-border)', borderRadius: '8px', marginTop: '0.5rem' }}>
                     {validFolders.map((f, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0' }}>
-                        <span style={{ fontSize: '1.1rem' }}>📁</span>
+                        <span style={{ display: 'inline-flex' }}><Folder size={15} /></span>
                         <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-main)' }}>{f}</span>
                       </div>
                     ))}
@@ -2139,7 +2139,7 @@ function App() {
               </div>
 
               <div className="terminal-log" style={{ marginTop: '1rem' }}>
-                <div className="terminal-header">💬 Peer Chat</div>
+                <div className="terminal-header">Peer Chat</div>
                 <div className="terminal-body" style={{ minHeight: '120px', maxHeight: '260px', overflowY: 'auto' }}>
                   {chatMessages.map((m, i) => (
                     <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
@@ -2185,13 +2185,13 @@ function App() {
                   className={`subtab-btn ${downloadSource === 'soulseek' ? 'active' : ''}`} 
                   onClick={() => setDownloadSource('soulseek')}
                 >
-                  🔍 Search Platforms (Soulseek / Web)
+                  Search Platforms (Soulseek / Web)
                 </button>
                 <button 
                   className={`subtab-btn ${downloadSource === 'direct' ? 'active' : ''}`} 
                   onClick={() => setDownloadSource('direct')}
                 >
-                  🔗 Direct Link (Torrent / Web URL)
+                  Direct Link (Torrent / Web URL)
                 </button>
               </div>
 
@@ -2206,7 +2206,7 @@ function App() {
                         checked={searchSource === 'all'} 
                         onChange={() => { setSearchSource('all'); setSearchResults([]); }} 
                       />
-                      🌐 All Platforms
+                      All Platforms
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                       <input 
@@ -2256,7 +2256,7 @@ function App() {
                         checked={searchSource === 'network'}
                         onChange={() => { setSearchSource('network'); setSearchResults([]); }}
                       />
-                      📡 Network
+                      Network
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                       <input
@@ -2266,7 +2266,7 @@ function App() {
                         checked={searchSource === 'archive'}
                         onChange={() => { setSearchSource('archive'); setSearchResults([]); }}
                       />
-                      🏛️ Archive.org
+                      Archive.org
                     </label>
                   </div>
 

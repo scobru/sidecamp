@@ -277,12 +277,14 @@ body {
 }
 
 /* Glass Cards */
+/* Flat sections: content sits directly on the page, no boxed panels.
+   Modals keep the panel look via .modal-content below. */
 .glass-card {
-  background: var(--panel-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 /* Forms & Inputs */
@@ -318,6 +320,10 @@ body {
 
 /* Buttons */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 0.75rem 1.4rem;
   border: none;
   border-radius: 6px;
@@ -379,7 +385,6 @@ body {
   margin-top: 2rem;
   background: var(--terminal-bg);
   border-radius: 8px;
-  border: 1px solid var(--glass-border);
   overflow: hidden;
 }
 
@@ -654,6 +659,9 @@ body {
   overflow-y: auto;
   padding: 2rem;
   border-radius: 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 /* -------------------------------------- */
