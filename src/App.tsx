@@ -107,7 +107,7 @@ function App() {
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
   // Library table (rekordbox-style): tag metadata per file path + sort state
-  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null };
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null; cuePoint?: number | null };
   const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
   const [sortCol, setSortCol] = useState('added');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -137,8 +137,11 @@ function App() {
   };
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
   type Playlist = { id: string; name: string; tracks: { path: string; name: string }[]; edges?: [string, string][] };
-  const [showPlaylists, setShowPlaylists] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
+  // Library sub-panels are mutually exclusive — one workspace at a time, not stacked overlays.
+  const [libraryPanel, setLibraryPanel] = useState<'none' | 'playlists' | 'graph' | 'organize'>('none');
+  const showPlaylists = libraryPanel === 'playlists';
+  const showGraph = libraryPanel === 'graph';
+  const togglePanel = (p: 'playlists' | 'graph' | 'organize') => setLibraryPanel(v => v === p ? 'none' : p);
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     try { return JSON.parse(localStorage.getItem('playlists') || '[]'); } catch { return []; }
   });
@@ -198,8 +201,8 @@ function App() {
   const [metadataArtist, setMetadataArtist] = useState('Sidecamp');
   const [metadataAlbum, setMetadataAlbum] = useState('');
   
-  // Library Organizer States
-  const [showOrganize, setShowOrganize] = useState(false);
+  // Library Organizer state
+  const showOrganize = libraryPanel === 'organize';
   const [organizeRoot, setOrganizeRoot] = useState('');
   const [organizeMode, setOrganizeMode] = useState<'artist' | 'artist-album' | 'genre'>('artist');
   const [organizePlan, setOrganizePlan] = useState<{ actions: { type: string; from: string; to: string }[]; stats: any } | null>(null);
@@ -664,7 +667,7 @@ function App() {
 
   const addSelectedToPlaylist = () => {
     if (!activePlaylist) {
-      setShowPlaylists(true);
+      setLibraryPanel('playlists');
       alert('Select or create a playlist first (Playlists panel just opened).');
       return;
     }
@@ -1568,6 +1571,10 @@ function App() {
                     tracks: p.tracks.filter(t => t.path !== path),
                     edges: (p.edges || []).filter(([a, b]) => a !== path && b !== path),
                   }))}
+                  onSetCue={(path, cue) => {
+                    setTrackMeta(prev => prev[path] ? { ...prev, [path]: { ...prev[path], cuePoint: cue } } : prev);
+                    window.electronAPI.setTrackAnalysis(path, { cuePoint: cue }).catch(() => {});
+                  }}
                 />
               )}
             </div>
@@ -1804,9 +1811,9 @@ function App() {
                   {libraryFiltered.length > 0 && (
                     <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
                   )}
-                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowPlaylists(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</button>
-                  <button className={`btn ${showGraph ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowGraph(v => !v)} title="Graph view of the active playlist: link tracks, get BPM/key/genre suggestions, play the path with crossfade" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Share2 size={14} /> Graph</button>
-                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => setShowOrganize(v => !v)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
+                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('playlists')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</button>
+                  <button className={`btn ${showGraph ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('graph')} title="Graph view of the active playlist: link tracks, get BPM/key/genre suggestions, play the path with crossfade" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Share2 size={14} /> Graph</button>
+                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
                 </div>
               </div>

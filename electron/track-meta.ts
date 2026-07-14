@@ -21,6 +21,8 @@ export interface TrackMeta {
   peaks?: number[];
   /** beat phase in seconds (first-beat offset modulo beat period), from the Analyze pass */
   beatOffset?: number;
+  /** DJ cue point: seconds into the track where playback should start, set by the user */
+  cuePoint?: number;
 }
 
 interface CacheEntry { mtime: number; meta: TrackMeta; }
@@ -95,7 +97,7 @@ async function parseOne(filePath: string): Promise<TrackMeta> {
 
 /** Upsert analysis results (BPM and/or waveform peaks) into the cache.
  *  Stats the file AFTER any tag write so the stored mtime matches the on-disk state. */
-export async function setCachedAnalysis(filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number }): Promise<void> {
+export async function setCachedAnalysis(filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number }): Promise<void> {
   const c = await loadCache();
   let st;
   try { st = await fs.stat(filePath); } catch { return; }
@@ -106,6 +108,9 @@ export async function setCachedAnalysis(filePath: string, data: { bpm?: number; 
   }
   if (typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3) {
     meta.beatOffset = Math.round(data.beatOffset * 10000) / 10000;
+  }
+  if (typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0) {
+    meta.cuePoint = Math.round(data.cuePoint * 1000) / 1000;
   }
   c[filePath] = { mtime: st.mtimeMs, meta };
   persistCache();

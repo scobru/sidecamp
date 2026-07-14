@@ -996,9 +996,19 @@ body {
 }
 
 /* Playlist graph view */
-.graph-canvas {
+.graph-canvas-wrap { position: relative; background: var(--terminal-bg); border-radius: 8px; }
+.graph-spectrum-bg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  background: var(--terminal-bg);
+  height: 100%;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.graph-canvas {
+  position: relative;
+  width: 100%;
+  background: transparent;
   border-radius: 8px;
   user-select: none;
   touch-action: none;
@@ -1022,26 +1032,146 @@ body {
   color: var(--primary);
   font-family: 'JetBrains Mono', monospace;
 }
+.graph-eq {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--text-subtle);
+}
+.graph-eq-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.graph-eq-label { min-width: 2.4em; }
+.graph-eq-band input[type='range'] { width: 60px; accent-color: var(--primary); }
 .graph-edge {
   stroke: var(--text-subtle);
   stroke-width: 1.5;
 }
 .graph-edge-hit { cursor: pointer; }
 .graph-edge-hit:hover .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
+.graph-edge-hit.active .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
+.graph-edge-hit.flowing .graph-edge {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 5;
+  animation: edge-flow 0.6s linear infinite;
+}
+@keyframes edge-flow {
+  to { stroke-dashoffset: -11; }
+}
 .graph-node { cursor: pointer; }
 .graph-node circle {
   fill: var(--panel-bg, rgba(255,255,255,0.05));
   stroke: var(--glass-border);
   stroke-width: 1.5;
   transition: stroke 0.15s ease, fill 0.15s ease;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 .graph-node.sel circle { stroke: var(--primary); stroke-width: 2.5; }
 .graph-node.compat circle { stroke: var(--accent, #4ade80); stroke-width: 2; }
-.graph-node.playing circle { fill: rgba(168, 85, 247, 0.25); stroke: var(--primary); }
+.graph-node.playing circle {
+  fill: rgba(168, 85, 247, 0.25);
+  stroke: var(--primary);
+  animation: node-pulse 1s ease-in-out infinite;
+}
+@keyframes node-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
 .graph-node text { fill: var(--text-main); pointer-events: none; }
 .graph-node .graph-bpm { font-size: 13px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 .graph-node .graph-key { font-size: 9px; fill: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
 .graph-node .graph-label { font-size: 10px; fill: var(--text-muted); }
+.transition-panel {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  background: var(--terminal-bg);
+}
+.transition-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.6rem;
+}
+.transition-panel-head .btn { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+.transition-fade-select {
+  background: var(--glass-bg, rgba(255,255,255,0.05));
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+.transition-panel-title { font-weight: 600; font-size: 0.9rem; margin-right: auto; }
+.wave-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.15rem 0.1rem 0.4rem;
+}
+.wc-btn { padding: 0.15rem 0.45rem !important; font-size: 0.75rem !important; line-height: 1.4; }
+.wc-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--glass-border);
+  margin: 0 4px;
+}
+.wc-label { font-size: 0.7rem; color: var(--text-subtle); margin: 0 2px; }
+.wave-scrub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0.1rem 0.2rem;
+}
+.wave-scrub input[type='range'] { flex: 1; }
+.transition-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.transition-zoom .btn { padding: 0.2rem 0.5rem; line-height: 1; }
+.transition-zoom-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 1.8em;
+  text-align: center;
+}
+.transition-track-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  padding: 0.2rem 0.1rem;
+}
+.transition-tail-tag {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+  color: var(--text-subtle);
+}
+.transition-wave-canvas {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+  margin-bottom: 2px;
+  cursor: crosshair;
+}
+
 .graph-suggestions { margin-top: 1rem; }
 .graph-suggestions-title {
   font-size: 0.78rem;

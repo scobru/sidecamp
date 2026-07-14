@@ -312,16 +312,17 @@ ipcMain.handle('downloads:read-file', async (event, filePath: string) => {
 });
 
 // Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
-ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number }) => {
+ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number }) => {
   if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;
   const bpm = typeof data.bpm === 'number' && Number.isFinite(data.bpm) && data.bpm >= 40 && data.bpm <= 300 ? data.bpm : undefined;
   const peaks = Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400 ? data.peaks : undefined;
   const beatOffset = typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3 ? data.beatOffset : undefined;
-  if (!bpm && !peaks && beatOffset === undefined) return false;
+  const cuePoint = typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0 ? data.cuePoint : undefined;
+  if (!bpm && !peaks && beatOffset === undefined && cuePoint === undefined) return false;
   if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
     try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
   }
-  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset });
+  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset, cuePoint });
   return true;
 });
 
@@ -493,6 +494,17 @@ ipcMain.handle('fs:delete', async (event, root: string, subpath: string, name: s
 });
 
 ipcMain.handle('app:downloads-dir', () => downloadDir);
+
+// Save a recorded DJ set (graph playback capture) into <downloads>/recordings.
+ipcMain.handle('recordings:save', async (event, filename: string, data: Uint8Array) => {
+  if (typeof filename !== 'string' || !data) throw new Error('Invalid recording');
+  const safeName = path.basename(filename).replace(/[^\w.\-]/g, '_');
+  const dir = path.join(downloadDir, 'recordings');
+  await fs.promises.mkdir(dir, { recursive: true });
+  const dest = path.join(dir, safeName);
+  await fs.promises.writeFile(dest, Buffer.from(data));
+  return dest;
+});
 
 // --- Update check against GitHub releases ---
 // Cached for the process lifetime: one GitHub API hit per app launch.
