@@ -614,6 +614,40 @@ function App() {
     loadDownloadedFiles();
   };
 
+  const handleUploadSelected = async () => {
+    if (selectedFiles.length === 0) return;
+    if (!server || !token) {
+      alert("You must configure the Server URL and Token in the Configuration section to upload files!");
+      return;
+    }
+    if (!confirm(`Upload ${selectedFiles.length} selected files to TuneCamp?`)) return;
+    await window.electronAPI.setUploadConfig(server, token);
+    let ok = 0, fail = 0;
+    for (const filePath of selectedFiles) {
+      const filename = filePath.split(/[/\\]/).pop() || '';
+      const m = trackMeta[filePath];
+      let artist = m?.artist || 'Sidecamp';
+      let title = m?.title || filename.replace(/\.[^/.]+$/, '');
+      if (!m?.artist && filename.includes(' - ')) {
+        const parts = filename.split(' - ');
+        artist = parts[0].trim();
+        title = parts[1].replace(/\.[^/.]+$/, '').trim();
+      }
+      setUploadingFilePath(filePath);
+      setDlLogs(prev => [...prev, `[Library] Uploading ${ok + fail + 1}/${selectedFiles.length}: ${filename}...`]);
+      try {
+        await window.electronAPI.uploadTrack(filePath, { artist, title, album: m?.album || undefined });
+        ok++;
+      } catch (e: any) {
+        fail++;
+        setDlLogs(prev => [...prev, `[Library] ❌ Upload failed for ${filename}: ${e.message || e}`]);
+      }
+    }
+    setUploadingFilePath(null);
+    setDlLogs(prev => [...prev, `[Library] Bulk upload done: ${ok} uploaded, ${fail} failed.`]);
+    setSelectedFiles([]);
+  };
+
   // Drop target for rows dragged from the Library table
   const addTracksToPlaylist = (id: string, paths: string[]) => {
     const byPath = new Map(downloadedFiles.map((f: any) => [f.path, f]));
@@ -1715,6 +1749,7 @@ function App() {
                   {selectedFiles.length > 0 && (
                     <>
                       <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🧲 Seed ({selectedFiles.length})</button>
+                      <button className="btn btn-accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>☁ Upload ({selectedFiles.length})</button>
                       <button className="btn btn-secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>➕ Playlist</button>
                       <button className="btn btn-danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>🗑 Delete ({selectedFiles.length})</button>
                       <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
