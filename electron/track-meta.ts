@@ -21,10 +21,10 @@ export interface TrackMeta {
   peaks?: number[];
   /** beat phase in seconds (first-beat offset modulo beat period), from the Analyze pass */
   beatOffset?: number;
-  /** DJ cue point: seconds into the track where playback should start, set by the user */
+  /** user-defined cue point in seconds */
   cuePoint?: number;
-  /** Up to 4 hot-cue positions (seconds), set by the user; null slots are unset */
-  hotCues?: (number | null)[];
+  /** user-defined out point in seconds */
+  cueOutPoint?: number;
 }
 
 interface CacheEntry { mtime: number; meta: TrackMeta; }
@@ -99,7 +99,7 @@ async function parseOne(filePath: string): Promise<TrackMeta> {
 
 /** Upsert analysis results (BPM and/or waveform peaks) into the cache.
  *  Stats the file AFTER any tag write so the stored mtime matches the on-disk state. */
-export async function setCachedAnalysis(filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number; hotCues?: (number | null)[] }): Promise<void> {
+export async function setCachedAnalysis(filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number | null; cueOutPoint?: number | null }): Promise<void> {
   const c = await loadCache();
   let st;
   try { st = await fs.stat(filePath); } catch { return; }
@@ -111,12 +111,19 @@ export async function setCachedAnalysis(filePath: string, data: { bpm?: number; 
   if (typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3) {
     meta.beatOffset = Math.round(data.beatOffset * 10000) / 10000;
   }
-  if (typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0) {
-    meta.cuePoint = Math.round(data.cuePoint * 1000) / 1000;
+  if (data.cuePoint !== undefined) {
+    if (data.cuePoint === null) meta.cuePoint = undefined;
+    else if (typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0) {
+      meta.cuePoint = Math.round(data.cuePoint * 1000) / 1000;
+    }
   }
-  if (Array.isArray(data.hotCues) && data.hotCues.length <= 8) {
-    meta.hotCues = data.hotCues.map(v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v * 1000) / 1000 : null));
+  if (data.cueOutPoint !== undefined) {
+    if (data.cueOutPoint === null) meta.cueOutPoint = undefined;
+    else if (typeof data.cueOutPoint === 'number' && Number.isFinite(data.cueOutPoint) && data.cueOutPoint >= 0) {
+      meta.cueOutPoint = Math.round(data.cueOutPoint * 1000) / 1000;
+    }
   }
+
   c[filePath] = { mtime: st.mtimeMs, meta };
   persistCache();
 }

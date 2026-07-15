@@ -1065,13 +1065,12 @@ body {
   gap: 4px;
 }
 .glc-group input[type='range'] { width: 90px; accent-color: var(--primary); }
-.glc-hotcue { min-width: 1.8em; }
-.glc-hotcue.set { border-color: var(--accent, #4ade80); color: var(--accent, #4ade80); }
 .graph-edge {
   stroke: var(--text-subtle);
   stroke-width: 1.5;
 }
 .graph-edge-hit { cursor: pointer; }
+.graph-edge-armed { pointer-events: none; paint-order: stroke; stroke: var(--terminal-bg); stroke-width: 3px; }
 .graph-edge-hit:hover .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
 .graph-edge-hit.active .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
 .graph-edge-hit.flowing .graph-edge {
@@ -1121,6 +1120,8 @@ body {
   margin-bottom: 0.6rem;
 }
 .transition-panel-head .btn { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+.transition-panel-head .btn.blink { animation: blink-live 0.7s step-start infinite; cursor: default; }
+@keyframes blink-live { 50% { opacity: 0.35; } }
 .transition-fade-select {
   background: var(--glass-bg, rgba(255,255,255,0.05));
   border: 1px solid var(--glass-border);

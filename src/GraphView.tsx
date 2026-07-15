@@ -6,7 +6,7 @@ import { Play, Square, SkipForward, X, Circle } from 'lucide-react';
 // or Camelot key. Playing walks the out-edges from the selected node with a
 // crossfade + tempo-match between tracks.
 
-export type GraphMeta = { bpm: number | null; key: string; genre: string; artist?: string; title?: string; duration?: number; beatOffset?: number | null; cuePoint?: number | null; hotCues?: (number | null)[] };
+export type GraphMeta = { bpm: number | null; key: string; genre: string; artist?: string; title?: string; duration?: number; beatOffset?: number | null; cuePoint?: number | null; cueOutPoint?: number | null; };
 export type GraphTrack = { path: string; name: string };
 export type GraphEdge = [string, string]; // [fromPath, toPath]
 
@@ -65,7 +65,7 @@ const SWEEP_HP_END_HZ = 800;     // Rise/Wave: outgoing highpass climbs from ope
 const MELT_HP_HZ = 1500;         // Melt: both sides sweep highpass through this frequency
 const LIVE_FILTER_LP_FLOOR_HZ = 200;  // live knob fully negative: lowpass cutoff floor ("underwater")
 const LIVE_FILTER_HP_CEIL_HZ = 2000;  // live knob fully positive: highpass cutoff ceiling ("distant")
-type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null; eqPreset?: EqPreset; cue?: number };
+type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null; eqPreset?: EqPreset; cue?: number; cueOut?: number };
 type NowPlaying = { index: number; path: string; name: string } | null;
 type Deck = {
   src: AudioBufferSourceNode; gain: GainNode; buf: AudioBuffer; startCtx: number; startOffset: number; rate: number;
@@ -217,11 +217,6 @@ class CrossfadePlayer {
     if (this.deck) this.deck.src.loop = false;
   }
 
-  /** Jump the live deck straight to a stored hot-cue position. */
-  jumpToHotCue(sec: number) {
-    this.reseat(sec);
-  }
-
   /** firstOffset < 0 means "seconds from the end of the first track" */
   play(queue: QueueItem[], firstOffset = 0) {
     this.stop();
@@ -231,7 +226,8 @@ class CrossfadePlayer {
     this.onChange({ index: 0, path: queue[0].path, name: queue[0].name });
     this.load(queue[0].path).then(buf => {
       if (sess !== this.session) return;
-      const off = firstOffset < 0 ? buf.duration + firstOffset : firstOffset;
+      const end = queue[0].cueOut ?? buf.duration;
+      const off = firstOffset < 0 ? end + firstOffset : firstOffset;
       this.deck = this.startDeck(buf, Math.max(0, Math.min(off, buf.duration - 1)), 1, 1);
       this.tick();
     }).catch(() => { if (sess === this.session) this.stop(); });
@@ -337,7 +333,8 @@ class CrossfadePlayer {
   private tick = () => {
     this.raf = requestAnimationFrame(this.tick);
     if (this.idx < 0 || this.fading || !this.deck) return;
-    const remaining = this.deck.buf.duration - this.pos(this.deck);
+    const dur = this.queue[this.idx].cueOut ?? this.deck.buf.duration;
+    const remaining = dur - this.pos(this.deck);
     if (this.idx + 1 < this.queue.length) {
       // decode of the next track takes a moment — lead with extra slack
       if (remaining <= this.fadeS + 1.5) this.startFade();
@@ -369,15 +366,28 @@ class CrossfadePlayer {
     // Fade start: next beat of A (sample-accurate), or "shortly after now".
     let t0 = ctx.currentTime + 0.15;
     let bOffset = to.cue ?? 0; // incoming track starts from its cue point unless beat-synced below
-    if (canSync) {
+
+    if (quantizeBeats === 1) {
+      const dur = from.cueOut ?? a.buf.duration;
+      const remaining = dur - this.pos(a);
+      t0 = Math.max(ctx.currentTime + 0.05, ctx.currentTime + remaining / a.rate - this.fadeS);
+    } else if (canSync) {
       const pMedia = (60 / from.bpm!) * quantizeBeats; // quantize period in A's media time
       const posMedia = (((this.pos(a) - from.beatOffset!) % pMedia) + pMedia) % pMedia;
       t0 = ctx.currentTime + (pMedia - posMedia) / a.rate; // next quantize boundary, wall clock
       while (t0 < ctx.currentTime + 0.1) t0 += pMedia / a.rate;
-      // snap to the nearest beat at/after the cue point, so tempo-sync doesn't override it
+    }
+
+    if (canSync) {
+      const posAtT0 = this.pos(a) + (t0 - ctx.currentTime) * a.rate;
       const pB = 60 / to.bpm!;
-      const phase = (((to.beatOffset! - bOffset) % pB) + pB) % pB;
-      bOffset = Math.min(bOffset + phase, Math.max(0, buf.duration - 1));
+      const phaseA = (((posAtT0 - from.beatOffset!) % pB) + pB) % pB;
+      const targetB = to.beatOffset! + phaseA;
+      const minB = to.cue ?? 0;
+      let adjustedB = targetB;
+      // Allow snapping slightly backwards (e.g. -0.05s) if they placed cue right on a beat
+      while (adjustedB < minB - 0.05) adjustedB += pB;
+      bOffset = Math.max(0, Math.min(adjustedB, buf.duration - 1));
     }
 
     const b = this.startDeck(buf, bOffset, rate, 0, t0);
@@ -537,37 +547,38 @@ function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onPick,
     }
     if (cueFrac != null && cueFrac >= 0 && cueFrac <= 1) {
       const cx = cueFrac * W;
+      const color = tone === 'out' ? '#ef4444' : '#4ade80'; // red for out point, green for in point
       ctx.save();
-      ctx.shadowColor = '#4ade80';
+      ctx.shadowColor = color;
       ctx.shadowBlur = 6;
-      ctx.strokeStyle = '#4ade80';
+      ctx.strokeStyle = color;
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
       ctx.restore();
       // flag at top so cue reads at a glance even when the line gets lost in busy bars
-      ctx.fillStyle = '#4ade80';
+      ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(cx, 0);
-      ctx.lineTo(cx + 7, 0);
+ctx.lineTo(cx + 7, 0);
       ctx.lineTo(cx, 8);
       ctx.closePath();
       ctx.fill();
     }
-  }, [peaks, fadeFrom, fadeTo, tone, beats, cueFrac]);
+  }, [peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onSetCue]);
   const pick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const frac = (e.clientX - r.left) / r.width;
     if (e.shiftKey && onSetCue) { onSetCue(frac); return; }
     if (onPick) onPick(frac);
   };
-  const title = onSetCue ? 'Click: mark the beat — Shift+click: set cue/start point' : onPick ? 'Click to mark the beat' : undefined;
+  const title = onSetCue ? `Click: mark the beat — Shift+click: set ${tone === 'out' ? 'closing/end' : 'cue/start'} point` : onPick ? 'Click to mark the beat' : undefined;
   return <canvas ref={ref} className="transition-wave-canvas" onClick={pick} title={title} />;
 }
 
 // --- Force layout ------------------------------------------------------------
 type Node = { path: string; name: string; x: number; y: number; vx: number; vy: number };
 
-export default function GraphView({ tracks, edges, meta, library, onAddTrack, onAddEdge, onRemoveEdge, onRemoveTrack, onSetCue, onSetHotCue }: {
+export default function GraphView({ tracks, edges, meta, library, onAddTrack, onAddEdge, onRemoveEdge, onRemoveTrack, onSetCue, onSetCueOut }: {
   tracks: GraphTrack[];
   edges: GraphEdge[];
   meta: Record<string, GraphMeta | undefined>;
@@ -577,7 +588,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   onRemoveEdge: (from: string, to: string) => void;
   onRemoveTrack: (path: string) => void;
   onSetCue: (path: string, cue: number) => void;
-  onSetHotCue: (path: string, index: number, value: number | null) => void;
+  onSetCueOut?: (path: string, cueOut: number) => void;
 }) {
   const W = 900, H = 480, R = 26;
   const nodesRef = useRef<Map<string, Node>>(new Map());
@@ -603,6 +614,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [recording, setRecording] = useState(false);
   const [savingRec, setSavingRec] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
+  const [pendingLive, setPendingLive] = useState<string | null>(null);
   const playerRef = useRef<CrossfadePlayer | null>(null);
   const dragRef = useRef<{ path: string; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -648,10 +660,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     // slide left of the track's end, B's can slide right of its start.
     const aFullLen = fadeS + PREVIEW_LEAD_S, bFullLen = fadeS + PREVIEW_TAIL_S;
     const viewLenA = aFullLen / zoom, viewLenB = bFullLen / zoom;
+    const aDur = meta[a]?.duration ?? aFullLen;
     const bDur = meta[b]?.duration ?? bFullLen;
-    const maxPanA = Math.max(0, aFullLen - viewLenA), maxPanB = Math.max(0, bDur - viewLenB);
+    const maxPanA = Math.max(0, aDur - viewLenA), maxPanB = Math.max(0, bDur - viewLenB);
     const pA = Math.min(panA, maxPanA), pB = Math.min(panB, maxPanB);
-    const startA = (meta[a]?.duration ?? aFullLen) - viewLenA - pA;
+    const startA = aDur - viewLenA - pA;
     const startB = pB;
     Promise.all([
       playerRef.current!.getBandPeaksWindow(a, startA, startA + viewLenA),
@@ -780,8 +793,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const edgeKey = (from: string, to: string) => `${from}>${to}`;
 
   const queueItem = (p: string): QueueItem => {
-    const t = tracks.find(x => x.path === p)!;
-    return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null, beatOffset: beatOverride[p] ?? meta[p]?.beatOffset, cue: meta[p]?.cuePoint ?? undefined };
+    const t = tracks.find(x => x.path === p);
+    if (!t) return { path: p, name: p.split(/[\\/]/).pop() || p, bpm: null };
+    return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null, beatOffset: beatOverride[p] ?? meta[p]?.beatOffset, cue: meta[p]?.cuePoint ?? undefined, cueOut: meta[p]?.cueOutPoint ?? undefined };
   };
 
   const playFrom = (start: string) => {
@@ -800,16 +814,22 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     playerRef.current!.preview(queueItem(from), toItem);
   };
 
+  const goLive = (from: string, to: string) => {
+    if (nowPlaying?.path !== from) return;
+    const toItem = queueItem(to);
+    toItem.eqPreset = edgePreset[edgeKey(from, to)] ?? 'off';
+    playerRef.current!.liveTransitionTo(toItem);
+    setPendingLive(to);
+  };
+  
+  useEffect(() => {
+    if (pendingLive && nowPlaying?.path === pendingLive) setPendingLive(null);
+  }, [nowPlaying?.path, pendingLive]);
+
   const toggleDetail = (from: string, to: string) => {
     setDetailEdge(d => (d && d[0] === from && d[1] === to ? null : [from, to]));
     if (liveMode) {
-      if (nowPlaying?.path === from) {
-        const toItem = queueItem(to);
-        toItem.eqPreset = edgePreset[edgeKey(from, to)] ?? 'off';
-        playerRef.current!.liveTransitionTo(toItem);
-      } else {
-        playFrom(from); // nothing playing yet — Live means "actually start", not a short preview
-      }
+      if (nowPlaying?.path !== from) playFrom(from);
     } else {
       previewEdge(from, to);
     }
@@ -898,14 +918,6 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
       </div>
 
       {nowPlaying && (() => {
-        const hotCues = meta[nowPlaying.path]?.hotCues ?? [];
-        const setCue = (i: number) => (e: React.MouseEvent) => {
-          const cur = hotCues[i] ?? null;
-          if (e.shiftKey) { if (cur != null) onSetHotCue(nowPlaying.path, i, null); return; }
-          if (cur != null) { playerRef.current!.jumpToHotCue(cur); return; }
-          const pos = playerRef.current!.getPos();
-          if (pos != null) onSetHotCue(nowPlaying.path, i, pos);
-        };
         return (
           <div className="graph-live-controls">
             <span className="glc-group">
@@ -932,16 +944,6 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               {loopBeats != null && (
                 <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitLoop(); setLoopBeats(null); }}>Exit</button>
               )}
-            </span>
-            <span className="glc-group">
-              <span className="wc-label">Hot cues</span>
-              {[0, 1, 2, 3].map(i => (
-                <button key={i} className={`btn wc-btn glc-hotcue ${hotCues[i] != null ? 'set' : ''}`}
-                  onClick={setCue(i)}
-                  title={hotCues[i] != null ? `Cue ${i + 1}: ${fmtT(hotCues[i]!)} — click to jump, shift+click to clear` : `Set cue ${i + 1} at the current position`}>
-                  {i + 1}
-                </button>
-              ))}
             </span>
           </div>
         );
@@ -975,16 +977,17 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const x1 = na.x + (dx / d) * R, y1 = na.y + (dy / d) * R;
           const pi = playingPath.indexOf(a);
           const flowing = pi >= 0 && playingPath[pi + 1] === b;
+          const armed = liveMode && nowPlaying?.path === a;
           return (
             <g
               key={a + '→' + b}
               className={`graph-edge-hit ${detailEdge && detailEdge[0] === a && detailEdge[1] === b ? 'active' : ''} ${flowing ? 'flowing' : ''}`}
               onClick={e => { e.stopPropagation(); (e.ctrlKey || e.metaKey) ? onRemoveEdge(a, b) : toggleDetail(a, b); }}
             >
-              <title>Click: preview this transition — Ctrl+click: remove it</title>
-              {/* fat invisible line = clickable area */}
+              <title>{armed ? 'Armed for live — click to open the transition panel, then hit the lock to fire it' : 'Click: preview this transition — Ctrl+click: remove it'}</title>
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={14} />
               <line x1={x1} y1={y1} x2={x2} y2={y2} className="graph-edge" markerEnd="url(#arrow)" />
+              {armed && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2} textAnchor="middle" dominantBaseline="middle" fontSize={13} className="graph-edge-armed">🔒</text>}
             </g>
           );
         })}
@@ -1021,10 +1024,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         const ma = meta[a], mb = meta[b];
         const aFullLen = fadeS + PREVIEW_LEAD_S, bFullLen = fadeS + PREVIEW_TAIL_S;
         const aLen = aFullLen / zoom, bLen = bFullLen / zoom;
+        const aDur = ma?.duration ?? aFullLen;
         const bDur = mb?.duration ?? bFullLen;
-        const maxPanA = Math.max(0, aFullLen - aLen), maxPanB = Math.max(0, bDur - bLen);
+        const maxPanA = Math.max(0, aDur - aLen), maxPanB = Math.max(0, bDur - bLen);
         const pA = Math.min(panA, maxPanA), pB = Math.min(panB, maxPanB);
-        const aWinStart = (ma?.duration ?? aFullLen) - aLen - pA;
+        const aWinStart = aDur - aLen - pA;
         const bWinStart = pB;
         // Keep the point you're looking at under the cursor when zooming,
         // instead of snapping the view back — otherwise every zoom click
@@ -1035,10 +1039,10 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const newZoom = ZOOM_LEVELS[clamped];
           const newALen = aFullLen / newZoom, newBLen = bFullLen / newZoom;
           const centerA = aWinStart + aLen / 2, centerB = bWinStart + bLen / 2;
-          const newPanA = (ma?.duration ?? aFullLen) - newALen - (centerA - newALen / 2);
+          const newPanA = aDur - newALen - (centerA - newALen / 2);
           const newPanB = centerB - newBLen / 2;
           setZoomIdx(clamped);
-          setPanA(Math.max(0, Math.min(aFullLen - newALen, newPanA)));
+          setPanA(Math.max(0, Math.min(Math.max(0, aDur - newALen), newPanA)));
           setPanB(Math.max(0, Math.min(Math.max(0, bDur - newBLen), newPanB)));
         };
         const beatFracs = (bpm: number | null | undefined, offset: number | null | undefined, winStart: number, winLen: number) => {
@@ -1087,14 +1091,29 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 <button className="btn btn-secondary" disabled={zoomIdx === ZOOM_LEVELS.length - 1} onClick={() => changeZoom(zoomIdx + 1)} title="Zoom in">+</button>
               </span>
               <button className="btn btn-secondary" onClick={() => previewEdge(a, b)} title="Replay this transition"><Play size={12} /> Preview</button>
+              {liveMode && nowPlaying?.path === a && (
+                <button className={`btn btn-accent ${pendingLive === b ? 'blink' : ''}`} disabled={pendingLive === b}
+                  onClick={() => goLive(a, b)} title="Fire this transition now, quantized to the next bar">
+                  🔒 {pendingLive === b ? 'Going live…' : 'Go live'}
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={() => setDetailEdge(null)} title="Close"><X size={12} /></button>
             </div>
             <div className="transition-track-label">
               <span>{short(ta?.name || a)}{ma?.bpm ? ` — ${Math.round(ma.bpm)} BPM ${ma.key}` : ''}</span>
               <span className="transition-tail-tag">out</span>
             </div>
+            {maxPanA > 0 && (
+              <div className="wave-scrub">
+                <input type="range" min={0} max={maxPanA} step={1} value={maxPanA - pA}
+                  onChange={e => setPanA(maxPanA - Number(e.target.value))} title="Scrub anywhere in the track to find a closing point" />
+                <span className="wc-label">{fmtT(aWinStart)} / {fmtT(aDur)}</span>
+              </div>
+            )}
             <TransitionWave peaks={detailPeaks?.a ?? null} fadeFrom={(aLen - fadeS) / aLen} fadeTo={1} tone="out"
-              beats={beatFracs(ma?.bpm, beatOverride[a] ?? ma?.beatOffset, aWinStart, aLen)} onPick={pickBeat(a, ma?.bpm, aWinStart, aLen)} />
+              beats={beatFracs(ma?.bpm, beatOverride[a] ?? ma?.beatOffset, aWinStart, aLen)} onPick={pickBeat(a, ma?.bpm, aWinStart, aLen)}
+              cueFrac={ma?.cueOutPoint != null ? (ma.cueOutPoint - aWinStart) / aLen : null}
+              onSetCue={frac => onSetCueOut?.(a, Math.max(0, aWinStart + frac * aLen))} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={pA >= maxPanA} onClick={() => setPanA(p => Math.min(maxPanA, p + aLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={pA <= 0} onClick={() => setPanA(p => Math.max(0, p - aLen * 0.4))} title="Pan back toward the fade">pan ▶</button>
@@ -1130,7 +1149,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <span>{short(tb?.name || b)}{mb?.bpm ? ` — ${Math.round(mb.bpm)} BPM ${mb.key}` : ''}</span>
               <span className="transition-tail-tag">in</span>
             </div>
-            <div className="graph-hint">Shaded zone = the {fadeS}s crossfade window. Click a waveform on a beat, or use the grid ‹›/«» buttons to nudge it. Shift+click the "in" wave to set that track's cue/start point (green line). Pan activates once you zoom in.</div>
+            <div className="graph-hint">Shaded zone = the {fadeS}s crossfade window. Click a waveform on a beat, or use the grid ‹›/«» buttons to nudge it. Shift+click the wave to set that track's start/end point. Pan activates once you zoom in.</div>
           </div>
         );
       })()}

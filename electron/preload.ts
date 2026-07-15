@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
   readTags: (filePath: string) => ipcRenderer.invoke('downloads:read-tags', filePath),
   getTracksMeta: (paths: string[]) => ipcRenderer.invoke('downloads:tracks-meta', paths),
-  setTrackAnalysis: (filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number; hotCues?: (number | null)[] }) => ipcRenderer.invoke('downloads:set-analysis', filePath, data),
+  setTrackAnalysis: (filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number | null; cueOutPoint?: number | null }) => ipcRenderer.invoke('downloads:set-analysis', filePath, data),
   saveRecording: (filename: string, data: Uint8Array) => ipcRenderer.invoke('recordings:save', filename, data),
   readAudioFile: (filePath: string) => ipcRenderer.invoke('downloads:read-file', filePath),
   writeTags: (filePath: string, tags: any) => ipcRenderer.invoke('downloads:write-tags', filePath, tags),

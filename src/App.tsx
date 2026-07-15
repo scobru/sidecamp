@@ -3,7 +3,8 @@ import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
-  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2
+  Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
+  Eye, EyeOff
 } from 'lucide-react';
 import GraphView from './GraphView';
 import { guess } from 'web-audio-beat-detector';
@@ -110,7 +111,7 @@ function App() {
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
   // Library table (rekordbox-style): tag metadata per file path + sort state
-  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null; cuePoint?: number | null; hotCues?: (number | null)[] };
+  type TrackMeta = { title: string; artist: string; album: string; genre: string; bpm: number | null; key: string; duration: number; year: number | null; bitrate: number; peaks?: number[]; beatOffset?: number | null };
   const [trackMeta, setTrackMeta] = useState<Record<string, TrackMeta>>({});
   const [sortCol, setSortCol] = useState('added');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -145,6 +146,7 @@ function App() {
   const showPlaylists = libraryPanel === 'playlists';
   const showGraph = libraryPanel === 'graph';
   const togglePanel = (p: 'playlists' | 'graph' | 'organize') => setLibraryPanel(v => v === p ? 'none' : p);
+  const [showLibraryTable, setShowLibraryTable] = useState(true);
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     try { return JSON.parse(localStorage.getItem('playlists') || '[]'); } catch { return []; }
   });
@@ -1632,15 +1634,12 @@ function App() {
                     edges: (p.edges || []).filter(([a, b]) => a !== path && b !== path),
                   }))}
                   onSetCue={(path, cue) => {
-                    setTrackMeta(prev => prev[path] ? { ...prev, [path]: { ...prev[path], cuePoint: cue } } : prev);
-                    window.electronAPI.setTrackAnalysis(path, { cuePoint: cue }).catch(() => {});
+                    setTrackMeta(m => ({ ...m, [path]: { ...(m[path] as any), cuePoint: cue } }));
+                    window.electronAPI.setTrackAnalysis(path, { cuePoint: cue });
                   }}
-                  onSetHotCue={(path, index, value) => {
-                    const full = [...(trackMeta[path]?.hotCues ?? [null, null, null, null])];
-                    while (full.length <= index) full.push(null);
-                    full[index] = value;
-                    setTrackMeta(prev => prev[path] ? { ...prev, [path]: { ...prev[path], hotCues: full } } : prev);
-                    window.electronAPI.setTrackAnalysis(path, { hotCues: full }).catch(() => {});
+                  onSetCueOut={(path, cueOut) => {
+                    setTrackMeta(m => ({ ...m, [path]: { ...(m[path] as any), cueOutPoint: cueOut } }));
+                    window.electronAPI.setTrackAnalysis(path, { cueOutPoint: cueOut });
                   }}
                 />
               )}
@@ -1832,9 +1831,13 @@ function App() {
                   <button className={`btn ${showGraph ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('graph')} title="Graph view of the active playlist: link tracks, get BPM/key/genre suggestions, play the path with crossfade" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Share2 size={14} /> Graph</button>
                   <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
                   <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
+                  <button className={`btn ${showLibraryTable ? 'btn-secondary' : 'btn-accent'}`} onClick={() => setShowLibraryTable(v => !v)}
+                    title={showLibraryTable ? 'Hide library table' : 'Show library table'} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
+                    {showLibraryTable ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
                 </div>
               </div>
-              <div className="library-body">
+              {showLibraryTable && <div className="library-body">
                 <div className="collection-pane">
                   <div className={`coll-item coll-all ${libFilter.type === 'all' ? 'active' : ''}`} onClick={() => setLibFilter({ type: 'all', value: '' })}>
                     <span className="coll-name">All Tracks</span><span className="coll-count">{rows.length}</span>
@@ -1936,7 +1939,7 @@ function App() {
                   <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() || libFilter.type !== 'all' ? 'No tracks match your filter.' : 'No music files in library.'}</div>
                 )}
               </div>
-              </div>
+              </div>}
 
               <div className="terminal-log" style={{ marginTop: '2rem' }}>
                 <div className="terminal-header">Library Activity Logs</div>
