@@ -127,7 +127,7 @@ const isUnderAllowedRoot = (p: string) => {
 
 const slsk = new SoulseekService(musicDir, downloadDir);
 const torrent = new TorrentService(downloadDir);
-const ytdlp = new YtdlpService(downloadDir);
+const ytdlp = new YtdlpService(downloadDir, path.join(app.getPath('userData'), 'bin'));
 const network = new NetworkService(downloadDir);
 const uploader = new TuneCampUploader({ server: '', token: '' }); // Configured later via IPC
 

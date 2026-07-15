@@ -33,7 +33,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 ## Prerequisites
 
 - **Node.js** 18+ and **Yarn** or **npm**
-- **yt-dlp** installed and available on `PATH` (for audio ripping)
+- **yt-dlp** — auto-downloaded on first rip (no manual install needed)
 - A running **TuneCamp** instance to connect to
 
 ## Quick Start

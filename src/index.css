@@ -110,6 +110,12 @@ body {
   padding: 0.8rem;
 }
 
+.sidebar.collapsed .logo-container {
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+}
+
 .sidebar-toggle {
   margin-left: auto;
   background: transparent;

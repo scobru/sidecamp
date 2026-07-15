@@ -24,6 +24,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@types/fs-extra": "^11.0.4",
     "@types/ws": "^8.18.1",
     "andrade-soulseek-downloader": "^1.0.28",

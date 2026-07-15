@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { YtdlpService } from './ytdlp';
 import child_process from 'child_process';
+import fs from 'fs';
 import path from 'path';
+import ffmpeg from '@ffmpeg-installer/ffmpeg';
 
 vi.mock('child_process', async (importOriginal) => {
     const actual = await importOriginal<typeof import('child_process')>();
@@ -15,13 +17,28 @@ vi.mock('child_process', async (importOriginal) => {
     };
 });
 
+vi.mock('fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('fs')>();
+    const existsSync = vi.fn(() => true);
+    return {
+        ...actual,
+        default: { ...actual, existsSync },
+        existsSync,
+    };
+});
+
+const YTDLP_BINARY_NAME = process.platform === 'win32' ? 'yt-dlp.exe' : process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp';
+
 describe('YtdlpService', () => {
     let service: YtdlpService;
     const downloadDir = '/test/downloads';
+    const binDir = '/test/bin';
+    const binPath = path.join(binDir, YTDLP_BINARY_NAME);
 
     beforeEach(() => {
         vi.clearAllMocks();
-        service = new YtdlpService(downloadDir);
+        vi.mocked(fs.existsSync).mockReturnValue(true);
+        service = new YtdlpService(downloadDir, binDir);
     });
 
     it('should reject invalid URLs to prevent command injection', async () => {
@@ -47,13 +64,15 @@ describe('YtdlpService', () => {
 
         expect(result).toBe('/test/downloads/video.mp3');
         expect(child_process.execFile).toHaveBeenCalledWith(
-            'yt-dlp',
+            binPath,
             [
                 '-x',
                 '--audio-format',
                 'mp3',
                 '--user-agent',
                 'curl/8.9.1',
+                '--ffmpeg-location',
+                ffmpeg.path,
                 '-o',
                 path.join(downloadDir, '%(title)s.%(ext)s'),
                 '--',
