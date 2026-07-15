@@ -1002,7 +1002,16 @@ body {
 }
 
 /* Playlist graph view */
-.graph-canvas-wrap { position: relative; background: var(--terminal-bg); border-radius: 8px; }
+.graph-canvas-wrap {
+  position: relative;
+  background: var(--terminal-bg);
+  border-radius: 8px;
+  height: 320px;
+  min-height: 160px;
+  max-height: 70vh;
+  resize: vertical;
+  overflow: hidden;
+}
 .graph-spectrum-bg {
   position: absolute;
   inset: 0;
@@ -1014,6 +1023,7 @@ body {
 .graph-canvas {
   position: relative;
   width: 100%;
+  height: 100%;
   background: transparent;
   border-radius: 8px;
   user-select: none;

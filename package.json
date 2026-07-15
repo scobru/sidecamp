@@ -1,7 +1,7 @@
 {
   "name": "sidecamp",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Desktop companion app for TuneCamp — P2P content acquisition and peer file sharing.",
   "author": {
     "name": "scobru",
@@ -63,6 +63,7 @@
   },
   "build": {
     "appId": "com.sidecamp.app",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },

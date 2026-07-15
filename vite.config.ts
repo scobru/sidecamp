@@ -26,6 +26,7 @@ export default defineConfig({
                 'socket.io-client',
                 'electron',
                 'node-id3',
+                '@ffmpeg-installer/ffmpeg',
               ],
             },
             rolldownOptions: {
@@ -43,6 +44,7 @@ export default defineConfig({
                 'socket.io-client',
                 'electron',
                 'node-id3',
+                '@ffmpeg-installer/ffmpeg',
               ],
             },
           },
