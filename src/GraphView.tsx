@@ -80,6 +80,9 @@ class CrossfadePlayer {
   private ctx: AudioContext | null = null;
   private deck: Deck | null = null;
   private fadingDeck: Deck | null = null; // incoming deck mid-crossfade; stop() must kill this too
+  private cueDeck: Deck | null = null; // manually cued incoming deck, played solo before the real fade fires
+  private cuePath: string | null = null;
+  private cueToken = 0;
   fadeS = DEFAULT_FADE_S;
   private eq: EqBands = { ...DEFAULT_EQ };
   private queue: QueueItem[] = [];
@@ -89,6 +92,7 @@ class CrossfadePlayer {
   private raf = 0;
   private session = 0; // bumped on stop/play; async loads from older sessions are discarded
   private bufCache = new Map<string, AudioBuffer>();
+  private bufLoading = new Map<string, Promise<AudioBuffer>>();
   private recordDest: MediaStreamAudioDestinationNode | null = null;
   private recorder: MediaRecorder | null = null;
   private recordChunks: Blob[] = [];
@@ -118,13 +122,20 @@ class CrossfadePlayer {
   private async load(path: string): Promise<AudioBuffer> {
     const hit = this.bufCache.get(path);
     if (hit) return hit;
-    const u8: Uint8Array = await (window as any).electronAPI.readAudioFile(path);
-    const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
-    const buf = await this.getCtx().decodeAudioData(raw);
-    this.bufCache.set(path, buf);
-    // decoded PCM is big — keep only the last few tracks
-    while (this.bufCache.size > 3) this.bufCache.delete(this.bufCache.keys().next().value!);
-    return buf;
+    const inFlight = this.bufLoading.get(path);
+    if (inFlight) return inFlight;
+    const p = (async () => {
+      const u8: Uint8Array = await (window as any).electronAPI.readAudioFile(path);
+      const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
+      const buf = await this.getCtx().decodeAudioData(raw);
+      this.bufCache.set(path, buf);
+      // decoded PCM is big — keep only the last few tracks (A, B being previewed/cued, headroom for one more)
+      while (this.bufCache.size > 5) this.bufCache.delete(this.bufCache.keys().next().value!);
+      this.bufLoading.delete(path);
+      return buf;
+    })();
+    this.bufLoading.set(path, p);
+    return p;
   }
 
   /** media position (seconds into the buffer) of a playing deck; loop-aware so tick()
@@ -166,11 +177,88 @@ class CrossfadePlayer {
   /** Current media-time playhead (seconds) of the live deck, for hot-cue "set". */
   getPos(): number | null { return this.deck ? this.pos(this.deck) : null; }
 
+  /** Paths of the pair currently mid-crossfade, or null. */
+  getFadingPair(): { from: string; to: string } | null {
+    return this.fading && this.idx >= 0 && this.idx + 1 < this.queue.length
+      ? { from: this.queue[this.idx].path, to: this.queue[this.idx + 1].path }
+      : null;
+  }
+
+  /** Live phase nudge on the incoming deck for `path` — a brief pitch bend, same move a DJ
+   *  makes to bring a synced deck back into phase, without touching the gain/EQ automation.
+   *  Targets whichever deck is actually sounding for that path: a manual cue, or a live fade. */
+  nudgeLive(path: string, deltaS: number) {
+    const d = this.cuePath === path ? this.cueDeck : (this.getFadingPair()?.to === path ? this.fadingDeck : null);
+    if (!d || !deltaS) return;
+    const ctx = this.getCtx();
+    const now = ctx.currentTime;
+    const k = 0.08; // 8% pitch bend, typical CDJ nudge strength
+    const bump = d.rate * (1 + Math.sign(deltaS) * k);
+    const dur = Math.abs(deltaS) / (d.rate * k);
+    d.src.playbackRate.cancelScheduledValues(now);
+    d.src.playbackRate.setValueAtTime(bump, now);
+    d.src.playbackRate.setValueAtTime(d.rate, now + dur);
+  }
+
+  /** Manually cue the incoming track in now, at full volume alongside whatever's playing —
+   *  independent of the automated crossfade engine, so it can be beatmatched by ear first. */
+  cueLive(path: string, offset: number) {
+    const token = ++this.cueToken;
+    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; this.cuePath = null; }
+    this.load(path).then(buf => {
+      if (token !== this.cueToken) return; // superseded by a newer cue/stop before load finished
+      this.cueDeck = this.startDeck(buf, Math.max(0, Math.min(offset, buf.duration - 1)), 1, 1);
+      this.cuePath = path;
+    });
+  }
+
+  stopCue() {
+    this.cueToken++;
+    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; }
+    this.cuePath = null;
+  }
+
+  getCuePath(): string | null { return this.cuePath; }
+
+  /** Jump forward/back by whole beats on the manually cued deck. */
+  cueBeatJump(beats: number, bpm: number) {
+    const d = this.cueDeck;
+    if (!d || !bpm) return;
+    const delta = beats * (60 / bpm);
+    const clamped = Math.max(0, Math.min(this.pos(d) + delta, d.buf.duration - 0.05));
+    const gain0 = d.gain.gain.value;
+    try { d.src.stop(); } catch { /* already stopped */ }
+    d.gain.disconnect();
+    this.cueDeck = this.startDeck(d.buf, clamped, d.rate, gain0);
+  }
+
+  /** Loop the next N beats of the manually cued deck, from its current playhead. */
+  setCueLoop(beats: number, bpm: number) {
+    if (!this.cueDeck || !bpm) return;
+    const start = this.pos(this.cueDeck);
+    this.cueDeck.src.loopStart = start;
+    this.cueDeck.src.loopEnd = start + beats * (60 / bpm);
+    this.cueDeck.src.loop = true;
+  }
+
+  exitCueLoop() {
+    if (this.cueDeck) this.cueDeck.src.loop = false;
+  }
+
+  /** Persistent manual pitch on the cued deck (1 = original speed) — unlike nudgeLive's
+   *  temporary bend, this stays until changed again. */
+  setCuePitch(rate: number) {
+    if (!this.cueDeck) return;
+    this.cueDeck.src.playbackRate.cancelScheduledValues(this.getCtx().currentTime);
+    this.cueDeck.src.playbackRate.value = rate;
+    this.cueDeck.rate = rate;
+  }
+
   /** Live filter knob (-1..1): negative sweeps a lowpass down ("underwater"), positive sweeps a highpass up ("distant"). */
   setLiveFilter(knob: number) {
     const k = Math.max(-1, Math.min(1, knob));
     const ctx = this.getCtx();
-    for (const d of [this.deck, this.fadingDeck]) {
+    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) {
       if (!d) continue;
       if (k < 0) {
         d.lp.frequency.setTargetAtTime(20000 + (LIVE_FILTER_LP_FLOOR_HZ - 20000) * -k, ctx.currentTime, 0.03);
@@ -305,7 +393,7 @@ class CrossfadePlayer {
     if (this.recorder) return;
     const ctx = this.getCtx();
     this.recordDest = ctx.createMediaStreamDestination();
-    for (const d of [this.deck, this.fadingDeck]) d?.gain.connect(this.recordDest);
+    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) d?.gain.connect(this.recordDest);
     this.recordChunks = [];
     const rec = new MediaRecorder(this.recordDest.stream);
     rec.ondataavailable = e => { if (e.data.size) this.recordChunks.push(e.data); };
@@ -327,6 +415,7 @@ class CrossfadePlayer {
     this.idx = -1;
     if (this.deck) { try { this.deck.src.stop(); } catch { /* already stopped */ } this.deck = null; }
     if (this.fadingDeck) { try { this.fadingDeck.src.stop(); } catch { /* already stopped */ } this.fadingDeck = null; }
+    this.stopCue();
     this.onChange(null);
   }
 
@@ -351,6 +440,9 @@ class CrossfadePlayer {
     const to = this.queue[this.idx + 1];
     const a = this.deck!;
     this.fading = true;
+    // if the incoming track is already manually cued in and beatmatched, take that deck
+    // over as-is instead of restarting it fresh — only A's gain/EQ fade out around it.
+    const bAlreadyCued = this.cuePath === to.path && !!this.cueDeck;
 
     let buf: AudioBuffer;
     try { buf = await this.load(to.path); } catch { if (sess === this.session) this.stop(); return; }
@@ -390,13 +482,16 @@ class CrossfadePlayer {
       bOffset = Math.max(0, Math.min(adjustedB, buf.duration - 1));
     }
 
-    const b = this.startDeck(buf, bOffset, rate, 0, t0);
+    const b = bAlreadyCued ? this.cueDeck! : this.startDeck(buf, bOffset, rate, 0, t0);
+    if (bAlreadyCued) { this.cueDeck = null; this.cuePath = null; b.src.loop = false; }
     this.fadingDeck = b;
     const tEnd = t0 + this.fadeS;
     a.gain.gain.setValueAtTime(1, t0);
     a.gain.gain.linearRampToValueAtTime(0, tEnd);
-    b.gain.gain.setValueAtTime(0, t0);
-    b.gain.gain.linearRampToValueAtTime(1, tEnd);
+    if (!bAlreadyCued) {
+      b.gain.gain.setValueAtTime(0, t0);
+      b.gain.gain.linearRampToValueAtTime(1, tEnd);
+    } // else: already audible at full gain from the manual cue — only A fades out
     // Transition presets: each drives the EQ bands and/or sweep filters (lp/hp)
     // of the two decks over the fade window on top of the volume crossfade above.
     const dur = tEnd - t0;
@@ -452,10 +547,12 @@ class CrossfadePlayer {
         a.gain.gain.cancelScheduledValues(t0);
         a.gain.gain.setValueAtTime(1, t0);
         a.gain.gain.linearRampToValueAtTime(0, center);
-        b.gain.gain.cancelScheduledValues(t0);
-        b.gain.gain.setValueAtTime(0, t0);
-        b.gain.gain.setValueAtTime(0, center);
-        b.gain.gain.linearRampToValueAtTime(1, tEnd);
+        if (!bAlreadyCued) {
+          b.gain.gain.cancelScheduledValues(t0);
+          b.gain.gain.setValueAtTime(0, t0);
+          b.gain.gain.setValueAtTime(0, center);
+          b.gain.gain.linearRampToValueAtTime(1, tEnd);
+        }
         a.low.gain.setValueAtTime(baseLow, t0);
         a.low.gain.linearRampToValueAtTime(Math.min(baseLow, BASS_SWAP_CUT), center);
         b.low.gain.setValueAtTime(Math.min(baseLow, BASS_SWAP_CUT), center);
@@ -464,7 +561,8 @@ class CrossfadePlayer {
       }
     }
     // ease the incoming track back to its own tempo after the fade
-    if (rate !== 1) {
+    // (skip when it's a manually cued deck — its pitch is the DJ's own choice)
+    if (!bAlreadyCued && rate !== 1) {
       b.src.playbackRate.setValueAtTime(rate, tEnd);
       b.src.playbackRate.linearRampToValueAtTime(1, tEnd + 4);
       // pos() assumes a constant rate; after the ramp settles it is 1 for good.
@@ -615,6 +713,10 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [savingRec, setSavingRec] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
   const [pendingLive, setPendingLive] = useState<string | null>(null);
+  const [cueingPath, setCueingPath] = useState<string | null>(null);
+  const [cuePitch, setCuePitchState] = useState(1);
+  const [cueLoopBeats, setCueLoopBeats] = useState<number | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const playerRef = useRef<CrossfadePlayer | null>(null);
   const dragRef = useRef<{ path: string; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -820,11 +922,87 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     toItem.eqPreset = edgePreset[edgeKey(from, to)] ?? 'off';
     playerRef.current!.liveTransitionTo(toItem);
     setPendingLive(to);
+    if (cueingPath === to) { setCueingPath(null); setCuePitchState(1); setCueLoopBeats(null); }
   };
-  
+
+  const toggleCue = (path: string, offset: number) => {
+    if (playerRef.current?.getCuePath() === path) {
+      playerRef.current!.stopCue();
+      setCueingPath(null);
+    } else {
+      playerRef.current!.cueLive(path, offset);
+      setCueingPath(path);
+    }
+    setCuePitchState(1);
+    setCueLoopBeats(null);
+  };
+
+  // shared by the grid nudge buttons and the keyboard shortcut below
+  const nudgeGrid = (path: string, bpm: number | null | undefined, curOffset: number | null | undefined, deltaS: number) => {
+    if (!bpm || curOffset == null) return;
+    const period = 60 / bpm;
+    setBeatOverride(o => {
+      const base = o[path] ?? curOffset;
+      return { ...o, [path]: (((base + deltaS) % period) + period) % period };
+    });
+    // if this track is currently sounding (manual cue or live crossfade), bend its
+    // pitch live too, instead of only updating the override for the next fire
+    playerRef.current!.nudgeLive(path, deltaS);
+  };
+
   useEffect(() => {
     if (pendingLive && nowPlaying?.path === pendingLive) setPendingLive(null);
   }, [nowPlaying?.path, pendingLive]);
+
+  // Live keyboard mapping: Z X C V / 1-5 / 0 drive deck A (beat jump / loop / exit loop);
+  // Q, A S D F, Shift+1-5 / Shift+0 drive the manually cued deck B in the open transition panel.
+  useEffect(() => {
+    if (!liveMode) return;
+    const loopSteps = [1, 2, 4, 8, 16];
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const p = playerRef.current;
+      if (!p) return;
+      const key = e.key.toLowerCase();
+      // e.key for a shifted digit varies by keyboard layout (e.g. Shift+1 → "!" on US,
+      // "!" or others elsewhere) — e.code stays "Digit0".."Digit5" regardless of Shift/layout.
+      const digitMatch = /^Digit([0-5])$/.exec(e.code);
+
+      const aJump: Record<string, number> = { z: -4, x: -1, c: 1, v: 4 };
+      if (key in aJump) { p.beatJump(aJump[key]); return; }
+      if (!e.shiftKey && digitMatch) {
+        const n = Number(digitMatch[1]);
+        if (n === 0) { p.exitLoop(); setLoopBeats(null); return; }
+        const beats = loopSteps[n - 1];
+        if (loopBeats === beats) { p.exitLoop(); setLoopBeats(null); }
+        else { p.setLoop(beats); setLoopBeats(beats); }
+        return;
+      }
+
+      if (!detailEdge) return;
+      const [, b] = detailEdge;
+      const mb = meta[b];
+      if (key === 'q') { toggleCue(b, mb?.cuePoint ?? 0); return; }
+      if (e.shiftKey) {
+        const bNudge: Record<string, number> = { a: -0.05, s: -0.01, d: 0.01, f: 0.05 };
+        if (key in bNudge) { nudgeGrid(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, bNudge[key]); return; }
+      } else {
+        const bJump: Record<string, number> = { a: -4, s: -1, d: 1, f: 4 };
+        if (key in bJump) { if (mb?.bpm) p.cueBeatJump(bJump[key], mb.bpm); return; }
+      }
+      if (e.shiftKey && digitMatch) {
+        const n = Number(digitMatch[1]);
+        if (n === 0) { p.exitCueLoop(); setCueLoopBeats(null); return; }
+        if (!mb?.bpm) return;
+        const beats = loopSteps[n - 1];
+        if (cueLoopBeats === beats) { p.exitCueLoop(); setCueLoopBeats(null); }
+        else { p.setCueLoop(beats, mb.bpm); setCueLoopBeats(beats); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [liveMode, detailEdge, meta, loopBeats, cueLoopBeats, toggleCue, beatOverride, nudgeGrid]);
 
   const toggleDetail = (from: string, to: string) => {
     setDetailEdge(d => (d && d[0] === from && d[1] === to ? null : [from, to]));
@@ -896,6 +1074,12 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           title={liveMode ? 'Live: click an arrow to crossfade to that track now' : 'Enable live-arrow transitions while a track is playing'}>
           Live
         </button>
+        {liveMode && (
+          <button className={`btn ${showShortcuts ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowShortcuts(v => !v)}
+            title="Show/hide keyboard shortcuts">
+            ⌨
+          </button>
+        )}
         {selected ? (
           <>
             <button className="btn btn-primary" onClick={() => playFrom(selected)}><Play size={13} /> Play path</button>
@@ -916,6 +1100,14 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           </span>
         )}
       </div>
+
+      {liveMode && showShortcuts && (
+        <div className="graph-hint">
+          Deck A — <b>Z X C V</b> beat jump ±4/±1 · <b>1-5</b> loop 1/2/4/8/16 · <b>0</b> exit loop.{' '}
+          Deck B cue (open a transition panel) — <b>Q</b> cue play/stop · <b>A S D F</b> beat jump ±4/±1 ·{' '}
+          <b>Shift+A/S/D/F</b> grid nudge ±50/±10ms · <b>Shift+1-5</b> loop · <b>Shift+0</b> exit loop.
+        </div>
+      )}
 
       {nowPlaying && (() => {
         return (
@@ -1059,14 +1251,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const abs = winStart + frac * winLen;
           setBeatOverride(o => ({ ...o, [path]: ((abs % period) + period) % period }));
         };
-        const nudgeBeat = (path: string, bpm: number | null | undefined, curOffset: number | null | undefined, deltaS: number) => () => {
-          if (!bpm || curOffset == null) return;
-          const period = 60 / bpm;
-          setBeatOverride(o => {
-            const base = o[path] ?? curOffset;
-            return { ...o, [path]: (((base + deltaS) % period) + period) % period };
-          });
-        };
+        const nudgeBeat = (path: string, bpm: number | null | undefined, curOffset: number | null | undefined, deltaS: number) => () => nudgeGrid(path, bpm, curOffset, deltaS);
         return (
           <div className="transition-panel">
             <div className="transition-panel-head">
@@ -1144,6 +1329,34 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <span className="wc-label">beat grid</span>
               <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.01)} title="Grid +10ms">›</button>
               <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.05)} title="Grid +50ms">»</button>
+              {liveMode && nowPlaying?.path === a && (
+                <>
+                  <span className="wc-sep" />
+                  <button className="btn btn-secondary wc-btn" onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
+                    title={cueingPath === b ? 'Stop cueing this track' : 'Cue this track in now, at full volume, to beatmatch by ear'}>
+                    {cueingPath === b ? <Square size={12} /> : <Play size={12} />} Cue
+                  </button>
+                  {cueingPath === b && (
+                    <>
+                      <input type="range" min={-8} max={8} step={0.1} value={(cuePitch - 1) * 100}
+                        onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(r); playerRef.current!.setCuePitch(r); }}
+                        title="Manual pitch (%)" />
+                      <span className="wc-label">{((cuePitch - 1) * 100).toFixed(1)}%</span>
+                      <span className="wc-sep" />
+                      {[1, 2, 4, 8, 16].map(n => (
+                        <button key={n} className={`btn wc-btn ${cueLoopBeats === n ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => {
+                            if (cueLoopBeats === n) { playerRef.current!.exitCueLoop(); setCueLoopBeats(null); }
+                            else if (mb?.bpm) { playerRef.current!.setCueLoop(n, mb.bpm); setCueLoopBeats(n); }
+                          }}>{n}</button>
+                      ))}
+                      {cueLoopBeats != null && (
+                        <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitCueLoop(); setCueLoopBeats(null); }}>Exit</button>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </div>
             <div className="transition-track-label">
               <span>{short(tb?.name || b)}{mb?.bpm ? ` — ${Math.round(mb.bpm)} BPM ${mb.key}` : ''}</span>
