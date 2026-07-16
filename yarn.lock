@@ -4064,6 +4064,11 @@ socks@^2.8.3:
     ip-address "^10.1.1"
     smart-buffer "^4.2.0"
 
+soundtouch-ts@^1.1.1:
+  version "1.1.1"
+  resolved "https://registry.npmjs.org/soundtouch-ts/-/soundtouch-ts-1.1.1.tgz"
+  integrity sha512-w1aJk1lxCtjVsi/RGNOEu67MLosKkOHrQKoBAWAtg1lvJODPfHiFqJRvicNAQpHDxdb4zl5c1kx5NSM5mqEsbA==
+
 source-map-js@^1.2.1:
   version "1.2.1"
   resolved "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz"

@@ -18,6 +18,7 @@ let win: BrowserWindow | null
 const NAV_SECTIONS: [string, string][] = [
   ['Search', 'download'],
   ['Library', 'library'],
+  ['Graph', 'graph'],
   ['Network', 'network'],
   ['Sharing', 'peer'],
   ['Settings', 'settings'],
@@ -385,6 +386,26 @@ ipcMain.handle('dialog:pick-folder', async () => {
     : await dialog.showOpenDialog({ properties: ['openDirectory'] });
   win?.webContents.focus();
   return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('dialog:save-file', async (event, filename: string, content: string) => {
+  const result = win
+    ? await dialog.showSaveDialog(win, { defaultPath: filename, filters: [{ name: 'JSON', extensions: ['json'] }] })
+    : await dialog.showSaveDialog({ defaultPath: filename, filters: [{ name: 'JSON', extensions: ['json'] }] });
+  win?.webContents.focus();
+  if (result.canceled || !result.filePath) return null;
+  await fs.promises.writeFile(result.filePath, content, 'utf8');
+  return result.filePath;
+});
+
+ipcMain.handle('dialog:open-file', async () => {
+  const result = win
+    ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+    : await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+  win?.webContents.focus();
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const content = await fs.promises.readFile(result.filePaths[0], 'utf8');
+  return { filePath: result.filePaths[0], content };
 });
 
 // --- Torrent IPC ---

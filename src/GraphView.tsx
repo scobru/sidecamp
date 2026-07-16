@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, SkipForward, X, Circle } from 'lucide-react';
+import {
+  CrossfadePlayer, bpmRatio, bpmClose,
+  DEFAULT_FADE_S, FADE_OPTIONS, PREVIEW_LEAD_S, PREVIEW_TAIL_S,
+  NEUTRAL_STRIP,
+  type EqPreset, type BandPeaks, type QueueItem, type LiveConfig,
+  type StripState, type NowPlaying, type EqBands,
+} from './audio/CrossfadePlayer';
+import TransitionWave from './components/TransitionWave';
+
+// Re-export types that App.tsx imports from this module
+export type { LiveConfig, EqPreset, EqBands, BandPeaks };
 
 // Graph playlist: nodes are tracks, directed edges are transitions the user
 // draws. Selecting a node suggests library tracks with compatible BPM, genre
@@ -37,646 +48,12 @@ const keysCompatible = (a: string, b: string) => {
   return ka.letter === kb.letter && (d === 1 || d === 11); // adjacent on the wheel
 };
 
-const bpmRatio = (from: number, to: number) => {
-  // Best playback-rate ratio considering half/double time.
-  const cands = [to, to * 2, to / 2];
-  const best = cands.reduce((a, b) => (Math.abs(from / b - 1) < Math.abs(from / a - 1) ? b : a));
-  return from / best;
-};
-const bpmClose = (a: number | null, b: number | null, tol = 0.06) =>
-  !!a && !!b && Math.abs(bpmRatio(a, b) - 1) <= tol;
-
-// --- Crossfade player -------------------------------------------------------
-// Web Audio, not <audio>: tracks are decoded to AudioBuffers over IPC (same
-// proven path as the Analyze pass), which gives seek-anywhere previews and
-// sample-accurate beat alignment. The media:// protocol aborts ranged
-// requests, so HTMLAudioElement cannot seek outside its buffer at all.
-const DEFAULT_FADE_S = 8;
-const FADE_OPTIONS = [8, 16, 24];
 const ZOOM_LEVELS = [1, 2, 4, 8] as const;
-const PREVIEW_LEAD_S = 5;  // seconds of A heard before the fade starts
-const PREVIEW_TAIL_S = 6;  // seconds of B heard after the fade completes
-export type EqPreset = 'off' | 'bass-swap' | 'rise' | 'blend' | 'wave' | 'melt' | 'slam';
-type BandPeaks = { low: number[]; mid: number[]; high: number[] };
-const BASS_SWAP_CUT = -15; // dB the outgoing/incoming low shelf dips to during a bass-swap fade
-const BLEND_CUT = -10;     // dB, gentler 3-band cut used by the Blend/Wave presets
-const SWEEP_LP_START_HZ = 300;   // Rise/Wave: incoming lowpass opens from here up to fully open
-const SWEEP_HP_END_HZ = 800;     // Rise/Wave: outgoing highpass climbs from open up to here
-const MELT_HP_HZ = 1500;         // Melt: both sides sweep highpass through this frequency
-const LIVE_FILTER_LP_FLOOR_HZ = 200;  // live knob fully negative: lowpass cutoff floor ("underwater")
-const LIVE_FILTER_HP_CEIL_HZ = 2000;  // live knob fully positive: highpass cutoff ceiling ("distant")
-type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null; eqPreset?: EqPreset; cue?: number; cueOut?: number };
-type NowPlaying = { index: number; path: string; name: string } | null;
-type Deck = {
-  src: AudioBufferSourceNode; gain: GainNode; buf: AudioBuffer; startCtx: number; startOffset: number; rate: number;
-  low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode;
-  lp: BiquadFilterNode; // preset sweep filter, neutral (fully open) unless a transition drives it
-  hp: BiquadFilterNode; // preset sweep filter, neutral (fully open) unless a transition drives it
-};
-export type EqBands = { low: number; mid: number; high: number }; // dB, range -15..15
-const DEFAULT_EQ: EqBands = { low: 0, mid: 0, high: 0 };
-
-class CrossfadePlayer {
-  private ctx: AudioContext | null = null;
-  private deck: Deck | null = null;
-  private fadingDeck: Deck | null = null; // incoming deck mid-crossfade; stop() must kill this too
-  private cueDeck: Deck | null = null; // manually cued incoming deck, played solo before the real fade fires
-  private cuePath: string | null = null;
-  private cueToken = 0;
-  fadeS = DEFAULT_FADE_S;
-  private eq: EqBands = { ...DEFAULT_EQ };
-  private queue: QueueItem[] = [];
-  private idx = -1;
-  private fading = false;
-  private previewing = false;
-  private raf = 0;
-  private session = 0; // bumped on stop/play; async loads from older sessions are discarded
-  private bufCache = new Map<string, AudioBuffer>();
-  private bufLoading = new Map<string, Promise<AudioBuffer>>();
-  private recordDest: MediaStreamAudioDestinationNode | null = null;
-  private recorder: MediaRecorder | null = null;
-  private recordChunks: Blob[] = [];
-  onChange: (np: NowPlaying) => void = () => {};
-  onRecordingSaved: (blob: Blob) => void = () => {};
-
-  private analyser: AnalyserNode | null = null;
-
-  private getCtx() {
-    if (!this.ctx) {
-      this.ctx = new AudioContext();
-      this.analyser = this.ctx.createAnalyser();
-      this.analyser.fftSize = 256;
-    }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    return this.ctx;
-  }
-
-  /** Live frequency spectrum (0-255 per bin) of whatever's currently sounding, for the graph's animated background. */
-  getSpectrum(): Uint8Array | null {
-    if (!this.analyser) return null;
-    const data = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteFrequencyData(data);
-    return data;
-  }
-
-  private async load(path: string): Promise<AudioBuffer> {
-    const hit = this.bufCache.get(path);
-    if (hit) return hit;
-    const inFlight = this.bufLoading.get(path);
-    if (inFlight) return inFlight;
-    const p = (async () => {
-      const u8: Uint8Array = await (window as any).electronAPI.readAudioFile(path);
-      const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
-      const buf = await this.getCtx().decodeAudioData(raw);
-      this.bufCache.set(path, buf);
-      // decoded PCM is big — keep only the last few tracks (A, B being previewed/cued, headroom for one more)
-      while (this.bufCache.size > 5) this.bufCache.delete(this.bufCache.keys().next().value!);
-      this.bufLoading.delete(path);
-      return buf;
-    })();
-    this.bufLoading.set(path, p);
-    return p;
-  }
-
-  /** media position (seconds into the buffer) of a playing deck; loop-aware so tick()
-   *  doesn't mistake a looping deck for one that's run off the end of the buffer. */
-  private pos(d: Deck) {
-    const raw = d.startOffset + (this.getCtx().currentTime - d.startCtx) * d.rate;
-    if (d.src.loop && d.src.loopEnd > d.src.loopStart && raw >= d.src.loopEnd) {
-      const span = d.src.loopEnd - d.src.loopStart;
-      return d.src.loopStart + ((raw - d.src.loopStart) % span);
-    }
-    return raw;
-  }
-
-  private startDeck(buf: AudioBuffer, offset: number, rate: number, gain0: number, when = 0): Deck {
-    const ctx = this.getCtx();
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.playbackRate.value = rate;
-    const low = ctx.createBiquadFilter();
-    low.type = 'lowshelf'; low.frequency.value = 200; low.gain.value = this.eq.low;
-    const mid = ctx.createBiquadFilter();
-    mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 0.9; mid.gain.value = this.eq.mid;
-    const high = ctx.createBiquadFilter();
-    high.type = 'highshelf'; high.frequency.value = 4000; high.gain.value = this.eq.high;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 20; // neutral: passes everything
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 20000; // neutral: passes everything
-    const gain = ctx.createGain();
-    gain.gain.value = gain0;
-    src.connect(low).connect(mid).connect(high).connect(hp).connect(lp).connect(gain).connect(ctx.destination);
-    if (this.recordDest) gain.connect(this.recordDest);
-    if (this.analyser) gain.connect(this.analyser);
-    const at = when || ctx.currentTime;
-    src.start(at, offset);
-    return { src, gain, buf, startCtx: at, startOffset: offset, rate, low, mid, high, lp, hp };
-  }
-
-  /** Current media-time playhead (seconds) of the live deck, for hot-cue "set". */
-  getPos(): number | null { return this.deck ? this.pos(this.deck) : null; }
-
-  /** Paths of the pair currently mid-crossfade, or null. */
-  getFadingPair(): { from: string; to: string } | null {
-    return this.fading && this.idx >= 0 && this.idx + 1 < this.queue.length
-      ? { from: this.queue[this.idx].path, to: this.queue[this.idx + 1].path }
-      : null;
-  }
-
-  /** Live phase nudge on the incoming deck for `path` — a brief pitch bend, same move a DJ
-   *  makes to bring a synced deck back into phase, without touching the gain/EQ automation.
-   *  Targets whichever deck is actually sounding for that path: a manual cue, or a live fade. */
-  nudgeLive(path: string, deltaS: number) {
-    const d = this.cuePath === path ? this.cueDeck : (this.getFadingPair()?.to === path ? this.fadingDeck : null);
-    if (!d || !deltaS) return;
-    const ctx = this.getCtx();
-    const now = ctx.currentTime;
-    const k = 0.08; // 8% pitch bend, typical CDJ nudge strength
-    const bump = d.rate * (1 + Math.sign(deltaS) * k);
-    const dur = Math.abs(deltaS) / (d.rate * k);
-    d.src.playbackRate.cancelScheduledValues(now);
-    d.src.playbackRate.setValueAtTime(bump, now);
-    d.src.playbackRate.setValueAtTime(d.rate, now + dur);
-  }
-
-  /** Manually cue the incoming track in now, at full volume alongside whatever's playing —
-   *  independent of the automated crossfade engine, so it can be beatmatched by ear first. */
-  cueLive(path: string, offset: number) {
-    const token = ++this.cueToken;
-    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; this.cuePath = null; }
-    this.load(path).then(buf => {
-      if (token !== this.cueToken) return; // superseded by a newer cue/stop before load finished
-      this.cueDeck = this.startDeck(buf, Math.max(0, Math.min(offset, buf.duration - 1)), 1, 1);
-      this.cuePath = path;
-    });
-  }
-
-  stopCue() {
-    this.cueToken++;
-    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; }
-    this.cuePath = null;
-  }
-
-  getCuePath(): string | null { return this.cuePath; }
-
-  /** Jump forward/back by whole beats on the manually cued deck. */
-  cueBeatJump(beats: number, bpm: number) {
-    const d = this.cueDeck;
-    if (!d || !bpm) return;
-    const delta = beats * (60 / bpm);
-    const clamped = Math.max(0, Math.min(this.pos(d) + delta, d.buf.duration - 0.05));
-    const gain0 = d.gain.gain.value;
-    try { d.src.stop(); } catch { /* already stopped */ }
-    d.gain.disconnect();
-    this.cueDeck = this.startDeck(d.buf, clamped, d.rate, gain0);
-  }
-
-  /** Loop the next N beats of the manually cued deck, from its current playhead. */
-  setCueLoop(beats: number, bpm: number) {
-    if (!this.cueDeck || !bpm) return;
-    const start = this.pos(this.cueDeck);
-    this.cueDeck.src.loopStart = start;
-    this.cueDeck.src.loopEnd = start + beats * (60 / bpm);
-    this.cueDeck.src.loop = true;
-  }
-
-  exitCueLoop() {
-    if (this.cueDeck) this.cueDeck.src.loop = false;
-  }
-
-  /** Persistent manual pitch on the cued deck (1 = original speed) — unlike nudgeLive's
-   *  temporary bend, this stays until changed again. */
-  setCuePitch(rate: number) {
-    if (!this.cueDeck) return;
-    this.cueDeck.src.playbackRate.cancelScheduledValues(this.getCtx().currentTime);
-    this.cueDeck.src.playbackRate.value = rate;
-    this.cueDeck.rate = rate;
-  }
-
-  /** Live filter knob (-1..1): negative sweeps a lowpass down ("underwater"), positive sweeps a highpass up ("distant"). */
-  setLiveFilter(knob: number) {
-    const k = Math.max(-1, Math.min(1, knob));
-    const ctx = this.getCtx();
-    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) {
-      if (!d) continue;
-      if (k < 0) {
-        d.lp.frequency.setTargetAtTime(20000 + (LIVE_FILTER_LP_FLOOR_HZ - 20000) * -k, ctx.currentTime, 0.03);
-        d.hp.frequency.setTargetAtTime(20, ctx.currentTime, 0.03);
-      } else {
-        d.hp.frequency.setTargetAtTime(20 + (LIVE_FILTER_HP_CEIL_HZ - 20) * k, ctx.currentTime, 0.03);
-        d.lp.frequency.setTargetAtTime(20000, ctx.currentTime, 0.03);
-      }
-    }
-  }
-
-  /** Stop-and-restart the live deck's source at a new media position (AudioBufferSourceNode can't seek in place). */
-  private reseat(offset: number) {
-    if (!this.deck || this.fading) return;
-    const d = this.deck;
-    const clamped = Math.max(0, Math.min(offset, d.buf.duration - 0.05));
-    const gain0 = d.gain.gain.value;
-    try { d.src.stop(); } catch { /* already stopped */ }
-    d.gain.disconnect();
-    this.deck = this.startDeck(d.buf, clamped, d.rate, gain0);
-  }
-
-  /** Jump forward/back by whole beats using the current track's BPM. */
-  beatJump(beats: number) {
-    if (!this.deck) return;
-    const bpm = this.queue[this.idx]?.bpm;
-    if (!bpm) return;
-    const delta = beats * (60 / bpm);
-    this.reseat(this.pos(this.deck) + delta);
-  }
-
-  /** Loop the next N beats from the current playhead, using the native loop range. */
-  setLoop(beats: number) {
-    if (!this.deck) return;
-    const bpm = this.queue[this.idx]?.bpm;
-    if (!bpm) return;
-    const start = this.pos(this.deck);
-    this.deck.src.loopStart = start;
-    this.deck.src.loopEnd = start + beats * (60 / bpm);
-    this.deck.src.loop = true;
-  }
-
-  exitLoop() {
-    if (this.deck) this.deck.src.loop = false;
-  }
-
-  /** firstOffset < 0 means "seconds from the end of the first track" */
-  play(queue: QueueItem[], firstOffset = 0) {
-    this.stop();
-    const sess = ++this.session;
-    this.queue = queue;
-    this.idx = 0;
-    this.onChange({ index: 0, path: queue[0].path, name: queue[0].name });
-    this.load(queue[0].path).then(buf => {
-      if (sess !== this.session) return;
-      const end = queue[0].cueOut ?? buf.duration;
-      const off = firstOffset < 0 ? end + firstOffset : firstOffset;
-      this.deck = this.startDeck(buf, Math.max(0, Math.min(off, buf.duration - 1)), 1, 1);
-      this.tick();
-    }).catch(() => { if (sess === this.session) this.stop(); });
-  }
-
-  /** Play just the A→B transition: the tail of A, the fade, a few seconds of B. */
-  preview(from: QueueItem, to: QueueItem) {
-    this.play([from, to], -(this.fadeS + PREVIEW_LEAD_S));
-    this.previewing = true;
-  }
-
-  /** Per-band peaks for [startSec, endSec), split into low/mid/high (~<250Hz, 250Hz-2kHz, >2kHz)
-   *  via two cascaded one-pole lowpass filters, each band peak normalized 0-100 against its own max.
-   *  Negative bounds count from the end (like play()'s firstOffset); omitted endSec = duration. */
-  async getBandPeaksWindow(path: string, startSec: number, endSec?: number, N = 400): Promise<BandPeaks> {
-    const buf = await this.load(path);
-    const s = Math.max(0, startSec < 0 ? buf.duration + startSec : startSec);
-    const e = Math.min(buf.duration, endSec == null ? buf.duration : endSec < 0 ? buf.duration + endSec : endSec);
-    const ch = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const s0 = Math.floor(s * sr), e0 = Math.max(s0 + 1, Math.floor(e * sr));
-    const bucket = Math.max(1, Math.floor((e0 - s0) / N));
-    const aLow = 1 - Math.exp((-2 * Math.PI * 250) / sr);
-    const aMid = 1 - Math.exp((-2 * Math.PI * 2000) / sr);
-    let lpLow = 0, lpMid = 0;
-    const low: number[] = [], mid: number[] = [], high: number[] = [];
-    let topLow = 0, topMid = 0, topHigh = 0;
-    for (let i = 0; i < N; i++) {
-      const bs = s0 + i * bucket, be = Math.min(e0, bs + bucket);
-      let maxLow = 0, maxMid = 0, maxHigh = 0;
-      for (let j = bs; j < be; j++) {
-        const x = ch[j];
-        lpLow += aLow * (x - lpLow);
-        lpMid += aMid * (x - lpMid);
-        const aL = Math.abs(lpLow), aM = Math.abs(lpMid - lpLow), aH = Math.abs(x - lpMid);
-        if (aL > maxLow) maxLow = aL;
-        if (aM > maxMid) maxMid = aM;
-        if (aH > maxHigh) maxHigh = aH;
-      }
-      low.push(maxLow); mid.push(maxMid); high.push(maxHigh);
-      if (maxLow > topLow) topLow = maxLow;
-      if (maxMid > topMid) topMid = maxMid;
-      if (maxHigh > topHigh) topHigh = maxHigh;
-    }
-    return {
-      low: low.map(v => (topLow > 0 ? Math.round((v / topLow) * 100) : 0)),
-      mid: mid.map(v => (topMid > 0 ? Math.round((v / topMid) * 100) : 0)),
-      high: high.map(v => (topHigh > 0 ? Math.round((v / topHigh) * 100) : 0)),
-    };
-  }
-
-  skip() { if (this.idx >= 0 && this.idx + 1 < this.queue.length && !this.fading && this.deck) this.startFade(); }
-
-  /** Live mode: crossfade the currently playing deck straight into `to`, starting right
-   *  now from the live playhead — instead of the isolated preview() replay. */
-  liveTransitionTo(to: QueueItem) {
-    if (this.idx < 0 || this.fading) return;
-    this.queue = [...this.queue.slice(0, this.idx + 1), to];
-    // click-triggered: quantize to the next bar (not just the next beat) so the
-    // transition kicks in on a musically obvious boundary instead of mid-phrase.
-    if (this.deck) { this.startFade(4); return; }
-    // onChange fires before the first track's buffer finishes decoding — if the
-    // user fires a live transition in that window, wait for the deck instead of
-    // silently dropping the transition.
-    const sess = this.session;
-    const wait = () => {
-      if (sess !== this.session) return;
-      if (this.deck) this.startFade(4); else requestAnimationFrame(wait);
-    };
-    requestAnimationFrame(wait);
-  }
-
-  /** Capture the graph's audio output (this deck and every future one) to a WebM blob. */
-  startRecording() {
-    if (this.recorder) return;
-    const ctx = this.getCtx();
-    this.recordDest = ctx.createMediaStreamDestination();
-    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) d?.gain.connect(this.recordDest);
-    this.recordChunks = [];
-    const rec = new MediaRecorder(this.recordDest.stream);
-    rec.ondataavailable = e => { if (e.data.size) this.recordChunks.push(e.data); };
-    rec.onstop = () => { this.onRecordingSaved(new Blob(this.recordChunks, { type: 'audio/webm' })); this.recordDest = null; };
-    rec.start();
-    this.recorder = rec;
-  }
-
-  stopRecording() {
-    this.recorder?.stop();
-    this.recorder = null;
-  }
-
-  stop() {
-    this.session++;
-    cancelAnimationFrame(this.raf);
-    this.fading = false;
-    this.previewing = false;
-    this.idx = -1;
-    if (this.deck) { try { this.deck.src.stop(); } catch { /* already stopped */ } this.deck = null; }
-    if (this.fadingDeck) { try { this.fadingDeck.src.stop(); } catch { /* already stopped */ } this.fadingDeck = null; }
-    this.stopCue();
-    this.onChange(null);
-  }
-
-  private tick = () => {
-    this.raf = requestAnimationFrame(this.tick);
-    if (this.idx < 0 || this.fading || !this.deck) return;
-    const dur = this.queue[this.idx].cueOut ?? this.deck.buf.duration;
-    const remaining = dur - this.pos(this.deck);
-    if (this.idx + 1 < this.queue.length) {
-      // decode of the next track takes a moment — lead with extra slack
-      if (remaining <= this.fadeS + 1.5) this.startFade();
-    } else if (remaining <= 0.05) {
-      this.stop();
-    }
-  };
-
-  /** quantizeBeats: snap the fade start to the next multiple of this many beats of A
-   *  (1 = next beat, used for the normal queued handoff; 4 = next bar, used for live clicks). */
-  private async startFade(quantizeBeats = 1) {
-    const sess = this.session;
-    const from = this.queue[this.idx];
-    const to = this.queue[this.idx + 1];
-    const a = this.deck!;
-    this.fading = true;
-    // if the incoming track is already manually cued in and beatmatched, take that deck
-    // over as-is instead of restarting it fresh — only A's gain/EQ fade out around it.
-    const bAlreadyCued = this.cuePath === to.path && !!this.cueDeck;
-
-    let buf: AudioBuffer;
-    try { buf = await this.load(to.path); } catch { if (sess === this.session) this.stop(); return; }
-    if (sess !== this.session) return;
-
-    const ctx = this.getCtx();
-    // Tempo match: incoming track starts at the outgoing tempo (within ±8%),
-    // then eases back to its own tempo after the fade.
-    const rawRatio = from.bpm && to.bpm ? bpmRatio(from.bpm, to.bpm) : 1;
-    const rate = Math.min(1.08, Math.max(0.92, rawRatio));
-    const canSync = rate === rawRatio && from.beatOffset != null && to.beatOffset != null && !!from.bpm && !!to.bpm;
-
-    // Fade start: next beat of A (sample-accurate), or "shortly after now".
-    let t0 = ctx.currentTime + 0.15;
-    let bOffset = to.cue ?? 0; // incoming track starts from its cue point unless beat-synced below
-
-    if (quantizeBeats === 1) {
-      const dur = from.cueOut ?? a.buf.duration;
-      const remaining = dur - this.pos(a);
-      t0 = Math.max(ctx.currentTime + 0.05, ctx.currentTime + remaining / a.rate - this.fadeS);
-    } else if (canSync) {
-      const pMedia = (60 / from.bpm!) * quantizeBeats; // quantize period in A's media time
-      const posMedia = (((this.pos(a) - from.beatOffset!) % pMedia) + pMedia) % pMedia;
-      t0 = ctx.currentTime + (pMedia - posMedia) / a.rate; // next quantize boundary, wall clock
-      while (t0 < ctx.currentTime + 0.1) t0 += pMedia / a.rate;
-    }
-
-    if (canSync) {
-      const posAtT0 = this.pos(a) + (t0 - ctx.currentTime) * a.rate;
-      const pB = 60 / to.bpm!;
-      const phaseA = (((posAtT0 - from.beatOffset!) % pB) + pB) % pB;
-      const targetB = to.beatOffset! + phaseA;
-      const minB = to.cue ?? 0;
-      let adjustedB = targetB;
-      // Allow snapping slightly backwards (e.g. -0.05s) if they placed cue right on a beat
-      while (adjustedB < minB - 0.05) adjustedB += pB;
-      bOffset = Math.max(0, Math.min(adjustedB, buf.duration - 1));
-    }
-
-    const b = bAlreadyCued ? this.cueDeck! : this.startDeck(buf, bOffset, rate, 0, t0);
-    if (bAlreadyCued) { this.cueDeck = null; this.cuePath = null; b.src.loop = false; }
-    this.fadingDeck = b;
-    const tEnd = t0 + this.fadeS;
-    a.gain.gain.setValueAtTime(1, t0);
-    a.gain.gain.linearRampToValueAtTime(0, tEnd);
-    if (!bAlreadyCued) {
-      b.gain.gain.setValueAtTime(0, t0);
-      b.gain.gain.linearRampToValueAtTime(1, tEnd);
-    } // else: already audible at full gain from the manual cue — only A fades out
-    // Transition presets: each drives the EQ bands and/or sweep filters (lp/hp)
-    // of the two decks over the fade window on top of the volume crossfade above.
-    const dur = tEnd - t0;
-    const baseLow = this.eq.low, baseMid = this.eq.mid, baseHigh = this.eq.high;
-    const swapBand = (band: 'low' | 'mid' | 'high', base: number, cut: number, from0: number, to0: number) => {
-      a[band].gain.setValueAtTime(base, from0);
-      a[band].gain.linearRampToValueAtTime(cut, to0);
-      b[band].gain.setValueAtTime(cut, from0);
-      b[band].gain.linearRampToValueAtTime(base, to0);
-    };
-    const sweep = (filter: BiquadFilterNode, type: 'lowpass' | 'highpass', startHz: number, endHz: number, from0: number, to0: number) => {
-      filter.type = type;
-      filter.frequency.setValueAtTime(startHz, from0);
-      filter.frequency.exponentialRampToValueAtTime(endHz, to0);
-    };
-    switch (to.eqPreset) {
-      case 'bass-swap':
-        // dip A's low end out while B's climbs in, so the two basslines never overlap
-        swapBand('low', baseLow, Math.min(baseLow, BASS_SWAP_CUT), t0, tEnd);
-        break;
-      case 'rise': {
-        // B enters muffled (lowpass) and opens up; A thins into a highpass; bass handoff near the end
-        sweep(b.lp, 'lowpass', SWEEP_LP_START_HZ, 20000, t0, tEnd);
-        sweep(a.hp, 'highpass', 20, SWEEP_HP_END_HZ, t0, tEnd);
-        swapBand('low', baseLow, Math.min(baseLow, BASS_SWAP_CUT), t0 + dur * 0.7, tEnd);
-        break;
-      }
-      case 'blend':
-        // gentle 3-band crossfade across the whole transition, no single sharp swap point
-        swapBand('low', baseLow, Math.min(baseLow, BLEND_CUT), t0, tEnd);
-        swapBand('mid', baseMid, Math.min(baseMid, BLEND_CUT), t0, tEnd);
-        swapBand('high', baseHigh, Math.min(baseHigh, BLEND_CUT), t0, tEnd);
-        break;
-      case 'wave': {
-        // like Blend, plus a centered bass handoff and lowpass/highpass sweeps in and out
-        const c0 = t0 + dur * 0.35, c1 = t0 + dur * 0.65;
-        swapBand('low', baseLow, Math.min(baseLow, BASS_SWAP_CUT), c0, c1);
-        sweep(b.lp, 'lowpass', SWEEP_LP_START_HZ, 20000, t0, tEnd);
-        sweep(a.hp, 'highpass', 20, SWEEP_HP_END_HZ, t0, tEnd);
-        break;
-      }
-      case 'melt': {
-        // both tracks thin through a highpass sweep, bass handed off right at the center
-        const c0 = t0 + dur * 0.35, c1 = t0 + dur * 0.65;
-        swapBand('low', baseLow, Math.min(baseLow, BASS_SWAP_CUT), c0, c1);
-        sweep(a.hp, 'highpass', 20, MELT_HP_HZ, t0, tEnd);
-        sweep(b.hp, 'highpass', MELT_HP_HZ, 20, t0, tEnd);
-        break;
-      }
-      case 'slam': {
-        // hard cut at the center: A's volume and EQ finish there, B's only start after
-        const center = t0 + dur / 2;
-        a.gain.gain.cancelScheduledValues(t0);
-        a.gain.gain.setValueAtTime(1, t0);
-        a.gain.gain.linearRampToValueAtTime(0, center);
-        if (!bAlreadyCued) {
-          b.gain.gain.cancelScheduledValues(t0);
-          b.gain.gain.setValueAtTime(0, t0);
-          b.gain.gain.setValueAtTime(0, center);
-          b.gain.gain.linearRampToValueAtTime(1, tEnd);
-        }
-        a.low.gain.setValueAtTime(baseLow, t0);
-        a.low.gain.linearRampToValueAtTime(Math.min(baseLow, BASS_SWAP_CUT), center);
-        b.low.gain.setValueAtTime(Math.min(baseLow, BASS_SWAP_CUT), center);
-        b.low.gain.linearRampToValueAtTime(baseLow, tEnd);
-        break;
-      }
-    }
-    // ease the incoming track back to its own tempo after the fade
-    // (skip when it's a manually cued deck — its pitch is the DJ's own choice)
-    if (!bAlreadyCued && rate !== 1) {
-      b.src.playbackRate.setValueAtTime(rate, tEnd);
-      b.src.playbackRate.linearRampToValueAtTime(1, tEnd + 4);
-      // pos() assumes a constant rate; after the ramp settles it is 1 for good.
-      // The small drift during the 4s ramp only affects the fade trigger point.
-      b.rate = 1;
-      b.startOffset = bOffset + (tEnd + 2 - t0) * ((rate + 1) / 2); // midpoint approximation
-      b.startCtx = tEnd + 2;
-    }
-    a.src.stop(tEnd + 0.05);
-
-    const finish = () => {
-      if (sess !== this.session) return;
-      if (ctx.currentTime < tEnd) { requestAnimationFrame(finish); return; }
-      this.deck = b;
-      this.fadingDeck = null;
-      this.idx += 1;
-      this.fading = false;
-      this.onChange({ index: this.idx, path: to.path, name: to.name });
-      if (this.previewing) setTimeout(() => { if (this.previewing && sess === this.session) this.stop(); }, PREVIEW_TAIL_S * 1000);
-    };
-    requestAnimationFrame(finish);
-  }
-}
-
-// Dual waveform strip for the transition detail panel: layered blue bars
-// (bass envelope, mids, treble core), rekordbox-style, with the crossfade
-// span at full opacity and the rest dimmed.
-const WAVE_TONES = { out: { zone: 'rgba(251,191,36,0.10)' }, in: { zone: 'rgba(168,85,247,0.10)' } };
-
-function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onPick, onSetCue }: { peaks: BandPeaks | null; fadeFrom: number; fadeTo: number; tone: 'out' | 'in'; beats?: number[]; cueFrac?: number | null; onPick?: (frac: number) => void; onSetCue?: (frac: number) => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W = cv.clientWidth, H = cv.clientHeight;
-    cv.width = W * dpr; cv.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const { zone } = WAVE_TONES[tone];
-
-    ctx.fillStyle = zone;
-    ctx.fillRect(fadeFrom * W, 0, (fadeTo - fadeFrom) * W, H);
-
-    ctx.strokeStyle = 'rgba(148,163,184,0.25)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
-    ctx.stroke();
-
-    if (!peaks || peaks.low.length === 0) return;
-    const { low, mid, high } = peaks;
-    const n = low.length;
-    const barW = W / n;
-    // Rekordbox-style layered bars: bass is the outer envelope (deep blue),
-    // mids sit inside it (lighter blue), treble is the bright core — one
-    // consistent blue ramp instead of a per-sample RGB mix, so the shape
-    // reads as amplitude+brightness rather than a confusing color jumble.
-    for (let i = 0; i < n; i++) {
-      const x = i * barW;
-      const hLow = Math.max(2, (low[i] / 100) * (H - 4));
-      const hMid = Math.max(1, (mid[i] / 100) * (H - 4) * 0.72);
-      const hHigh = Math.max(1, (high[i] / 100) * (H - 4) * 0.42);
-      const inFade = i / n >= fadeFrom && i / n < fadeTo;
-      ctx.globalAlpha = inFade ? 1 : 0.45;
-      ctx.fillStyle = '#1d4ed8';
-      ctx.fillRect(x, (H - hLow) / 2, barW + 0.5, hLow);
-      ctx.fillStyle = '#7dd3fc';
-      ctx.fillRect(x, (H - hMid) / 2, barW + 0.5, hMid);
-      ctx.fillStyle = '#f0f9ff';
-      ctx.fillRect(x, (H - hHigh) / 2, barW + 0.5, hHigh);
-    }
-    ctx.globalAlpha = 1;
-    if (beats) {
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
-      for (const f of beats) { ctx.beginPath(); ctx.moveTo(f * W, 0); ctx.lineTo(f * W, H); ctx.globalAlpha = 0.35; ctx.stroke(); ctx.globalAlpha = 1; }
-    }
-    if (cueFrac != null && cueFrac >= 0 && cueFrac <= 1) {
-      const cx = cueFrac * W;
-      const color = tone === 'out' ? '#ef4444' : '#4ade80'; // red for out point, green for in point
-      ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 6;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
-      ctx.restore();
-      // flag at top so cue reads at a glance even when the line gets lost in busy bars
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(cx, 0);
-ctx.lineTo(cx + 7, 0);
-      ctx.lineTo(cx, 8);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }, [peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onSetCue]);
-  const pick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const frac = (e.clientX - r.left) / r.width;
-    if (e.shiftKey && onSetCue) { onSetCue(frac); return; }
-    if (onPick) onPick(frac);
-  };
-  const title = onSetCue ? `Click: mark the beat — Shift+click: set ${tone === 'out' ? 'closing/end' : 'cue/start'} point` : onPick ? 'Click to mark the beat' : undefined;
-  return <canvas ref={ref} className="transition-wave-canvas" onClick={pick} title={title} />;
-}
 
 // --- Force layout ------------------------------------------------------------
 type Node = { path: string; name: string; x: number; y: number; vx: number; vy: number };
 
-export default function GraphView({ tracks, edges, meta, library, onAddTrack, onAddEdge, onRemoveEdge, onRemoveTrack, onSetCue, onSetCueOut }: {
+export default function GraphView({ tracks, edges, meta, library, onAddTrack, onAddEdge, onRemoveEdge, onRemoveTrack, onSetCue, onSetCueOut, liveConfig, onLiveConfigChange }: {
   tracks: GraphTrack[];
   edges: GraphEdge[];
   meta: Record<string, GraphMeta | undefined>;
@@ -687,6 +64,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   onRemoveTrack: (path: string) => void;
   onSetCue: (path: string, cue: number) => void;
   onSetCueOut?: (path: string, cueOut: number) => void;
+  liveConfig?: LiveConfig;
+  onLiveConfigChange?: (cfg: LiveConfig) => void;
 }) {
   const W = 900, H = 480, R = 26;
   const nodesRef = useRef<Map<string, Node>>(new Map());
@@ -700,11 +79,48 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [waveZoomIdx, setWaveZoomIdx] = useState(0);
   const waveZoom = ZOOM_LEVELS[waveZoomIdx];
   const [wavePan, setWavePan] = useState(0); // seconds, start of the visible window
-  const [beatOverride, setBeatOverride] = useState<Record<string, number>>({});
-  const [fadeS, setFadeS] = useState(DEFAULT_FADE_S);
-  const [edgePreset, setEdgePreset] = useState<Record<string, EqPreset>>({});
+  const [beatOverride, setBeatOverride] = useState<Record<string, number>>(() => liveConfig?.beatOverride ?? {});
+  const [fadeS, setFadeS] = useState(() => liveConfig?.fadeS ?? DEFAULT_FADE_S);
+  const [edgePreset, setEdgePreset] = useState<Record<string, EqPreset>>(() => liveConfig?.edgePreset ?? {});
   const [loopBeats, setLoopBeats] = useState<number | null>(null);
   const [liveFilter, setLiveFilter] = useState(0); // -100..100
+  const [masterOn, setMasterOn] = useState(() => liveConfig?.masterOn ?? false);
+  const [masterBpm, setMasterBpm] = useState(() => liveConfig?.masterBpm ?? 125); // Ableton-style global tempo target
+  // restore saved master tempo on mount (player starts fresh each mount)
+  useEffect(() => { if (masterOn) playerRef.current?.setMasterTempo(masterBpm); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // persist the live-set config with the playlist whenever any piece changes
+  useEffect(() => {
+    onLiveConfigChange?.({ edgePreset, beatOverride, fadeS, masterOn, masterBpm });
+  }, [edgePreset, beatOverride, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [deckRates, setDeckRates] = useState<{ a: number | null; cue: number | null }>({ a: null, cue: null });
+  const [strips, setStrips] = useState<{ a: StripState; b: StripState | null }>({ a: NEUTRAL_STRIP, b: null });
+  const mixTouch = useRef(0); // last time the user moved a mixer slider — pause sync so it doesn't fight the drag
+  useEffect(() => {
+    if (!nowPlaying) return;
+    const iv = setInterval(() => {
+      if (Date.now() - mixTouch.current < 1200) return;
+      const m = playerRef.current?.getMixerState();
+      if (m) setStrips({ a: m.a ?? NEUTRAL_STRIP, b: m.b ?? null });
+      if (masterOn) setDeckRates(playerRef.current?.getDeckRates() ?? { a: null, cue: null });
+      setRouting(playerRef.current?.getRouting() ?? { a: null, b: null });
+    }, 600);
+    return () => clearInterval(iv);
+  }, [nowPlaying, masterOn]);
+  // VU meters: style-only updates at display rate, no React re-render
+  const vuA = useRef<HTMLSpanElement>(null);
+  const vuB = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!nowPlaying) return;
+    let raf = 0;
+    const step = () => {
+      const lv = playerRef.current?.getDeckLevels();
+      if (vuA.current) vuA.current.style.transform = `scaleX(${lv?.a ?? 0})`;
+      if (vuB.current) vuB.current.style.transform = `scaleX(${lv?.b ?? 0})`;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [nowPlaying]);
   const [zoomIdx, setZoomIdx] = useState(0);
   const zoom = ZOOM_LEVELS[zoomIdx];
   const [panA, setPanA] = useState(0); // seconds, how far left of the anchored (right) edge the A window has slid
@@ -717,6 +133,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [cuePitch, setCuePitchState] = useState(1);
   const [cueLoopBeats, setCueLoopBeats] = useState<number | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [monitorDeviceId, setMonitorDeviceId] = useState<string | null>(null);
+  const [routing, setRouting] = useState<{ a: { pfl: boolean; master: boolean } | null; b: { pfl: boolean; master: boolean } | null }>({ a: null, b: null });
   const playerRef = useRef<CrossfadePlayer | null>(null);
   const dragRef = useRef<{ path: string; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -725,6 +144,14 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   if (!playerRef.current) playerRef.current = new CrossfadePlayer();
   playerRef.current.fadeS = fadeS;
   (window as any).__cf = playerRef.current; // debug/inspection handle
+  // enumerate audio output devices for the headphone monitor picker
+  useEffect(() => {
+    const enumerate = () => navigator.mediaDevices.enumerateDevices()
+      .then(devs => setAudioOutputs(devs.filter(d => d.kind === 'audiooutput' && d.deviceId)));
+    enumerate();
+    navigator.mediaDevices.addEventListener('devicechange', enumerate);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate);
+  }, []);
   // live-control state is per-track — reset when the playhead moves to a different track
   useEffect(() => {
     setLoopBeats(null);
@@ -930,7 +357,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
       playerRef.current!.stopCue();
       setCueingPath(null);
     } else {
-      playerRef.current!.cueLive(path, offset);
+      playerRef.current!.cueLive(path, offset, meta[path]?.bpm, beatOverride[path] ?? meta[path]?.beatOffset);
       setCueingPath(path);
     }
     setCuePitchState(1);
@@ -1113,6 +540,81 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         return (
           <div className="graph-live-controls">
             <span className="glc-group">
+              <button className={`btn wc-btn ${masterOn ? 'btn-primary' : 'btn-secondary'}`}
+                title="Master tempo: warp every deck to this BPM (Ableton-style). Enabling snaps to the current track's BPM."
+                onClick={() => {
+                  const on = !masterOn;
+                  let bpm = masterBpm;
+                  if (on) { const cur = meta[nowPlaying.path]?.bpm; if (cur) { bpm = Math.round(cur); setMasterBpm(bpm); } }
+                  setMasterOn(on);
+                  playerRef.current!.setMasterTempo(on ? bpm : null);
+                }}>Master</button>
+              <input type="number" min={60} max={200} step={1} value={masterBpm} style={{ width: 52 }}
+                onChange={e => {
+                  const v = Number(e.target.value) || 0;
+                  setMasterBpm(v);
+                  if (masterOn && v >= 60 && v <= 200) playerRef.current!.setMasterTempo(v);
+                }} />
+              {masterOn && deckRates.a != null && (
+                <span className="wc-label" title="Actual warp rate of each deck — ×1.000 means the track's BPM is unknown or already equals the master">
+                  A×{deckRates.a.toFixed(3)}{deckRates.cue != null ? ` · B×${deckRates.cue.toFixed(3)}` : ''}
+                </span>
+              )}
+            </span>
+            {(['a', 'b'] as const).map(ch => {
+              const dis = ch === 'b' && !strips.b;
+              const v = (ch === 'a' ? strips.a : strips.b) ?? NEUTRAL_STRIP;
+              const set = (patch: Partial<StripState>) => {
+                mixTouch.current = Date.now();
+                setStrips(prev => ({ ...prev, [ch]: { ...((ch === 'a' ? prev.a : prev.b) ?? NEUTRAL_STRIP), ...patch } }));
+              };
+              return (
+                <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
+                  <b className="wc-label">{ch.toUpperCase()}</b>
+                  <span className="vu"><span className="vu-fill" ref={ch === 'a' ? vuA : vuB} /></span>
+                  <label className="glc-ctl">
+                    <span className="glc-tag">VOL</span>
+                    <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
+                      title={`Volume ${ch.toUpperCase()} (double-click: 100%)`}
+                      onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
+                      onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
+                  </label>
+                  <label className="glc-ctl">
+                    <span className="glc-tag">FLT</span>
+                    <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
+                      title={`Filter ${ch.toUpperCase()} — left: lowpass, right: highpass, center/double-click: off`}
+                      onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
+                      onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
+                  </label>
+                  {(['low', 'mid', 'high'] as const).map(band => (
+                    <label className="glc-ctl" key={band}>
+                      <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
+                      <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
+                        title={`EQ ${band} ${ch.toUpperCase()} (double-click: 0, -24 dB = kill)`}
+                        onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
+                        onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
+                    </label>
+                  ))}
+                  {monitorDeviceId && (
+                    <>
+                      <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
+                        title={`Pre-fade listen ${ch.toUpperCase()} in headphones`}
+                        onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
+                        🎧
+                      </button>
+                      {ch === 'b' && (
+                        <button className={`btn wc-btn ${routing.b?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
+                          title="Push deck B to master output (unmute from headphone-only)"
+                          onClick={() => { const on = !routing.b?.master; playerRef.current!.setDeckMaster('b', on); setRouting(r => ({ ...r, b: r.b ? { ...r.b, master: on } : null })); }}>
+                          🔊
+                        </button>
+                      )}
+                    </>
+                  )}
+                </span>
+              );
+            })}
+            <span className="glc-group">
               <span className="wc-label">Filter {liveFilter > 0 ? '+' : ''}{liveFilter}</span>
               <input type="range" min={-100} max={100} step={5} value={liveFilter}
                 onChange={e => { const v = Number(e.target.value); setLiveFilter(v); playerRef.current!.setLiveFilter(v / 100); }} />
@@ -1137,6 +639,23 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitLoop(); setLoopBeats(null); }}>Exit</button>
               )}
             </span>
+            {audioOutputs.length > 1 && (
+              <span className="glc-group">
+                <span className="wc-label">🎧 Monitor</span>
+                <select className="transition-fade-select" value={monitorDeviceId ?? ''}
+                  title="Headphone output device for pre-fade listen (PFL)"
+                  onChange={e => {
+                    const id = e.target.value || null;
+                    setMonitorDeviceId(id);
+                    playerRef.current!.setMonitorDevice(id);
+                  }}>
+                  <option value="">Off</option>
+                  {audioOutputs.map(d => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                  ))}
+                </select>
+              </span>
+            )}
           </div>
         );
       })()}

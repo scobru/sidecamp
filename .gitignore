@@ -28,3 +28,7 @@ release
 
 # yt-dlp dumps the YouTube player script into cwd during extraction
 *-player-script.js
+
+# Local/P2P temporary cache dirs
+.headroom/
+.tokensave/
