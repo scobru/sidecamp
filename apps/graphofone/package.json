@@ -8,6 +8,7 @@
     "email": "scobru@users.noreply.github.com"
   },
   "desktopName": "Graphofone",
+  "repository": "github:scobru/sidecamp",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
