@@ -125,7 +125,22 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
       for (const [ch, el] of Object.entries(vuRefs.current)) {
         if (el) el.style.transform = `scaleX(${playerRef.current?.getDeckLevel(ch) ?? 0})`;
       }
-      // Progress bar every other frame (~30fps)
+
+      // Audio-reactive amplitude for CSS scale effect
+      const spectrum = playerRef.current?.getSpectrum();
+      if (spectrum && svgRef.current) {
+        let bassSum = 0;
+        const bassBins = 6;
+        for (let i = 0; i < bassBins; i++) {
+          bassSum += spectrum[i];
+        }
+        const bassAmp = bassSum / bassBins / 255;
+        svgRef.current.style.setProperty('--bass-amplitude', String(bassAmp));
+      } else if (svgRef.current) {
+        svgRef.current.style.setProperty('--bass-amplitude', '0');
+      }
+
+      // Progress bar and elements updated at 30fps
       if (++frame % 2 === 0) {
         const info = playerRef.current?.getPlaybackInfo();
         if (info && pbBarRef.current && pbTimeRef.current && pbRemRef.current && pbFadeRef.current) {
@@ -135,11 +150,68 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           pbRemRef.current.textContent = `-${fmtT2(Math.max(0, info.dur - info.pos))}`;
           pbFadeRef.current.style.display = info.fading ? '' : 'none';
         }
+
+        // Circular playhead progress for the active track node
+        if (nowPlaying && svgRef.current) {
+          const activeNodeEl = svgRef.current.querySelector(`.graph-node.playing[data-path]`) as SVGGElement | null;
+          if (activeNodeEl) {
+            if (info) {
+              const progressFrac = Math.min(1, Math.max(0, info.pos / info.dur));
+              activeNodeEl.style.setProperty('--play-progress', String(progressFrac));
+            }
+          }
+        }
+
+        // Real-time crossfade edge translation particle and growing progress path
+        const progressInfo = playerRef.current?.getCrossfadeProgress();
+        const particleGroup = svgRef.current?.querySelector('#transition-particle-group') as SVGGElement | null;
+        const progressLine = svgRef.current?.querySelector('#transition-progress-line') as SVGLineElement | null;
+        
+        if (progressInfo && (particleGroup || progressLine)) {
+          const { from, to, progress } = progressInfo;
+          const na = nodes.get(from);
+          const nb = nodes.get(to);
+          if (na && nb) {
+            const dx = nb.x - na.x, dy = nb.y - na.y, d = Math.max(1, Math.hypot(dx, dy));
+            const x2 = nb.x - (dx / d) * (R + 4), y2 = nb.y - (dy / d) * (R + 4);
+            const x1 = na.x + (dx / d) * R, y1 = na.y + (dy / d) * R;
+            
+            const x = x1 + (x2 - x1) * progress;
+            const y = y1 + (y2 - y1) * progress;
+            
+            if (particleGroup) {
+              particleGroup.setAttribute('transform', `translate(${x}, ${y})`);
+              particleGroup.style.display = 'block';
+            }
+            if (progressLine) {
+              progressLine.setAttribute('x1', String(x1));
+              progressLine.setAttribute('y1', String(y1));
+              progressLine.setAttribute('x2', String(x));
+              progressLine.setAttribute('y2', String(y));
+              progressLine.style.display = 'block';
+            }
+          } else {
+            if (particleGroup) particleGroup.style.display = 'none';
+            if (progressLine) progressLine.style.display = 'none';
+          }
+        } else {
+          if (particleGroup) particleGroup.style.display = 'none';
+          if (progressLine) progressLine.style.display = 'none';
+        }
       }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (svgRef.current) {
+        svgRef.current.style.setProperty('--bass-amplitude', '0');
+        const particleGroup = svgRef.current.querySelector('#transition-particle-group') as SVGGElement | null;
+        const progressLine = svgRef.current.querySelector('#transition-progress-line') as SVGLineElement | null;
+        if (particleGroup) particleGroup.style.display = 'none';
+        if (progressLine) progressLine.style.display = 'none';
+      }
+    };
   }, [nowPlaying]);
   const [zoomIdx, setZoomIdx] = useState(0);
   const zoom = ZOOM_LEVELS[zoomIdx];
@@ -158,6 +230,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [routing, setRouting] = useState<Record<string, { pfl: boolean; master: boolean } | null>>({});
   const playerRef = useRef<CrossfadePlayer | null>(null);
   const dragRef = useRef<{ path: string; moved: boolean } | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
 
@@ -285,11 +358,12 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         n.y = Math.max(R, Math.min(H - R, n.y + n.vy));
       }
       force(v => v + 1);
+      if (dragActive) cooling = 220;
       if (--cooling > 0) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [tracks.length, edges.length]); // re-heat when the graph changes
+  }, [tracks.length, edges.length, dragActive]); // re-heat when the graph changes or drag starts
 
   const svgPoint = (e: React.PointerEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -819,12 +893,43 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const n = nodes.get(d.path);
           if (n) { n.x = pt.x; n.y = pt.y; force(v => v + 1); }
         }}
-        onPointerUp={() => { dragRef.current = null; }}
+        onPointerUp={() => {
+          dragRef.current = null;
+          setDragActive(false);
+        }}
       >
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-subtle)" />
           </marker>
+          <radialGradient id="node-grad-default" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="var(--glass-bg-bright, rgba(255, 255, 255, 0.12))" />
+            <stop offset="100%" stopColor="var(--panel-bg-trans, rgba(15, 23, 42, 0.6))" />
+          </radialGradient>
+          <radialGradient id="node-grad-playing" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(168, 85, 247, 0.65)" />
+            <stop offset="70%" stopColor="rgba(168, 85, 247, 0.25)" />
+            <stop offset="100%" stopColor="rgba(168, 85, 247, 0.05)" />
+          </radialGradient>
+          <radialGradient id="node-grad-selected" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(59, 130, 246, 0.55)" />
+            <stop offset="70%" stopColor="rgba(59, 130, 246, 0.18)" />
+            <stop offset="100%" stopColor="rgba(59, 130, 246, 0.02)" />
+          </radialGradient>
+          <radialGradient id="node-grad-compat" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(74, 222, 128, 0.45)" />
+            <stop offset="70%" stopColor="rgba(74, 222, 128, 0.12)" />
+            <stop offset="100%" stopColor="rgba(74, 222, 128, 0.02)" />
+          </radialGradient>
+          <radialGradient id="node-grad-cued" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(251, 146, 60, 0.55)" />
+            <stop offset="70%" stopColor="rgba(251, 146, 60, 0.18)" />
+            <stop offset="100%" stopColor="rgba(251, 146, 60, 0.02)" />
+          </radialGradient>
+          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
         </defs>
         {edges.map(([a, b]) => {
           const na = nodes.get(a), nb = nodes.get(b);
@@ -848,6 +953,25 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             </g>
           );
         })}
+
+        {/* Glowing transition progress line */}
+        <line
+          id="transition-progress-line"
+          x1="0" y1="0" x2="0" y2="0"
+          stroke="var(--primary)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          opacity="0.9"
+          filter="url(#glow)"
+          style={{ display: 'none', pointerEvents: 'none' }}
+        />
+
+        {/* Transition shooting star particle */}
+        <g id="transition-particle-group" style={{ display: 'none', pointerEvents: 'none' }}>
+          <circle id="transition-particle-glow" r="10" fill="var(--primary)" opacity="0.5" filter="url(#glow)" />
+          <circle id="transition-particle" r="5" fill="#fff" stroke="var(--primary)" strokeWidth="2" />
+        </g>
+
         {tracks.map(t => {
           const n = nodes.get(t.path);
           if (!n) return null;
@@ -862,13 +986,20 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           return (
             <g
               key={t.path}
+              data-path={t.path}
               transform={`translate(${n.x},${n.y})`}
               className={`graph-node ${isSel ? 'sel' : ''} ${isCompat ? 'compat' : ''} ${isPlaying ? 'playing' : ''} ${inPath ? 'inpath' : ''} ${isLayerable ? 'layerable' : ''} ${isCued ? 'cued' : ''}`}
               onClick={e => nodeClick(e, t.path)}
               onDoubleClick={e => { e.stopPropagation(); playFrom(t.path); }}
-              onPointerDown={e => { e.stopPropagation(); dragRef.current = { path: t.path, moved: false }; }}
+              onPointerDown={e => {
+                e.stopPropagation();
+                dragRef.current = { path: t.path, moved: false };
+                setDragActive(true);
+              }}
             >
               <circle r={R} style={isPlaying && m?.bpm ? { animationDuration: `${60 / m.bpm}s` } : undefined} />
+              <circle className="graph-node-ripple" r={R} style={isPlaying && m?.bpm ? { animationDuration: `${60 / m.bpm}s` } : undefined} />
+              <circle className="graph-node-progress" r={R + 3.5} />
               <text y={-2} textAnchor="middle" className="graph-bpm">{m?.bpm ? Math.round(m.bpm) : '—'}</text>
               <text y={11} textAnchor="middle" className="graph-key">{m?.key || ''}</text>
               <text y={R + 14} textAnchor="middle" className="graph-label">{short(t.name)}</text>

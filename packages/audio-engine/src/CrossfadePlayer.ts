@@ -63,6 +63,8 @@ export class CrossfadePlayer {
   private queue: QueueItem[] = [];
   private idx = -1;
   private fading = false;
+  private fadeStart = 0;
+  private fadeDuration = 0;
   private previewing = false;
   private raf = 0;
   private session = 0; // bumped on stop/play; async loads from older sessions are discarded
@@ -195,6 +197,18 @@ export class CrossfadePlayer {
     return this.fading && this.idx >= 0 && this.idx + 1 < this.queue.length
       ? { from: this.queue[this.idx].path, to: this.queue[this.idx + 1].path }
       : null;
+  }
+
+  getCrossfadeProgress(): { from: string; to: string; progress: number } | null {
+    if (!this.fading || !this.deck || !this.fadingDeck || this.idx < 0 || this.idx + 1 >= this.queue.length) return null;
+    const now = this.getCtx().currentTime;
+    const dur = this.fadeDuration || 1;
+    const pct = (now - this.fadeStart) / dur;
+    return {
+      from: this.queue[this.idx].path,
+      to: this.queue[this.idx + 1].path,
+      progress: Math.max(0, Math.min(1, pct)),
+    };
   }
 
   /** Live phase nudge on the incoming deck for `path` — a brief pitch bend, same move a DJ
@@ -660,6 +674,8 @@ export class CrossfadePlayer {
     if (bAlreadyCued) { this.cues.delete(to.path); b.src.loop = false; } // other cued decks keep playing
     this.fadingDeck = b;
     const tEnd = t0 + this.fadeS;
+    this.fadeStart = t0;
+    this.fadeDuration = this.fadeS;
     a.gain.gain.setValueAtTime(1, t0);
     a.gain.gain.linearRampToValueAtTime(0, tEnd);
     if (!bAlreadyCued) {

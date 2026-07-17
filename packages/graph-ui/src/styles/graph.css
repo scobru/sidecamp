@@ -189,39 +189,61 @@
 .graph-edge {
   stroke: var(--text-subtle);
   stroke-width: 1.5;
+  transition: stroke 0.25s ease, stroke-width 0.25s ease, filter 0.25s ease;
 }
 .graph-edge-hit { cursor: pointer; }
 .graph-edge-armed { pointer-events: none; paint-order: stroke; stroke: var(--terminal-bg); stroke-width: 3px; }
-.graph-edge-hit:hover .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
-.graph-edge-hit.active .graph-edge { stroke: var(--primary); stroke-width: 2.5; }
+.graph-edge-hit:hover .graph-edge {
+  stroke: var(--primary);
+  stroke-width: 2.2;
+  filter: drop-shadow(0 0 3px var(--primary));
+}
+.graph-edge-hit.active .graph-edge {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 5px var(--primary));
+}
 .graph-edge-hit.flowing .graph-edge {
   stroke: var(--primary);
   stroke-width: 2.5;
   stroke-dasharray: 6 5;
   animation: edge-flow 0.6s linear infinite;
+  filter: drop-shadow(0 0 4px var(--primary));
 }
 @keyframes edge-flow {
   to { stroke-dashoffset: -11; }
 }
 .graph-node { cursor: pointer; }
 .graph-node circle {
-  fill: var(--panel-bg, color-mix(in srgb, var(--text-main) 6%, transparent));
+  fill: url(#node-grad-default);
   stroke: var(--glass-border);
   stroke-width: 1.5;
-  transition: stroke 0.15s ease, fill 0.15s ease;
+  transition: stroke 0.25s ease, fill 0.25s ease, filter 0.25s ease, transform 0.1s cubic-bezier(0.1, 0.8, 0.3, 1);
   transform-box: fill-box;
   transform-origin: center;
 }
-.graph-node.sel circle { stroke: var(--primary); stroke-width: 2.5; }
-.graph-node.compat circle { stroke: var(--accent, #4ade80); stroke-width: 2; }
-.graph-node.playing circle {
-  fill: rgba(168, 85, 247, 0.25);
-  stroke: var(--primary);
-  animation: node-pulse 1s ease-in-out infinite;
+.graph-node:hover circle {
+  stroke: var(--text-muted);
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.15));
 }
-@keyframes node-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.12); }
+.graph-node.sel circle {
+  fill: url(#node-grad-selected);
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 8px var(--primary));
+}
+.graph-node.compat circle {
+  fill: url(#node-grad-compat);
+  stroke: var(--accent, #4ade80);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px var(--accent, #4ade80));
+}
+.graph-node.playing circle {
+  fill: url(#node-grad-playing);
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 10px var(--primary));
+  transform: scale(calc(1 + var(--bass-amplitude, 0) * 0.12));
 }
 .graph-node.layerable circle {
   stroke: #4ade80;
@@ -229,10 +251,54 @@
   animation: layer-pulse 1.5s ease-in-out infinite;
 }
 .graph-node.cued circle {
-  fill: rgba(251, 146, 60, 0.25);
+  fill: url(#node-grad-cued);
   stroke: #fb923c;
   stroke-width: 2.5;
+  filter: drop-shadow(0 0 8px #fb923c);
 }
+
+/* Beat ripple effect */
+.graph-node-ripple {
+  display: none;
+  fill: none;
+  stroke: var(--primary);
+  transform-origin: center;
+  transform-box: fill-box;
+  pointer-events: none;
+}
+.graph-node.playing .graph-node-ripple {
+  display: block;
+  animation: node-ripple 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+.graph-node.cued .graph-node-ripple {
+  display: block;
+  stroke: #fb923c;
+  animation: node-ripple 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+@keyframes node-ripple {
+  0% { transform: scale(1); opacity: 0.85; stroke-width: 3.5px; }
+  100% { transform: scale(1.6); opacity: 0; stroke-width: 0.5px; }
+}
+
+/* Circular playhead progress ring */
+.graph-node-progress {
+  display: none;
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transform-box: fill-box;
+  pointer-events: none;
+}
+.graph-node.playing .graph-node-progress {
+  display: block;
+  stroke-dasharray: 185.35;
+  stroke-dashoffset: calc(185.35 - (185.35 * var(--play-progress, 0)));
+  transition: stroke-dashoffset 0.15s linear;
+}
+
 @keyframes layer-pulse {
   0%, 100% { stroke-opacity: 0.5; }
   50% { stroke-opacity: 1; }
