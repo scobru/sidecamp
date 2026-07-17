@@ -18,6 +18,54 @@ html, body {
   overflow: hidden;
 }
 
+/* Quick tour */
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.tour-spotlight {
+  position: fixed;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--bg-color) 65%, transparent);
+  border: 2px solid var(--primary);
+  pointer-events: none;
+  transition: all 0.25s ease;
+}
+.tour-card {
+  position: fixed;
+  width: 320px;
+  padding: 1rem;
+  background: var(--elevated-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  transition: top 0.25s ease, left 0.25s ease;
+}
+.tour-title {
+  font-weight: 700;
+  font-family: var(--font-headings);
+  margin-bottom: 0.4rem;
+}
+.tour-body {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 0.8rem;
+}
+.tour-nav {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.tour-nav .btn { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+.tour-progress {
+  margin-right: auto;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+  font-family: 'JetBrains Mono', monospace;
+}
+
 .graph-canvas-wrap {
   flex: 1 !important;
   height: auto !important;

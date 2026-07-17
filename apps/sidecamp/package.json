@@ -14,7 +14,7 @@
     "postinstall": "node patch_script.cjs",
     "dev": "vite",
     "compile": "tsc -b && vite build",
-    "build": "npm run compile && electron-builder",
+    "build": "npm run compile && electron-builder --publish never",
     "build:win": "npm run compile && electron-builder --win",
     "build:mac": "npm run compile && electron-builder --mac",
     "build:linux": "npm run compile && electron-builder --linux",

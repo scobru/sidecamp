@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { GraphView, type LiveConfig, type GraphTrack, type GraphEdge, type GraphMeta } from 'graph-ui';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, HelpCircle } from 'lucide-react';
 import LibraryPanel, { type LibTrack } from './components/LibraryPanel';
+import QuickTour from './components/QuickTour';
 import { computePeaks } from './audio-utils';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
@@ -125,6 +126,12 @@ function App() {
     }
   };
 
+  const [showTour, setShowTour] = useState(() => !localStorage.getItem('graphofone-tour-done'));
+  const closeTour = () => {
+    localStorage.setItem('graphofone-tour-done', '1');
+    setShowTour(false);
+  };
+
   const [theme, setTheme] = useState<'dark' | 'light'>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 
   const toggleTheme = () => {
@@ -142,6 +149,9 @@ function App() {
           GRAPHOFONE
         </h1>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setShowTour(true)} className="btn" style={{ padding: '0.4rem', background: 'transparent', border: 'none', color: 'var(--text-muted)' }} title="Quick tour">
+          <HelpCircle size={18} />
+        </button>
         <button onClick={toggleTheme} className="btn" style={{ padding: '0.4rem', background: 'transparent', border: 'none', color: 'var(--text-muted)' }} title="Toggle light/dark mode">
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
@@ -177,6 +187,7 @@ function App() {
           />
         </main>
       </div>
+      {showTour && <QuickTour onClose={closeTour} />}
     </div>
   );
 }

@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "vite",
     "compile": "tsc -b && vite build",
-    "build": "npm run compile && electron-builder"
+    "build": "npm run compile && electron-builder --publish never"
   },
   "dependencies": {
     "@types/fs-extra": "^11.0.4",

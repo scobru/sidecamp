@@ -37,10 +37,11 @@ jobs:
 
       # electron-builder targets the runner's OS (see per-platform targets in
       # package.json "build"). No signing certs in CI -> unsigned artifacts.
-      # --publish never: we attach to the GitHub Release manually below, so
-      # electron-builder doesn't try to publish by itself.
+      # --publish never lives in each app's build script: passing it here via
+      # `npm run build -- --publish never` leaks the extra args into every
+      # workspace script (packages got a literal `tsc never`).
       - name: Build
-        run: npm run build -- --publish never
+        run: npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false

@@ -54,7 +54,7 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
         )}
         
         <div style={{ display: 'flex', gap: '0.5rem', flexDirection: collapsed ? 'column' : 'row', alignItems: 'center' }}>
-          <button onClick={onImport} className="btn btn-secondary" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
+          <button data-tour="import" onClick={onImport} className="btn btn-secondary" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
             <FolderOpen size={14} /> {!collapsed && "Import"}
           </button>
           
@@ -63,7 +63,7 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
               <Headphones size={14} /> {!collapsed && `${analyzing.done}/${analyzing.total}`}
             </button>
           ) : (
-            <button onClick={onAnalyze} className="btn btn-accent" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
+            <button data-tour="analyze" onClick={onAnalyze} className="btn btn-accent" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
               <Headphones size={14} /> {!collapsed && "Analyze"}
             </button>
           )}
@@ -73,7 +73,7 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
           </button>
         </div>
 
-        <div className="track-table-wrap" style={{ flex: 1, minHeight: 0, opacity: collapsed ? 0 : 1, pointerEvents: collapsed ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
+        <div className="track-table-wrap" data-tour="library" style={{ flex: 1, minHeight: 0, opacity: collapsed ? 0 : 1, pointerEvents: collapsed ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
           <table className="track-table">
             <thead>
               <tr>
