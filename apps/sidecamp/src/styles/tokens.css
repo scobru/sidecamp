@@ -1,0 +1,84 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+
+:root {
+  --bg-color: #0a0a12;
+  --panel-bg: #11111a;
+  --elevated-bg: #161622;
+  --sidebar-bg: #080810;
+  --input-bg: rgba(0, 0, 0, 0.25);
+  --terminal-bg: #05050a;
+  --terminal-header-bg: #0e0e16;
+  --row-hover-bg: #1e1e2a;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --primary: #a855f7;
+  --primary-hover: #9333ea;
+  --primary-press: #7e3af2;
+  --accent: #06b6d4;
+  --accent-hover: #0891b2;
+  --accent-press: #0e7490;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --danger-press: #b91c1c;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --text-main: #f8fafc;
+  --text-muted: #cbd5e1;
+  --text-subtle: #94a3b8;
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-headings: 'Outfit', sans-serif;
+  --transition-speed: 0.2s;
+  --border-radius: 8px;
+  --border-radius-lg: 12px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.015);
+
+  /* Enhanced color palette overrides from theme.css */
+  --accent: #4f46e5;
+  --accent-hover: #7c71a8;
+  --accent-active: #8d7fbb;
+  --accent-alpha: 0.25;
+  --focus-ring: 0 0 0 2px rgba(79, 70, 230, 0.3);
+}
+
+:root[data-theme="light"] {
+  --bg-color: #f8fafc;
+  --panel-bg: #ffffff;
+  --elevated-bg: #f1f5f9;
+  --sidebar-bg: #f8fafc;
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --terminal-bg: #f1f5f9;
+  --terminal-header-bg: #e2e8f0;
+  --row-hover-bg: #e2e8f0;
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
+}
+
+:root[data-theme="light"] .nav-item.active {
+  background: rgba(168, 85, 247, 0.12);
+  color: var(--text-main);
+}
+
+:root[data-theme="light"] .nav-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: var(--font-family);
+  overflow: hidden; /* Electron app window */
+  background-image: radial-gradient(circle at 12% 30%, rgba(168, 85, 247, 0.08), transparent 40%),
+                    radial-gradient(circle at 88% 70%, rgba(6, 182, 212, 0.06), transparent 30%);
+  background-attachment: fixed;
+}

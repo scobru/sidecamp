@@ -1,0 +1,31 @@
+@import './styles/tokens.css';
+@import './styles/layout.css';
+@import './styles/components.css';
+@import './styles/player.css';
+@import './styles/library.css';
+
+/* Override GraphUI for standalone app mode */
+.graph-view {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+html, body {
+  overflow: hidden;
+}
+
+.graph-canvas-wrap {
+  flex: 1 !important;
+  height: auto !important;
+  /* Keep the graph visible when the transition panel opens below it:
+     min-height 0 let flexbox collapse the canvas to nothing instead of
+     letting .graph-view scroll. */
+  min-height: 240px !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  resize: none !important;
+}

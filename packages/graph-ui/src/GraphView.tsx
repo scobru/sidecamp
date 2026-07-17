@@ -6,9 +6,9 @@ import {
   NEUTRAL_STRIP,
   type EqPreset, type BandPeaks, type QueueItem, type LiveConfig,
   type StripState, type NowPlaying, type EqBands,
-} from './audio/CrossfadePlayer';
+} from 'audio-engine';
 import TransitionWave from './components/TransitionWave';
-
+import './styles/graph.css';
 // Re-export types that App.tsx imports from this module
 export type { LiveConfig, EqPreset, EqBands, BandPeaks };
 

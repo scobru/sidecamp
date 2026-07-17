@@ -77,7 +77,7 @@
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text-main) 10%, transparent);
   overflow: hidden;
   min-width: 60px;
 }
@@ -176,7 +176,7 @@
   border-radius: 2px;
   overflow: hidden;
   display: inline-block;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text-main) 10%, transparent);
 }
 .vu-fill {
   display: block;
@@ -205,7 +205,7 @@
 }
 .graph-node { cursor: pointer; }
 .graph-node circle {
-  fill: var(--panel-bg, rgba(255,255,255,0.05));
+  fill: var(--panel-bg, color-mix(in srgb, var(--text-main) 6%, transparent));
   stroke: var(--glass-border);
   stroke-width: 1.5;
   transition: stroke 0.15s ease, fill 0.15s ease;
@@ -274,7 +274,7 @@
 .transition-panel-head .btn.blink { animation: blink-live 0.7s step-start infinite; cursor: default; }
 @keyframes blink-live { 50% { opacity: 0.35; } }
 .transition-fade-select {
-  background: var(--glass-bg, rgba(255,255,255,0.05));
+  background: var(--glass-bg, color-mix(in srgb, var(--text-main) 6%, transparent));
   border: 1px solid var(--glass-border);
   color: var(--text-muted);
   border-radius: 6px;
@@ -339,7 +339,7 @@
   width: 100%;
   height: 64px;
   border-radius: 4px;
-  background: rgba(255,255,255,0.02);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
   margin-bottom: 2px;
   cursor: crosshair;
 }
@@ -376,7 +376,7 @@
   cursor: pointer;
   text-align: left;
 }
-.graph-suggestion:hover { background: var(--row-hover-bg, rgba(255,255,255,0.06)); }
+.graph-suggestion:hover { background: var(--row-hover-bg, color-mix(in srgb, var(--text-main) 7%, transparent)); }
 .graph-suggestion .s-bpm { width: 36px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--primary); }
 .graph-suggestion .s-key { width: 34px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); }
 .graph-suggestion .s-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -398,19 +398,19 @@
 
 /* Runnable Track webkit */
 .graph-view input[type='range']::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text-main) 10%, transparent);
   height: 4px;
   border-radius: 2px;
   transition: background-color 0.15s ease, border-color 0.15s ease;
-  border: 1px solid rgba(255, 255, 255, 0.02);
+  border: 1px solid color-mix(in srgb, var(--text-main) 4%, transparent);
 }
 
 .graph-view input[type='range']:hover::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--text-main) 18%, transparent);
 }
 
 .graph-view input[type='range']:disabled::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--text-main) 5%, transparent);
   cursor: not-allowed;
   border-color: transparent;
 }
@@ -431,20 +431,20 @@
 
 .graph-view input[type='range']:hover::-webkit-slider-thumb {
   transform: scale(1.25);
-  background: #ffffff;
+  background: var(--text-main);
   box-shadow: 0 0 8px var(--primary);
 }
 
 .graph-view input[type='range']:active::-webkit-slider-thumb {
   transform: scale(1.4);
-  background: #ffffff;
+  background: var(--text-main);
   border-color: var(--primary);
   box-shadow: 0 0 12px var(--primary);
 }
 
 .graph-view input[type='range']:disabled::-webkit-slider-thumb {
   background: var(--text-subtle);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--glass-border);
   box-shadow: none;
   cursor: not-allowed;
   transform: none;
@@ -452,15 +452,15 @@
 
 /* Firefox rules */
 .graph-view input[type='range']::-moz-range-track {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text-main) 10%, transparent);
   height: 4px;
   border-radius: 2px;
   transition: background-color 0.15s ease;
-  border: 1px solid rgba(255, 255, 255, 0.02);
+  border: 1px solid color-mix(in srgb, var(--text-main) 4%, transparent);
 }
 
 .graph-view input[type='range']:hover::-moz-range-track {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--text-main) 18%, transparent);
 }
 
 .graph-view input[type='range']::-moz-range-thumb {
@@ -475,13 +475,13 @@
 
 .graph-view input[type='range']:hover::-moz-range-thumb {
   transform: scale(1.25);
-  background: #ffffff;
+  background: var(--text-main);
   box-shadow: 0 0 8px var(--primary);
 }
 
 .graph-view input[type='range']:active::-moz-range-thumb {
   transform: scale(1.4);
-  background: #ffffff;
+  background: var(--text-main);
   border-color: var(--primary);
   box-shadow: 0 0 12px var(--primary);
 }

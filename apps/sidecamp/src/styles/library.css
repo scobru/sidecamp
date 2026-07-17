@@ -1,0 +1,166 @@
+/* --- Library track table (rekordbox-style) --- */
+.track-table-wrap {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  overflow: auto;
+  max-height: calc(100vh - 340px);
+  background: var(--terminal-bg);
+}
+
+.track-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  table-layout: fixed;
+}
+
+.track-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--terminal-header-bg);
+  text-align: left;
+  padding: 7px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-subtle);
+  border-bottom: 1px solid var(--glass-border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.track-table thead th:hover { color: var(--text-main); }
+.track-table .sort-arrow { margin-left: 4px; font-size: 0.6rem; color: var(--primary); }
+
+.track-table tbody td {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+:root[data-theme="light"] .track-table tbody td { border-bottom-color: rgba(0, 0, 0, 0.04); }
+
+.track-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.015); }
+:root[data-theme="light"] .track-table tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.02); }
+.track-table tbody tr:hover { background: var(--row-hover-bg); }
+.track-table tbody tr { cursor: default; }
+
+.track-table tbody tr.playing td { color: var(--primary); }
+.track-table tbody tr.playing { background: rgba(168, 85, 247, 0.1); }
+
+.track-table .col-check { width: 30px; text-align: center; }
+.track-table .col-check input { cursor: pointer; }
+.track-table .col-num { width: 36px; text-align: right; color: var(--text-subtle); font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; }
+.track-table .col-title { width: 24%; font-weight: 500; }
+.track-table .col-right { text-align: right; }
+.track-table .cell-muted { color: var(--text-subtle); }
+.track-table .cell-ellipsis { overflow: hidden; text-overflow: ellipsis; }
+.track-table .cell-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; }
+.track-table .seed-check { color: var(--success); font-size: 0.85rem; }
+
+.track-table .col-wave { width: 148px; padding: 2px 4px; }
+.track-table .wave-canvas { display: block; width: 140px; height: 22px; }
+.track-table .col-bpm { width: 54px; }
+.track-table .col-key { width: 48px; }
+.track-table .col-time { width: 52px; }
+.track-table .col-year { width: 48px; }
+.track-table .col-kbps { width: 48px; }
+.track-table .col-size { width: 56px; }
+.track-table .col-added { width: 84px; }
+
+/* Collection pane (rekordbox-style category filter) next to the table */
+.library-body { display: flex; gap: 12px; align-items: stretch; }
+.library-body .track-table-wrap { flex: 1; min-width: 0; }
+.collection-pane {
+  flex: 0 0 180px;
+  max-height: calc(100vh - 340px);
+  overflow-y: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  background: var(--terminal-bg);
+  padding: 4px;
+  font-size: 0.8rem;
+}
+.coll-header {
+  padding: 8px 8px 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+}
+.coll-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.coll-item:hover { background: var(--row-hover-bg); color: var(--text-main); }
+.coll-item.active { background: rgba(168, 85, 247, 0.18); color: var(--primary); }
+.coll-item .coll-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll-item .coll-count { font-size: 0.68rem; color: var(--text-subtle); font-family: 'JetBrains Mono', monospace; }
+.coll-item.coll-all { font-weight: 600; }
+
+/* Big scrolling waveform above the content (rekordbox-style) */
+.scrollwave-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  flex-shrink: 0; /* main-content is a flex column: tall tabs would crush the wave to its borders */
+  margin-bottom: 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  background: var(--terminal-bg);
+  overflow: hidden;
+}
+.scrollwave-canvas {
+  display: block;
+  width: 100%;
+  height: 80px;
+  cursor: crosshair;
+}
+
+/* Inline tag editing in the track table */
+.track-table .cell-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 1px 5px;
+  outline: none;
+}
+
+.track-table .col-actions { width: 158px; text-align: right; }
+.track-table .col-actions button {
+  background: transparent;
+  border: none;
+  color: var(--text-subtle);
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+.track-table tbody tr:hover .col-actions button { opacity: 1; }
+.track-table .col-actions button:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.08); }
+.track-table .col-actions button:disabled { opacity: 0.3; cursor: default; }
+.track-table .col-actions button.act-ok { color: var(--success); }
+.track-table .col-actions button.act-danger:hover { color: var(--danger); }

@@ -6,7 +6,7 @@ import {
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
   Eye, EyeOff
 } from 'lucide-react';
-import GraphView, { type LiveConfig } from './GraphView';
+import { GraphView, type LiveConfig } from 'graph-ui';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';

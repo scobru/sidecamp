@@ -1,0 +1,54 @@
+{
+  "name": "graphofone",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Standalone live performance tool.",
+  "author": {
+    "name": "scobru",
+    "email": "scobru@users.noreply.github.com"
+  },
+  "desktopName": "Graphofone",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "compile": "tsc -b && vite build",
+    "build": "npm run compile && electron-builder"
+  },
+  "dependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "audio-engine": "*",
+    "fs-extra": "^11.3.6",
+    "graph-ui": "*",
+    "lucide-react": "^1.23.0",
+    "music-metadata": "^11.14.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "web-audio-beat-detector": "^8.2.37"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "43.1.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vite-plugin-electron": "^1.1.0",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "build": {
+    "appId": "com.graphofone.app",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "icon": "src/assets/logo.png"
+  }
+}

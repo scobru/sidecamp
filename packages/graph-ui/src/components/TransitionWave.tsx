@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { BandPeaks } from '../audio/CrossfadePlayer';
+import type { BandPeaks } from 'audio-engine';
 
 // Dual waveform strip for the transition detail panel: layered blue bars
 // (bass envelope, mids, treble core), rekordbox-style, with the crossfade

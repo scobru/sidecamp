@@ -37,7 +37,7 @@ La roadmap segue il principio ingegneristico di massimizzare la velocità di sco
 
 ### Fase 3: Stand-alone App per Live Performance
 * **Obiettivo:** Rilasciare uno strumento professionale "club-ready" focalizzato sul live.
-* **Azione:** Creare una nuova applicazione host dedicata esclusivamente al mixaggio e all'uso live.
+* **Azione:** Creare l'app `GRAPHOFONE` focalizzata al 100% sulla performance live.
 * **Feature previste per la Standalone App:**
   * UI/UX "dark mode" ad altissimo contrasto, a prova di errore in ambienti bui (senza tab di ricerca P2P).
   * Analisi e importazione nativa da database esterni (Rekordbox, Traktor).

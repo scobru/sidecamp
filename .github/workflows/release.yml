@@ -24,9 +24,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: yarn
+          cache: npm
 
-      - run: yarn install --frozen-lockfile
+      - run: npm ci
 
       # Asset filenames come from package.json "version" — sync it from the tag
       # so v0.2.2 never ships files named 0.2.0 again.
@@ -40,20 +40,20 @@ jobs:
       # --publish never: we attach to the GitHub Release manually below, so
       # electron-builder doesn't try to publish by itself.
       - name: Build
-        run: yarn build --publish never
+        run: npm run build -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - uses: actions/upload-artifact@v5
         with:
-          name: sidecamp-${{ matrix.os }}
+          name: sidecamp-suite-${{ matrix.os }}
           path: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.deb
+            apps/*/release/*.exe
+            apps/*/release/*.dmg
+            apps/*/release/*.zip
+            apps/*/release/*.AppImage
+            apps/*/release/*.deb
           if-no-files-found: ignore
 
       - name: Attach to GitHub Release
@@ -61,8 +61,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.deb
+            apps/*/release/*.exe
+            apps/*/release/*.dmg
+            apps/*/release/*.zip
+            apps/*/release/*.AppImage
+            apps/*/release/*.deb
