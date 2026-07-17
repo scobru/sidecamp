@@ -93,29 +93,49 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     onLiveConfigChange?.({ edgePreset, beatOverride, fadeS, masterOn, masterBpm });
   }, [edgePreset, beatOverride, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
   const [deckRates, setDeckRates] = useState<{ a: number | null; cue: number | null }>({ a: null, cue: null });
-  const [strips, setStrips] = useState<{ a: StripState; b: StripState | null }>({ a: NEUTRAL_STRIP, b: null });
+  // mixer channels keyed by player channel id: 'a', 'b' (fallback incoming), or a cued track path
+  const [strips, setStrips] = useState<Record<string, StripState | null>>({ a: NEUTRAL_STRIP });
   const mixTouch = useRef(0); // last time the user moved a mixer slider — pause sync so it doesn't fight the drag
   useEffect(() => {
     if (!nowPlaying) return;
     const iv = setInterval(() => {
-      if (Date.now() - mixTouch.current < 1200) return;
-      const m = playerRef.current?.getMixerState();
-      if (m) setStrips({ a: m.a ?? NEUTRAL_STRIP, b: m.b ?? null });
-      if (masterOn) setDeckRates(playerRef.current?.getDeckRates() ?? { a: null, cue: null });
-      setRouting(playerRef.current?.getRouting() ?? { a: null, b: null });
+      const p = playerRef.current;
+      if (!p || Date.now() - mixTouch.current < 1200) return;
+      const chans = ['a', 'b', ...p.getCuePaths()];
+      setStrips(Object.fromEntries(chans.map(ch => [ch, p.getMixerState(ch)])));
+      setRouting(Object.fromEntries(chans.map(ch => [ch, p.getRouting(ch)])));
+      if (masterOn) setDeckRates(p.getDeckRates());
     }, 600);
     return () => clearInterval(iv);
   }, [nowPlaying, masterOn]);
   // VU meters: style-only updates at display rate, no React re-render
-  const vuA = useRef<HTMLSpanElement>(null);
-  const vuB = useRef<HTMLSpanElement>(null);
+  const vuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  // Playback progress bar — DOM-only updates at ~30fps, no React re-render
+  const pbBarRef = useRef<HTMLDivElement>(null);
+  const pbTimeRef = useRef<HTMLSpanElement>(null);
+  const pbRemRef = useRef<HTMLSpanElement>(null);
+  const pbFadeRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!nowPlaying) return;
     let raf = 0;
+    let frame = 0;
+    const fmtT2 = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     const step = () => {
-      const lv = playerRef.current?.getDeckLevels();
-      if (vuA.current) vuA.current.style.transform = `scaleX(${lv?.a ?? 0})`;
-      if (vuB.current) vuB.current.style.transform = `scaleX(${lv?.b ?? 0})`;
+      // VU meters every frame
+      for (const [ch, el] of Object.entries(vuRefs.current)) {
+        if (el) el.style.transform = `scaleX(${playerRef.current?.getDeckLevel(ch) ?? 0})`;
+      }
+      // Progress bar every other frame (~30fps)
+      if (++frame % 2 === 0) {
+        const info = playerRef.current?.getPlaybackInfo();
+        if (info && pbBarRef.current && pbTimeRef.current && pbRemRef.current && pbFadeRef.current) {
+          const pct = Math.min(100, Math.max(0, (info.pos / info.dur) * 100));
+          pbBarRef.current.style.width = `${pct}%`;
+          pbTimeRef.current.textContent = `${fmtT2(info.pos)} / ${fmtT2(info.dur)}`;
+          pbRemRef.current.textContent = `-${fmtT2(Math.max(0, info.dur - info.pos))}`;
+          pbFadeRef.current.style.display = info.fading ? '' : 'none';
+        }
+      }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
@@ -129,13 +149,13 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [savingRec, setSavingRec] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
   const [pendingLive, setPendingLive] = useState<string | null>(null);
-  const [cueingPath, setCueingPath] = useState<string | null>(null);
-  const [cuePitch, setCuePitchState] = useState(1);
-  const [cueLoopBeats, setCueLoopBeats] = useState<number | null>(null);
+  const [cueingPaths, setCueingPaths] = useState<string[]>([]); // layered manual cues, 2-3 tracks mixable at once
+  const [cuePitch, setCuePitchState] = useState<Record<string, number>>({});
+  const [cueLoopBeats, setCueLoopBeats] = useState<Record<string, number>>({});
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [monitorDeviceId, setMonitorDeviceId] = useState<string | null>(null);
-  const [routing, setRouting] = useState<{ a: { pfl: boolean; master: boolean } | null; b: { pfl: boolean; master: boolean } | null }>({ a: null, b: null });
+  const [routing, setRouting] = useState<Record<string, { pfl: boolean; master: boolean } | null>>({});
   const playerRef = useRef<CrossfadePlayer | null>(null);
   const dragRef = useRef<{ path: string; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -205,7 +225,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   // reset zoom/pan when a different transition opens
   useEffect(() => { setZoomIdx(0); setPanA(0); setPanB(detailEdge ? (meta[detailEdge[1]]?.cuePoint ?? 0) : 0); }, [detailEdge]);
 
-  // Windowed waveform for the Ctrl+click cue/grid preview panel — zoom
+  // Windowed waveform for the click cue/grid preview panel — zoom
   // shrinks the visible span, pan slides it, so cues can be placed precisely.
   useEffect(() => {
     if (!waveDetail) { setWaveDetailPeaks(null); return; }
@@ -349,19 +369,30 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     toItem.eqPreset = edgePreset[edgeKey(from, to)] ?? 'off';
     playerRef.current!.liveTransitionTo(toItem);
     setPendingLive(to);
-    if (cueingPath === to) { setCueingPath(null); setCuePitchState(1); setCueLoopBeats(null); }
+    clearCueState(to); // the fade takes over this deck; other cued tracks keep playing
+  };
+
+  /** Loop overlay feeder for a waveform window: maps the deck's active loop + playhead to window fractions. */
+  const loopOverlay = (ch: string, winStart: number, winLen: number) => () => {
+    const ls = playerRef.current?.getLoopState(ch);
+    if (!ls || winLen <= 0) return null;
+    return { startFrac: (ls.start - winStart) / winLen, endFrac: (ls.end - winStart) / winLen, posFrac: (ls.pos - winStart) / winLen };
+  };
+
+  const clearCueState = (path: string) => {
+    setCueingPaths(cs => cs.filter(x => x !== path));
+    setCuePitchState(({ [path]: _, ...rest }) => rest);
+    setCueLoopBeats(({ [path]: _, ...rest }) => rest);
   };
 
   const toggleCue = (path: string, offset: number) => {
-    if (playerRef.current?.getCuePath() === path) {
-      playerRef.current!.stopCue();
-      setCueingPath(null);
+    clearCueState(path);
+    if (cueingPaths.includes(path)) {
+      playerRef.current!.stopCue(path);
     } else {
       playerRef.current!.cueLive(path, offset, meta[path]?.bpm, beatOverride[path] ?? meta[path]?.beatOffset);
-      setCueingPath(path);
+      setCueingPaths(cs => [...cs, path]);
     }
-    setCuePitchState(1);
-    setCueLoopBeats(null);
   };
 
   // shared by the grid nudge buttons and the keyboard shortcut below
@@ -382,7 +413,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   }, [nowPlaying?.path, pendingLive]);
 
   // Live keyboard mapping: Z X C V / 1-5 / 0 drive deck A (beat jump / loop / exit loop);
-  // Q, A S D F, Shift+1-5 / Shift+0 drive the manually cued deck B in the open transition panel.
+  // Q, A S D F, Shift+1-5 / Shift+0 drive the cue deck of the selected node — click a node
+  // to retarget them — falling back to the B track of the open transition panel.
   useEffect(() => {
     if (!liveMode) return;
     const loopSteps = [1, 2, 4, 8, 16];
@@ -407,8 +439,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         return;
       }
 
-      if (!detailEdge) return;
-      const [, b] = detailEdge;
+      const b = selected && selected !== nowPlaying?.path ? selected : detailEdge?.[1];
+      if (!b) return;
       const mb = meta[b];
       if (key === 'q') { toggleCue(b, mb?.cuePoint ?? 0); return; }
       if (e.shiftKey) {
@@ -416,20 +448,20 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         if (key in bNudge) { nudgeGrid(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, bNudge[key]); return; }
       } else {
         const bJump: Record<string, number> = { a: -4, s: -1, d: 1, f: 4 };
-        if (key in bJump) { if (mb?.bpm) p.cueBeatJump(bJump[key], mb.bpm); return; }
+        if (key in bJump) { if (mb?.bpm) p.cueBeatJump(b, bJump[key], mb.bpm); return; }
       }
       if (e.shiftKey && digitMatch) {
         const n = Number(digitMatch[1]);
-        if (n === 0) { p.exitCueLoop(); setCueLoopBeats(null); return; }
+        if (n === 0) { p.exitCueLoop(b); setCueLoopBeats(({ [b]: _, ...rest }) => rest); return; }
         if (!mb?.bpm) return;
         const beats = loopSteps[n - 1];
-        if (cueLoopBeats === beats) { p.exitCueLoop(); setCueLoopBeats(null); }
-        else { p.setCueLoop(beats, mb.bpm); setCueLoopBeats(beats); }
+        if (cueLoopBeats[b] === beats) { p.exitCueLoop(b); setCueLoopBeats(({ [b]: _, ...rest }) => rest); }
+        else { p.setCueLoop(b, beats, mb.bpm); setCueLoopBeats(lb => ({ ...lb, [b]: beats })); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [liveMode, detailEdge, meta, loopBeats, cueLoopBeats, toggleCue, beatOverride, nudgeGrid]);
+  }, [liveMode, detailEdge, selected, nowPlaying, meta, loopBeats, cueLoopBeats, toggleCue, beatOverride, nudgeGrid]);
 
   const toggleDetail = (from: string, to: string) => {
     setDetailEdge(d => (d && d[0] === from && d[1] === to ? null : [from, to]));
@@ -442,13 +474,18 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
 
   const nodeClick = (e: React.MouseEvent, path: string) => {
     e.stopPropagation();
-    if (e.ctrlKey || e.metaKey) { setWaveDetail(path); return; }
+    // Alt+click in live mode: quick-fire layer a connected track
+    if (e.altKey && liveMode && nowPlaying && path !== nowPlaying.path) {
+      const connected = edges.some(([a, b]) => a === nowPlaying.path && b === path);
+      if (connected) { toggleCue(path, meta[path]?.cuePoint ?? 0); return; }
+    }
     if (e.shiftKey && selected && selected !== path) {
       const exists = edges.some(([a, b]) => a === selected && b === path);
       exists ? onRemoveEdge(selected, path) : onAddEdge(selected, path);
       return;
     }
     setSelected(s => (s === path ? null : path));
+    setWaveDetail(w => (w === path ? null : path));
   };
 
   const short = (n: string) => {
@@ -459,6 +496,23 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const fmtT = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   const playingPath = nowPlaying ? pathFrom(selected || nowPlaying.path) : [];
+
+  const getNodeMixerLabel = (path: string): string | null => {
+    if (!nowPlaying) return null;
+    if (nowPlaying.path === path) return 'A';
+
+    // Check if it's the target of a fade (Deck B)
+    const fadingPair = playerRef.current?.getFadingPair();
+    if (fadingPair && fadingPair.to === path) return 'B';
+
+    // Check if it's in cued paths
+    const cueIdx = cueingPaths.indexOf(path);
+    if (cueIdx !== -1) {
+      return String.fromCharCode(66 + cueIdx); // B, C, D...
+    }
+
+    return null;
+  };
 
   // Spectrogram-style animated background: draws the live playback spectrum
   // as translucent bars behind the graph, so the canvas breathes with the music.
@@ -476,10 +530,13 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
       if (spectrum) {
         const n = spectrum.length;
         const barW = w / n;
+        const isLight = document.documentElement.dataset.theme === 'light';
         for (let i = 0; i < n; i++) {
           const v = spectrum[i] / 255;
           const barH = v * h;
-          ctx.fillStyle = `rgba(29, 78, 216, ${0.05 + v * 0.22})`;
+          ctx.fillStyle = isLight
+            ? `rgba(29, 78, 216, ${0.03 + v * 0.12})`
+            : `rgba(251, 191, 36, ${0.06 + v * 0.24})`;
           ctx.fillRect(i * barW, h - barH, barW + 0.5, barH);
         }
       }
@@ -513,11 +570,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <button className="btn btn-danger" onClick={() => { onRemoveTrack(selected); setSelected(null); }}><X size={13} /> Remove</button>
             <span className="graph-hint">
               {(() => { const m = meta[selected]; return m ? `${m.bpm ? Math.round(m.bpm) + ' BPM' : ''} ${m.key} ${m.genre}`.trim() : ''; })()}
-              {' — Shift+click another node to link/unlink, Ctrl+click to preview its waveform'}
+              {' — Shift+click another node to link/unlink'}
             </span>
           </>
         ) : (
-          <span className="graph-hint">Click a node to select it — compatible nodes light up, suggestions appear below. Click an arrow to preview that transition. Ctrl+click a node to preview its waveform and set cues/grid.</span>
+          <span className="graph-hint">Click a node to select it (compatible nodes light up, suggestions appear below, and waveform opens to set cues/grid). Click an arrow to preview that transition.</span>
         )}
         {nowPlaying && (
           <span className="graph-nowplaying">
@@ -528,11 +585,30 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         )}
       </div>
 
+      {nowPlaying && (() => {
+        const m = meta[nowPlaying.path];
+        return (
+          <div className="graph-playback-bar">
+            <span className="gpb-track">
+              <Play size={11} /> {short(nowPlaying.name)}
+              {m?.bpm ? <span className="gpb-meta"> — {Math.round(m.bpm)} BPM {m.key}</span> : null}
+            </span>
+            <span className="gpb-progress">
+              <span className="gpb-fill" ref={pbBarRef} />
+            </span>
+            <span className="gpb-time" ref={pbTimeRef}>0:00 / 0:00</span>
+            <span className="gpb-remaining" ref={pbRemRef}>-0:00</span>
+            <span className="gpb-fading" ref={pbFadeRef} style={{ display: 'none' }}>FADING</span>
+          </div>
+        );
+      })()}
+
       {liveMode && showShortcuts && (
         <div className="graph-hint">
           Deck A — <b>Z X C V</b> beat jump ±4/±1 · <b>1-5</b> loop 1/2/4/8/16 · <b>0</b> exit loop.{' '}
           Deck B cue (open a transition panel) — <b>Q</b> cue play/stop · <b>A S D F</b> beat jump ±4/±1 ·{' '}
           <b>Shift+A/S/D/F</b> grid nudge ±50/±10ms · <b>Shift+1-5</b> loop · <b>Shift+0</b> exit loop.
+          {' '}Live — <b>Alt+click</b> a connected node to quick-fire it as a beat-synced layer.
         </div>
       )}
 
@@ -561,28 +637,49 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 </span>
               )}
             </span>
-            {(['a', 'b'] as const).map(ch => {
-              const dis = ch === 'b' && !strips.b;
-              const v = (ch === 'a' ? strips.a : strips.b) ?? NEUTRAL_STRIP;
+            {[
+              { ch: 'a', label: 'A' },
+              // one strip per manually cued track (named); plain B strip only as fallback for the auto-fade deck
+              ...(cueingPaths.length
+                ? cueingPaths.map((p, idx) => ({ ch: p, label: String.fromCharCode(66 + idx) })) // B, C, D...
+                : [{ ch: 'b', label: 'B' }]),
+            ].map(({ ch, label }) => {
+              const dis = ch !== 'a' && !strips[ch];
+              const v = strips[ch] ?? NEUTRAL_STRIP;
               const set = (patch: Partial<StripState>) => {
                 mixTouch.current = Date.now();
-                setStrips(prev => ({ ...prev, [ch]: { ...((ch === 'a' ? prev.a : prev.b) ?? NEUTRAL_STRIP), ...patch } }));
+                setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? NEUTRAL_STRIP), ...patch } }));
+              };
+              const isCue = ch !== 'a' && ch !== 'b';
+              const bpm = isCue ? meta[ch]?.bpm : null;
+              const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
+              const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
+              const setChanLoop = (n: number | null) => {
+                const p = playerRef.current!;
+                if (isCue) {
+                  if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
+                  else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
+                } else {
+                  if (n == null) { p.exitLoop(); setLoopBeats(null); }
+                  else { p.setLoop(n); setLoopBeats(n); }
+                }
               };
               return (
                 <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
-                  <b className="wc-label">{ch.toUpperCase()}</b>
-                  <span className="vu"><span className="vu-fill" ref={ch === 'a' ? vuA : vuB} /></span>
+                  <span className="glc-strip-row">
+                  <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                  <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
                   <label className="glc-ctl">
                     <span className="glc-tag">VOL</span>
                     <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
-                      title={`Volume ${ch.toUpperCase()} (double-click: 100%)`}
+                      title={`Volume ${label} (double-click: 100%)`}
                       onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
                       onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
                   </label>
                   <label className="glc-ctl">
                     <span className="glc-tag">FLT</span>
                     <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
-                      title={`Filter ${ch.toUpperCase()} — left: lowpass, right: highpass, center/double-click: off`}
+                      title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
                       onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
                       onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
                   </label>
@@ -590,7 +687,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                     <label className="glc-ctl" key={band}>
                       <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
                       <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
-                        title={`EQ ${band} ${ch.toUpperCase()} (double-click: 0, -24 dB = kill)`}
+                        title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
                         onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
                         onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
                     </label>
@@ -598,47 +695,60 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                   {monitorDeviceId && (
                     <>
                       <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
-                        title={`Pre-fade listen ${ch.toUpperCase()} in headphones`}
+                        title={`Pre-fade listen ${label} in headphones`}
                         onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
                         🎧
                       </button>
-                      {ch === 'b' && (
-                        <button className={`btn wc-btn ${routing.b?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
-                          title="Push deck B to master output (unmute from headphone-only)"
-                          onClick={() => { const on = !routing.b?.master; playerRef.current!.setDeckMaster('b', on); setRouting(r => ({ ...r, b: r.b ? { ...r.b, master: on } : null })); }}>
+                      {ch !== 'a' && (
+                        <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
+                          title={`Push ${label} to master output (unmute from headphone-only)`}
+                          onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
                           🔊
                         </button>
                       )}
                     </>
                   )}
+                  {isCue && (
+                    <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                      onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
+                      <Square size={12} />
+                    </button>
+                  )}
+                  </span>
+                  {ch !== 'b' && (
+                    <span className="glc-strip-row glc-strip-perf">
+                      <span className="glc-tag">JMP</span>
+                      {[-4, -1, 1, 4].map(n => (
+                        <button key={n} className="btn btn-secondary wc-btn" disabled={dis || (isCue && !bpm)}
+                          title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
+                      ))}
+                      <span className="wc-sep" />
+                      <span className="glc-tag">LOOP</span>
+                      {[1, 2, 4, 8, 16].map(n => (
+                        <button key={n} className={`btn wc-btn ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
+                          disabled={dis || (isCue && !bpm)} title={`Loop ${n} beat${n > 1 ? 's' : ''} from here`}
+                          onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
+                      ))}
+                      {activeLoop != null && (
+                        <button className="btn btn-secondary wc-btn" onClick={() => setChanLoop(null)}>Exit</button>
+                      )}
+                      {isCue && (
+                        <>
+                          <span className="wc-sep" />
+                          <span className="glc-tag">PITCH</span>
+                          <input type="range" className="glc-pitch" min={-8} max={8} step={0.1} disabled={dis}
+                            value={((cuePitch[ch] ?? 1) - 1) * 100} title="Manual pitch % (double-click: 0)"
+                            onDoubleClick={() => { setCuePitchState(ps => ({ ...ps, [ch]: 1 })); playerRef.current!.setCuePitch(ch, 1); }}
+                            onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(ps => ({ ...ps, [ch]: r })); playerRef.current!.setCuePitch(ch, r); }} />
+                          <span className="wc-label">{(((cuePitch[ch] ?? 1) - 1) * 100).toFixed(1)}%</span>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </span>
               );
             })}
-            <span className="glc-group">
-              <span className="wc-label">Filter {liveFilter > 0 ? '+' : ''}{liveFilter}</span>
-              <input type="range" min={-100} max={100} step={5} value={liveFilter}
-                onChange={e => { const v = Number(e.target.value); setLiveFilter(v); playerRef.current!.setLiveFilter(v / 100); }} />
-            </span>
-            <span className="glc-group">
-              <span className="wc-label">Beat jump</span>
-              <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(-4)}>-4</button>
-              <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(-1)}>-1</button>
-              <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(1)}>+1</button>
-              <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(4)}>+4</button>
-            </span>
-            <span className="glc-group">
-              <span className="wc-label">Loop</span>
-              {[1, 2, 4, 8, 16].map(n => (
-                <button key={n} className={`btn wc-btn ${loopBeats === n ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => {
-                    if (loopBeats === n) { playerRef.current!.exitLoop(); setLoopBeats(null); }
-                    else { playerRef.current!.setLoop(n); setLoopBeats(n); }
-                  }}>{n}</button>
-              ))}
-              {loopBeats != null && (
-                <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitLoop(); setLoopBeats(null); }}>Exit</button>
-              )}
-            </span>
+
             {audioOutputs.length > 1 && (
               <span className="glc-group">
                 <span className="wc-label">🎧 Monitor</span>
@@ -659,6 +769,42 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           </div>
         );
       })()}
+
+      {nowPlaying && (
+        <div className="graph-live-fx">
+          <span className="glc-tag graph-live-fx-label">⚡ Live Sweep</span>
+          <span className="graph-live-fx-val">{liveFilter > 0 ? '+' : ''}{liveFilter}</span>
+          <input type="range" className="graph-live-fx-knob" min={-100} max={100} step={5} value={liveFilter}
+            title="Live filter sweep — all decks: left = lowpass (underwater), right = highpass (distant), center = off. Double-click to reset."
+            onDoubleClick={() => { setLiveFilter(0); playerRef.current!.setLiveFilter(0); }}
+            onChange={e => { const v = Number(e.target.value); setLiveFilter(v); playerRef.current!.setLiveFilter(v / 100); }} />
+          {liveFilter !== 0 && (
+            <button className="btn btn-secondary wc-btn" title="Reset sweep to off" onClick={() => { setLiveFilter(0); playerRef.current!.setLiveFilter(0); }}>✕</button>
+          )}
+          <span className="wc-sep" style={{ alignSelf: 'center', height: '1.4em' }} />
+          <span className="glc-tag graph-live-fx-label">🥁 Deck A</span>
+          <span className="glc-group">
+            <span className="wc-label">Jump</span>
+            <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(-4)}>-4</button>
+            <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(-1)}>-1</button>
+            <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(1)}>+1</button>
+            <button className="btn btn-secondary wc-btn" onClick={() => playerRef.current!.beatJump(4)}>+4</button>
+          </span>
+          <span className="glc-group">
+            <span className="wc-label">Loop</span>
+            {[1, 2, 4, 8, 16].map(n => (
+              <button key={n} className={`btn wc-btn ${loopBeats === n ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => {
+                  if (loopBeats === n) { playerRef.current!.exitLoop(); setLoopBeats(null); }
+                  else { playerRef.current!.setLoop(n); setLoopBeats(n); }
+                }}>{n}</button>
+            ))}
+            {loopBeats != null && (
+              <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitLoop(); setLoopBeats(null); }}>Exit</button>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="graph-canvas-wrap">
       <canvas ref={bgRef} className="graph-spectrum-bg" />
@@ -710,11 +856,14 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const isCompat = !!selected && !isSel && compatible(selected, t.path);
           const isPlaying = nowPlaying?.path === t.path;
           const inPath = !!nowPlaying && playingPath.includes(t.path);
+          const isLayerable = liveMode && !!nowPlaying && !isPlaying && edges.some(([a, b]) => a === nowPlaying.path && b === t.path);
+          const isCued = cueingPaths.includes(t.path);
+          const mixerLabel = getNodeMixerLabel(t.path);
           return (
             <g
               key={t.path}
               transform={`translate(${n.x},${n.y})`}
-              className={`graph-node ${isSel ? 'sel' : ''} ${isCompat ? 'compat' : ''} ${isPlaying ? 'playing' : ''} ${inPath ? 'inpath' : ''}`}
+              className={`graph-node ${isSel ? 'sel' : ''} ${isCompat ? 'compat' : ''} ${isPlaying ? 'playing' : ''} ${inPath ? 'inpath' : ''} ${isLayerable ? 'layerable' : ''} ${isCued ? 'cued' : ''}`}
               onClick={e => nodeClick(e, t.path)}
               onDoubleClick={e => { e.stopPropagation(); playFrom(t.path); }}
               onPointerDown={e => { e.stopPropagation(); dragRef.current = { path: t.path, moved: false }; }}
@@ -723,6 +872,12 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <text y={-2} textAnchor="middle" className="graph-bpm">{m?.bpm ? Math.round(m.bpm) : '—'}</text>
               <text y={11} textAnchor="middle" className="graph-key">{m?.key || ''}</text>
               <text y={R + 14} textAnchor="middle" className="graph-label">{short(t.name)}</text>
+              {mixerLabel && (
+                <g className={`graph-node-badge ${mixerLabel !== 'A' ? 'cued-badge' : ''}`}>
+                  <circle cx={R - 2} cy={-R + 2} r={9} className="badge-bg" />
+                  <text x={R - 2} y={-R + 2} textAnchor="middle" className="badge-text">{mixerLabel}</text>
+                </g>
+              )}
             </g>
           );
         })}
@@ -796,13 +951,23 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               </span>
               <button className="btn btn-secondary" onClick={() => previewEdge(a, b)} title="Replay this transition"><Play size={12} /> Preview</button>
               {liveMode && nowPlaying?.path === a && (
-                <button className={`btn btn-accent ${pendingLive === b ? 'blink' : ''}`} disabled={pendingLive === b}
-                  onClick={() => goLive(a, b)} title="Fire this transition now, quantized to the next bar">
-                  🔒 {pendingLive === b ? 'Going live…' : 'Go live'}
-                </button>
+                <>
+                  <button className={`btn ${cueingPaths.includes(b) ? 'btn-danger' : 'btn-primary'}`}
+                    onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
+                    title={cueingPaths.includes(b)
+                      ? 'Stop the synced track'
+                      : 'Start the incoming track now, beat-synced, without crossfading — you decide when to go live'}>
+                    {cueingPaths.includes(b) ? <><Square size={12} /> Stop</> : <><Play size={12} /> Play sync</>}
+                  </button>
+                  <button className={`btn btn-accent ${pendingLive === b ? 'blink' : ''}`} disabled={pendingLive === b}
+                    onClick={() => goLive(a, b)} title="Fire this transition now, quantized to the next bar">
+                    🔒 {pendingLive === b ? 'Going live…' : 'Go live'}
+                  </button>
+                </>
               )}
               <button className="btn btn-secondary" onClick={() => setDetailEdge(null)} title="Close"><X size={12} /></button>
             </div>
+
             <div className="transition-track-label">
               <span>{short(ta?.name || a)}{ma?.bpm ? ` — ${Math.round(ma.bpm)} BPM ${ma.key}` : ''}</span>
               <span className="transition-tail-tag">out</span>
@@ -817,7 +982,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <TransitionWave peaks={detailPeaks?.a ?? null} fadeFrom={(aLen - fadeS) / aLen} fadeTo={1} tone="out"
               beats={beatFracs(ma?.bpm, beatOverride[a] ?? ma?.beatOffset, aWinStart, aLen)} onPick={pickBeat(a, ma?.bpm, aWinStart, aLen)}
               cueFrac={ma?.cueOutPoint != null ? (ma.cueOutPoint - aWinStart) / aLen : null}
-              onSetCue={frac => onSetCueOut?.(a, Math.max(0, aWinStart + frac * aLen))} />
+              onSetCue={frac => onSetCueOut?.(a, Math.max(0, aWinStart + frac * aLen))}
+              getLoop={loopOverlay('a', aWinStart, aLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={pA >= maxPanA} onClick={() => setPanA(p => Math.min(maxPanA, p + aLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={pA <= 0} onClick={() => setPanA(p => Math.max(0, p - aLen * 0.4))} title="Pan back toward the fade">pan ▶</button>
@@ -838,7 +1004,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <TransitionWave peaks={detailPeaks?.b ?? null} fadeFrom={0} fadeTo={fadeS / bLen} tone="in"
               beats={beatFracs(mb?.bpm, beatOverride[b] ?? mb?.beatOffset, bWinStart, bLen)} onPick={pickBeat(b, mb?.bpm, bWinStart, bLen)}
               cueFrac={mb?.cuePoint != null ? (mb.cuePoint - bWinStart) / bLen : null}
-              onSetCue={frac => onSetCue(b, Math.max(0, bWinStart + frac * bLen))} />
+              onSetCue={frac => onSetCue(b, Math.max(0, bWinStart + frac * bLen))}
+              getLoop={loopOverlay(b, bWinStart, bLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={pB <= 0} onClick={() => setPanB(p => Math.max(0, p - bLen * 0.4))} title="Pan back toward the fade">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={pB >= maxPanB} onClick={() => setPanB(p => Math.min(maxPanB, p + bLen * 0.4))} title="Pan later">pan ▶</button>
@@ -852,28 +1019,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 <>
                   <span className="wc-sep" />
                   <button className="btn btn-secondary wc-btn" onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
-                    title={cueingPath === b ? 'Stop cueing this track' : 'Cue this track in now, at full volume, to beatmatch by ear'}>
-                    {cueingPath === b ? <Square size={12} /> : <Play size={12} />} Cue
+                    title={cueingPaths.includes(b) ? 'Stop cueing this track' : 'Cue this track in now, at full volume, to beatmatch by ear — layers on top of any other cued track'}>
+                    {cueingPaths.includes(b) ? <Square size={12} /> : <Play size={12} />} Cue
                   </button>
-                  {cueingPath === b && (
-                    <>
-                      <input type="range" min={-8} max={8} step={0.1} value={(cuePitch - 1) * 100}
-                        onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(r); playerRef.current!.setCuePitch(r); }}
-                        title="Manual pitch (%)" />
-                      <span className="wc-label">{((cuePitch - 1) * 100).toFixed(1)}%</span>
-                      <span className="wc-sep" />
-                      {[1, 2, 4, 8, 16].map(n => (
-                        <button key={n} className={`btn wc-btn ${cueLoopBeats === n ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => {
-                            if (cueLoopBeats === n) { playerRef.current!.exitCueLoop(); setCueLoopBeats(null); }
-                            else if (mb?.bpm) { playerRef.current!.setCueLoop(n, mb.bpm); setCueLoopBeats(n); }
-                          }}>{n}</button>
-                      ))}
-                      {cueLoopBeats != null && (
-                        <button className="btn btn-secondary wc-btn" onClick={() => { playerRef.current!.exitCueLoop(); setCueLoopBeats(null); }}>Exit</button>
-                      )}
-                    </>
-                  )}
                 </>
               )}
             </div>
@@ -945,7 +1093,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <TransitionWave peaks={waveDetailPeaks} fadeFrom={0} fadeTo={0} tone="in"
               beats={beatFracs()} onPick={pickBeat}
               cueFrac={m?.cuePoint != null && winLen > 0 ? (m.cuePoint - winStart) / winLen : null}
-              onSetCue={frac => onSetCue(waveDetail, Math.max(0, winStart + frac * winLen))} />
+              onSetCue={frac => onSetCue(waveDetail, Math.max(0, winStart + frac * winLen))}
+              getLoop={loopOverlay(nowPlaying?.path === waveDetail ? 'a' : waveDetail, winStart, winLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={wp <= 0} onClick={() => setWavePan(p => Math.max(0, p - winLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={wp >= maxPan} onClick={() => setWavePan(p => Math.min(maxPan, p + winLen * 0.4))} title="Pan later">pan ▶</button>

@@ -54,11 +54,10 @@ export class CrossfadePlayer {
   private ctx: AudioContext | null = null;
   private deck: Deck | null = null;
   private fadingDeck: Deck | null = null; // incoming deck mid-crossfade; stop() must kill this too
-  private cueDeck: Deck | null = null; // manually cued incoming deck, played solo before the real fade fires
-  private cuePath: string | null = null;
-  private cueBpm: number | null = null;
+  // manually cued decks by track path, played alongside the live deck before a fade fires;
+  // multiple entries let 2-3 tracks be layered/beatmatched at once. deck is null while loading.
+  private cues = new Map<string, { deck: Deck | null; bpm: number | null }>();
   private masterBpm: number | null = null; // Ableton-style global tempo; null = tracks play native
-  private cueToken = 0;
   fadeS = DEFAULT_FADE_S;
   private eq: EqBands = { ...DEFAULT_EQ };
   private queue: QueueItem[] = [];
@@ -164,9 +163,31 @@ export class CrossfadePlayer {
   /** Current media-time playhead (seconds) of the live deck, for hot-cue "set". */
   getPos(): number | null { return this.deck ? this.pos(this.deck) : null; }
 
+  /** Playback state snapshot for the UI progress bar: position, effective duration, and whether a crossfade is in progress. */
+  getPlaybackInfo(): { pos: number; dur: number; fading: boolean } | null {
+    if (!this.deck || this.idx < 0) return null;
+    return {
+      pos: this.pos(this.deck),
+      dur: this.queue[this.idx].cueOut ?? this.deck.buf.duration,
+      fading: this.fading,
+    };
+  }
+
+  /** Most recently cued deck that has finished loading (the one the B strip controls). */
+  private lastCueDeck(): Deck | null {
+    let last: Deck | null = null;
+    for (const e of this.cues.values()) if (e.deck) last = e.deck;
+    return last;
+  }
+
+  /** Every playing cue deck (loaded entries only). */
+  private cueDecks(): Deck[] {
+    return [...this.cues.values()].map(e => e.deck).filter((d): d is Deck => !!d);
+  }
+
   /** Actual playback rates of the live and cue decks (UI feedback for master-tempo warp). */
   getDeckRates(): { a: number | null; cue: number | null } {
-    return { a: this.deck?.rate ?? null, cue: this.cueDeck?.rate ?? null };
+    return { a: this.deck?.rate ?? null, cue: this.lastCueDeck()?.rate ?? null };
   }
 
   /** Paths of the pair currently mid-crossfade, or null. */
@@ -180,7 +201,7 @@ export class CrossfadePlayer {
    *  makes to bring a synced deck back into phase, without touching the gain/EQ automation.
    *  Targets whichever deck is actually sounding for that path: a manual cue, or a live fade. */
   nudgeLive(path: string, deltaS: number) {
-    const d = this.cuePath === path ? this.cueDeck : (this.getFadingPair()?.to === path ? this.fadingDeck : null);
+    const d = this.cues.get(path)?.deck ?? (this.getFadingPair()?.to === path ? this.fadingDeck : null);
     if (!d || !deltaS) return;
     const ctx = this.getCtx();
     const now = ctx.currentTime;
@@ -192,62 +213,69 @@ export class CrossfadePlayer {
     d.src.playbackRate.setValueAtTime(d.rate, now + dur);
   }
 
-  /** Manually cue the incoming track in now, at full volume alongside whatever's playing —
-   *  independent of the automated crossfade engine, so it can be beatmatched by ear first. */
+  /** Manually cue a track in now, at full volume alongside whatever's playing — independent of
+   *  the automated crossfade engine, so it can be beatmatched by ear first. Each cued path gets
+   *  its own deck; cueing another track layers it instead of replacing the previous cue. */
   cueLive(path: string, offset: number, bpm?: number | null, _beatOffset?: number | null) {
-    const token = ++this.cueToken;
-    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; this.cuePath = null; }
+    const old = this.cues.get(path);
+    if (old?.deck) { try { old.deck.src.stop(); } catch { /* already stopped */ } }
+    const entry = { deck: null as Deck | null, bpm: bpm ?? null };
+    this.cues.set(path, entry);
     this.load(path).then(buf => {
-      if (token !== this.cueToken) return; // superseded by a newer cue/stop before load finished
+      if (this.cues.get(path) !== entry) return; // superseded by a newer cue/stop before load finished
       const off = Math.max(0, Math.min(offset, buf.duration - 1));
-      this.cueDeck = this.startDeck(buf, off, this.warpRate(bpm), 1, 0);
-      this.cuePath = path;
-      this.cueBpm = bpm ?? null;
+      entry.deck = this.startDeck(buf, off, this.warpRate(bpm), 1, 0);
     });
   }
 
-  stopCue() {
-    this.cueToken++;
-    if (this.cueDeck) { try { this.cueDeck.src.stop(); } catch { /* already stopped */ } this.cueDeck = null; }
-    this.cuePath = null;
-    this.cueBpm = null;
+  /** Stop one cued track, or every cued track when no path is given. */
+  stopCue(path?: string) {
+    for (const [p, e] of [...this.cues]) {
+      if (path && p !== path) continue;
+      if (e.deck) { try { e.deck.src.stop(); } catch { /* already stopped */ } }
+      this.cues.delete(p);
+    }
   }
 
-  getCuePath(): string | null { return this.cuePath; }
+  getCuePaths(): string[] { return [...this.cues.keys()]; }
 
-  /** Jump forward/back by whole beats on the manually cued deck. */
-  cueBeatJump(beats: number, bpm: number) {
-    const d = this.cueDeck;
-    if (!d || !bpm) return;
+  /** Jump forward/back by whole beats on a manually cued deck. */
+  cueBeatJump(path: string, beats: number, bpm: number) {
+    const entry = this.cues.get(path);
+    const d = entry?.deck;
+    if (!entry || !d || !bpm) return;
     const delta = beats * (60 / bpm);
     const clamped = Math.max(0, Math.min(this.pos(d) + delta, d.buf.duration - 0.05));
     const gain0 = d.gain.gain.value;
     try { d.src.stop(); } catch { /* already stopped */ }
     d.gain.disconnect(); d.vol.disconnect();
-    this.cueDeck = this.startDeck(d.buf, clamped, d.rate, gain0);
-    this.carryMixer(d, this.cueDeck);
+    entry.deck = this.startDeck(d.buf, clamped, d.rate, gain0);
+    this.carryMixer(d, entry.deck);
   }
 
-  /** Loop the next N beats of the manually cued deck, from its current playhead. */
-  setCueLoop(beats: number, bpm: number) {
-    if (!this.cueDeck || !bpm) return;
-    const start = this.pos(this.cueDeck);
-    this.cueDeck.src.loopStart = start;
-    this.cueDeck.src.loopEnd = start + beats * (60 / bpm);
-    this.cueDeck.src.loop = true;
+  /** Loop the next N beats of a manually cued deck, from its current playhead. */
+  setCueLoop(path: string, beats: number, bpm: number) {
+    const d = this.cues.get(path)?.deck;
+    if (!d || !bpm) return;
+    const start = this.pos(d);
+    d.src.loopStart = start;
+    d.src.loopEnd = start + beats * (60 / bpm);
+    d.src.loop = true;
   }
 
-  exitCueLoop() {
-    if (this.cueDeck) this.cueDeck.src.loop = false;
+  exitCueLoop(path: string) {
+    const d = this.cues.get(path)?.deck;
+    if (d) d.src.loop = false;
   }
 
-  /** Persistent manual pitch on the cued deck (1 = original speed) — unlike nudgeLive's
+  /** Persistent manual pitch on a cued deck (1 = original speed) — unlike nudgeLive's
    *  temporary bend, this stays until changed again. */
-  setCuePitch(rate: number) {
-    if (!this.cueDeck) return;
-    this.cueDeck.src.playbackRate.cancelScheduledValues(this.getCtx().currentTime);
-    this.cueDeck.src.playbackRate.value = rate;
-    this.cueDeck.rate = rate;
+  setCuePitch(path: string, rate: number) {
+    const d = this.cues.get(path)?.deck;
+    if (!d) return;
+    d.src.playbackRate.cancelScheduledValues(this.getCtx().currentTime);
+    d.src.playbackRate.value = rate;
+    d.rate = rate;
   }
 
   /** Playback rate that makes a track of `trackBpm` sound at the master tempo (1 when master off or BPM unknown). */
@@ -273,7 +301,7 @@ export class CrossfadePlayer {
     };
     retempo(this.deck, this.queue[this.idx]?.bpm);
     retempo(this.fadingDeck, this.queue[this.idx + 1]?.bpm);
-    retempo(this.cueDeck, this.cueBpm);
+    for (const e of this.cues.values()) retempo(e.deck, e.bpm);
   }
 
   getMasterTempo(): number | null { return this.masterBpm; }
@@ -282,7 +310,7 @@ export class CrossfadePlayer {
   setLiveFilter(knob: number) {
     const k = Math.max(-1, Math.min(1, knob));
     const ctx = this.getCtx();
-    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) {
+    for (const d of [this.deck, this.fadingDeck, ...this.cueDecks()]) {
       if (!d) continue;
       if (k < 0) {
         d.lp.frequency.setTargetAtTime(20000 + (LIVE_FILTER_LP_FLOOR_HZ - 20000) * -k, ctx.currentTime, 0.03);
@@ -303,13 +331,13 @@ export class CrossfadePlayer {
     if (!deviceId) {
       this.monitorEl?.pause();
       this.monitorEl = null;
-      for (const d of [this.deck, this.fadingDeck, this.cueDeck]) if (d) d.pfl.gain.value = 0;
+      for (const d of [this.deck, this.fadingDeck, ...this.cueDecks()]) if (d) d.pfl.gain.value = 0;
       return;
     }
     const ctx = this.getCtx();
     if (!this.monitorDest) {
       this.monitorDest = ctx.createMediaStreamDestination();
-      for (const d of [this.deck, this.fadingDeck, this.cueDeck]) d?.pfl.connect(this.monitorDest);
+      for (const d of [this.deck, this.fadingDeck, ...this.cueDecks()]) d?.pfl.connect(this.monitorDest);
     }
     if (!this.monitorEl) {
       this.monitorEl = new Audio();
@@ -320,35 +348,39 @@ export class CrossfadePlayer {
   }
 
   /** Toggle a deck's send to the headphone bus. */
-  setPfl(which: 'a' | 'b', on: boolean) {
+  setPfl(which: string, on: boolean) {
     const d = this.deckByLabel(which);
     if (d) d.pfl.gain.setTargetAtTime(on ? 1 : 0, this.getCtx().currentTime, 0.02);
   }
 
   /** Manually push/pull the B deck in or out of the master output (pre-listen escape hatch). */
-  setDeckMaster(which: 'a' | 'b', on: boolean) {
+  setDeckMaster(which: string, on: boolean) {
     const d = this.deckByLabel(which);
     if (d) d.master.gain.setTargetAtTime(on ? 1 : 0, this.getCtx().currentTime, 0.05);
   }
 
-  getRouting(): { a: { pfl: boolean; master: boolean } | null; b: { pfl: boolean; master: boolean } | null } {
-    const read = (d: Deck | null) => d && { pfl: d.pfl.gain.value > 0.5, master: d.master.gain.value > 0.5 };
-    return { a: read(this.deck), b: read(this.cueDeck ?? this.fadingDeck) };
+  getRouting(which: string): { pfl: boolean; master: boolean } | null {
+    const d = this.deckByLabel(which);
+    return d && { pfl: d.pfl.gain.value > 0.5, master: d.master.gain.value > 0.5 };
   }
 
-  // ---- per-deck live mixer (channel strips A = live deck, B = cued/incoming deck) ----
+  // ---- per-deck live mixer ----
+  // Channel ids: 'a' = live deck, 'b' = most recently cued/incoming deck,
+  // any other string = the cued deck for that track path.
 
-  private deckByLabel(which: 'a' | 'b'): Deck | null {
-    return which === 'a' ? this.deck : (this.cueDeck ?? this.fadingDeck);
+  private deckByLabel(which: string): Deck | null {
+    if (which === 'a') return this.deck;
+    if (which === 'b') return this.lastCueDeck() ?? this.fadingDeck;
+    return this.cues.get(which)?.deck ?? null;
   }
 
-  setDeckVolume(which: 'a' | 'b', v: number) {
+  setDeckVolume(which: string, v: number) {
     const d = this.deckByLabel(which);
     if (d) d.vol.gain.setTargetAtTime(Math.max(0, Math.min(1, v)), this.getCtx().currentTime, 0.01);
   }
 
   /** Per-deck filter knob (-1..1): negative sweeps a lowpass down, positive a highpass up, 0 = off. */
-  setDeckFilter(which: 'a' | 'b', knob: number) {
+  setDeckFilter(which: string, knob: number) {
     const d = this.deckByLabel(which);
     if (!d) return;
     const k = Math.max(-1, Math.min(1, knob));
@@ -363,7 +395,7 @@ export class CrossfadePlayer {
     }
   }
 
-  setDeckEq(which: 'a' | 'b', band: 'low' | 'mid' | 'high', dB: number) {
+  setDeckEq(which: string, band: 'low' | 'mid' | 'high', dB: number) {
     const d = this.deckByLabel(which);
     if (d) d[band].gain.setTargetAtTime(dB, this.getCtx().currentTime, 0.02);
   }
@@ -377,18 +409,25 @@ export class CrossfadePlayer {
     return Math.min(1, p);
   }
 
-  /** Real-time peak level (0..1) of each channel strip, for VU meters. */
-  getDeckLevels(): { a: number; b: number } {
-    return { a: this.levelOf(this.deck), b: this.levelOf(this.cueDeck ?? this.fadingDeck) };
+  /** Real-time peak level (0..1) of a channel strip, for VU meters. */
+  getDeckLevel(which: string): number {
+    return this.levelOf(this.deckByLabel(which));
   }
 
-  /** Current mixer settings of both strips, so the UI can stay in sync when decks swap after a fade. */
-  getMixerState() {
-    const read = (d: Deck | null) => d && {
+  /** Active native-loop bounds + playhead (media seconds) of a channel's deck, for waveform overlays. */
+  getLoopState(which: string): { start: number; end: number; pos: number } | null {
+    const d = this.deckByLabel(which);
+    if (!d || !d.src.loop) return null;
+    return { start: d.src.loopStart, end: d.src.loopEnd, pos: this.pos(d) };
+  }
+
+  /** Current mixer settings of a strip, so the UI can stay in sync when decks swap after a fade. */
+  getMixerState(which: string) {
+    const d = this.deckByLabel(which);
+    return d && {
       vol: d.vol.gain.value, filter: d.filterKnob,
       low: d.low.gain.value, mid: d.mid.gain.value, high: d.high.gain.value,
     };
-    return { a: read(this.deck), b: read(this.cueDeck ?? this.fadingDeck) };
   }
 
   /** Carry user mixer settings across a stop-and-restart of the same track (reseat/beat jump). */
@@ -526,7 +565,7 @@ export class CrossfadePlayer {
     if (this.recorder) return;
     const ctx = this.getCtx();
     this.recordDest = ctx.createMediaStreamDestination();
-    for (const d of [this.deck, this.fadingDeck, this.cueDeck]) d?.gain.connect(this.recordDest);
+    for (const d of [this.deck, this.fadingDeck, ...this.cueDecks()]) d?.gain.connect(this.recordDest);
     this.recordChunks = [];
     const rec = new MediaRecorder(this.recordDest.stream);
     rec.ondataavailable = e => { if (e.data.size) this.recordChunks.push(e.data); };
@@ -575,7 +614,7 @@ export class CrossfadePlayer {
     this.fading = true;
     // if the incoming track is already manually cued in and beatmatched, take that deck
     // over as-is instead of restarting it fresh — only A's gain/EQ fade out around it.
-    const bAlreadyCued = this.cuePath === to.path && !!this.cueDeck;
+    const bAlreadyCued = !!this.cues.get(to.path)?.deck;
 
     let buf: AudioBuffer;
     try { buf = await this.load(to.path); } catch { if (sess === this.session) this.stop(); return; }
@@ -617,8 +656,8 @@ export class CrossfadePlayer {
       bOffset = Math.max(0, Math.min(adjustedB, buf.duration - 1));
     }
 
-    const b = bAlreadyCued ? this.cueDeck! : this.startDeck(buf, bOffset, rate, 0, t0);
-    if (bAlreadyCued) { this.cueDeck = null; this.cuePath = null; b.src.loop = false; }
+    const b = bAlreadyCued ? this.cues.get(to.path)!.deck! : this.startDeck(buf, bOffset, rate, 0, t0);
+    if (bAlreadyCued) { this.cues.delete(to.path); b.src.loop = false; } // other cued decks keep playing
     this.fadingDeck = b;
     const tEnd = t0 + this.fadeS;
     a.gain.gain.setValueAtTime(1, t0);
