@@ -4,6 +4,19 @@
 
 Sidecamp is an **Electron desktop application** that handles all P2P content acquisition and peer file-sharing for TuneCamp instances — keeping the core server clean and fully compliant.
 
+This repository is an **npm-workspaces monorepo** hosting two apps and their shared packages:
+
+```
+apps/sidecamp        # the TuneCamp companion app (this README's main subject)
+apps/graphofone      # standalone live-performance app built on the same graph engine
+packages/audio-engine # pure Web Audio DSP: crossfade player, time-warp, worklets
+packages/graph-ui     # React graph view: track graph, transitions, waveforms, recording
+```
+
+## Graphofone
+
+**Graphofone** is a focused live-performance tool: import a music folder, arrange tracks as a graph, link them with beat-matched crossfade transitions, and perform — no P2P, no server, no network features. It ships with a first-run quick tour (reopen it anytime from the `?` button in the header). Both apps consume the same `graph-ui` and `audio-engine` packages, so every mixing feature lands in both.
+
 ## Why Sidecamp?
 
 TuneCamp's core server is a legitimate streaming platform. Features like Soulseek search, BitTorrent, and yt-dlp audio ripping carry legal grey-area risks that shouldn't live on a hosted server. Sidecamp moves all of that to your local desktop, where _you_ control what runs.
@@ -32,9 +45,9 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 
 ## Prerequisites
 
-- **Node.js** 18+ and **Yarn** or **npm**
+- **Node.js** 18+ and **npm**
 - **yt-dlp** — auto-downloaded on first rip (no manual install needed)
-- A running **TuneCamp** instance to connect to
+- A running **TuneCamp** instance to connect to (Sidecamp only; Graphofone is fully offline)
 
 ## Quick Start
 
@@ -43,11 +56,12 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 git clone https://github.com/scobru/sidecamp.git
 cd sidecamp
 
-# Install dependencies
-yarn install  # or: npm install
+# Install all workspaces
+npm install
 
-# Run in development mode (Vite + Electron)
-yarn dev      # or: npm run dev
+# Run an app in development mode (Vite + Electron)
+npm run dev --workspace apps/sidecamp
+npm run dev --workspace apps/graphofone
 ```
 
 ### Running Tests
@@ -55,35 +69,37 @@ yarn dev      # or: npm run dev
 We use **Vitest** and **React Testing Library** for unit and hook testing:
 
 ```bash
-# Run tests in watch mode
-yarn test          # or: npm run test
-
-# Run tests once (single run)
-yarn test:run      # or: npm run test:run
+cd apps/sidecamp
+npm run test       # watch mode
+npm run test:run   # single run
 ```
 
 ### Build for production
 
 ```bash
-# Build for the current host OS
-yarn build         # or: npm run build
+# From the repo root: builds every app for the current host OS
+npm run build
+
+# Or a single app
+npm run build --workspace apps/graphofone
 ```
 
-This compiles TypeScript, bundles the Vite frontend, and packages the Electron app via `electron-builder`.
+This compiles TypeScript, bundles the Vite frontend, and packages each Electron app via `electron-builder` into `apps/*/release/`.
 
-`yarn build` only produces an installer for **the OS you run it on** (electron-builder + native modules build for the host). Per-platform scripts:
+`npm run build` only produces installers for **the OS you run it on** (electron-builder + native modules build for the host). Per-platform scripts (Sidecamp):
 
 ```bash
-yarn build:win     # NSIS installer (.exe)
-yarn build:mac     # DMG (.dmg) + ZIP (.zip)  — macOS host only
-yarn build:linux   # AppImage (.AppImage) + Debian (.deb)
+cd apps/sidecamp
+npm run build:win     # NSIS installer (.exe)
+npm run build:mac     # DMG (.dmg) + ZIP (.zip)  — macOS host only
+npm run build:linux   # AppImage (.AppImage) + Debian (.deb)
 ```
 
 > **You can't build the macOS installer on Windows or Linux** — it requires Apple tooling. To produce all three at once, use CI.
 
 ### Cross-platform releases (CI)
 
-`.github/workflows/release.yml` builds on Windows, macOS, and Linux runners in parallel. Push a version tag to publish a GitHub Release with every installer attached:
+`.github/workflows/release.yml` builds **both apps** on Windows, macOS, and Linux runners in parallel. Push a version tag to publish a GitHub Release with every installer attached:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
@@ -113,11 +129,12 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 └─────────────┘                            └──────────────────┘
 ```
 
-- **Providers** (`electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
-- **Uploader** (`electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
-- **Peer** (`electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
-- **Frontend** (`src/`): React + Vite UI rendered inside the Electron window.
-- **Graph View** (`src/GraphView.tsx`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, crossfade playback engine, and set recording.
+- **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
+- **Uploader** (`apps/sidecamp/electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
+- **Peer** (`apps/sidecamp/electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
+- **Frontends** (`apps/*/src/`): React + Vite UIs rendered inside each Electron window.
+- **Graph View** (`packages/graph-ui/`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, and set recording — shared by both apps.
+- **Audio Engine** (`packages/audio-engine/`): Crossfade playback engine, time-warp source, and audio worklets — pure Web Audio, no app logic.
 
 ## Ecosystem
 
