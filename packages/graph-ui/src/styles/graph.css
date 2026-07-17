@@ -123,6 +123,33 @@
   gap: 4px;
 }
 .glc-group input[type='range'] { width: 90px; accent-color: var(--primary); }
+.glc-header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-right: 1px solid var(--glass-border);
+  padding-right: 8px;
+}
+.glc-tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--glass-border);
+}
+.glc-tabs .wc-btn {
+  padding: 0.1rem 0.35rem !important;
+  font-size: 0.68rem !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.glc-tabs .wc-btn.btn-accent {
+  background: var(--primary) !important;
+  color: var(--btn-text, #fff) !important;
+  border-radius: 3px;
+}
 .glc-strip { flex-direction: column; align-items: stretch; gap: 2px; }
 .glc-strip-row { display: inline-flex; align-items: center; gap: 6px; }
 .glc-strip-perf .wc-btn { padding: 0.1rem 0.3rem !important; font-size: 0.68rem !important; }

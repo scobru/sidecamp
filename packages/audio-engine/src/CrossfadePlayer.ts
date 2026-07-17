@@ -31,6 +31,7 @@ export type LiveConfig = {
 
 export type StripState = { vol: number; filter: number; low: number; mid: number; high: number };
 export const NEUTRAL_STRIP: StripState = { vol: 1, filter: 0, low: 0, mid: 0, high: 0 };
+export const CUE_INITIAL_STRIP: StripState = { vol: 0, filter: 0, low: 0, mid: 0, high: 0 };
 export type NowPlaying = { index: number; path: string; name: string } | null;
 type Deck = {
   src: WarpSource; gain: GainNode; vol: GainNode; master: GainNode; pfl: GainNode; meter: AnalyserNode; buf: AudioBuffer; startCtx: number; startOffset: number; rate: number; filterKnob: number;
@@ -129,7 +130,7 @@ export class CrossfadePlayer {
     return raw;
   }
 
-  private startDeck(buf: AudioBuffer, offset: number, rate: number, gain0: number, when = 0): Deck {
+  private startDeck(buf: AudioBuffer, offset: number, rate: number, gain0: number, when = 0, startVol = 1, startPfl = 0): Deck {
     const ctx = this.getCtx();
     const src = new WarpSource(ctx, buf); // pitch-preserving time-stretch instead of varispeed
     src.playbackRate.value = rate;
@@ -146,14 +147,15 @@ export class CrossfadePlayer {
     const gain = ctx.createGain();
     gain.gain.value = gain0;
     const vol = ctx.createGain(); // user channel fader — separate from `gain`, which crossfade automation owns
+    vol.gain.value = startVol;
     const master = ctx.createGain(); // send to the main output (0 while a deck is headphone-only pre-listen)
     const pfl = ctx.createGain();    // pre-fade listen send to the headphone monitor bus
-    pfl.gain.value = 0;
+    pfl.gain.value = startPfl;
     const meter = ctx.createAnalyser();
     meter.fftSize = 1024;
     src.connect(low).connect(mid).connect(high).connect(hp).connect(lp).connect(gain).connect(vol).connect(master).connect(ctx.destination);
-    vol.connect(meter);
-    vol.connect(pfl);
+    gain.connect(meter);
+    gain.connect(pfl);
     if (this.monitorDest) pfl.connect(this.monitorDest);
     if (this.recordDest) master.connect(this.recordDest);
     if (this.analyser) master.connect(this.analyser);
@@ -238,7 +240,7 @@ export class CrossfadePlayer {
     this.load(path).then(buf => {
       if (this.cues.get(path) !== entry) return; // superseded by a newer cue/stop before load finished
       const off = Math.max(0, Math.min(offset, buf.duration - 1));
-      entry.deck = this.startDeck(buf, off, this.warpRate(bpm), 1, 0);
+      entry.deck = this.startDeck(buf, off, this.warpRate(bpm), 1, 0, 0, 1);
     });
   }
 

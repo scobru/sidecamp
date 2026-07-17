@@ -27,6 +27,11 @@ const STEPS: Step[] = [
     selector: '.graph-toolbar',
     title: 'Perform',
     body: '"Play path" follows the arrows with automatic beat-matched crossfades. "Live" arms arrows so you fire transitions manually, and "Rec" records your whole set to a file.'
+  },
+  {
+    selector: '.graph-live-controls',
+    title: 'Mixer & Cueing',
+    body: 'Control volume, filter and EQ for active channels. Manually cued tracks start silent (VOL 0) with headphone pre-listen (🎧) active. Press Tab to cycle through channel strips, or toggle "All" to show them all at once.'
   }
 ];
 

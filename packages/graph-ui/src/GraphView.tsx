@@ -3,7 +3,7 @@ import { Play, Square, SkipForward, X, Circle } from 'lucide-react';
 import {
   CrossfadePlayer, bpmRatio, bpmClose,
   DEFAULT_FADE_S, FADE_OPTIONS, PREVIEW_LEAD_S, PREVIEW_TAIL_S,
-  NEUTRAL_STRIP,
+  NEUTRAL_STRIP, CUE_INITIAL_STRIP,
   type EqPreset, type BandPeaks, type QueueItem, type LiveConfig,
   type StripState, type NowPlaying, type EqBands,
 } from 'audio-engine';
@@ -95,6 +95,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [deckRates, setDeckRates] = useState<{ a: number | null; cue: number | null }>({ a: null, cue: null });
   // mixer channels keyed by player channel id: 'a', 'b' (fallback incoming), or a cued track path
   const [strips, setStrips] = useState<Record<string, StripState | null>>({ a: NEUTRAL_STRIP });
+  const [showAllStrips, setShowAllStrips] = useState(false);
+  const [focusedStrip, setFocusedStrip] = useState<string>('a');
   const mixTouch = useRef(0); // last time the user moved a mixer slider — pause sync so it doesn't fight the drag
   useEffect(() => {
     if (!nowPlaying) return;
@@ -245,6 +247,42 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     navigator.mediaDevices.addEventListener('devicechange', enumerate);
     return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate);
   }, []);
+
+  // Sync focused strip with selected node if the selected node is playing or cued
+  useEffect(() => {
+    if (selected) {
+      if (selected === nowPlaying?.path) {
+        setFocusedStrip('a');
+      } else if (cueingPaths.includes(selected)) {
+        setFocusedStrip(selected);
+      }
+    }
+  }, [selected, nowPlaying?.path, cueingPaths]);
+
+  // Tab key navigation for mixer strips
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        
+        // Define active channels exactly like they are rendered
+        const activeChans = [
+          'a',
+          ...(cueingPaths.length ? cueingPaths : ['b'])
+        ];
+        
+        if (activeChans.length > 1) {
+          e.preventDefault();
+          const idx = activeChans.indexOf(focusedStrip);
+          const nextIdx = idx === -1 ? 0 : (idx + 1) % activeChans.length;
+          setFocusedStrip(activeChans[nextIdx]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedStrip, cueingPaths]);
+
   // live-control state is per-track — reset when the playhead moves to a different track
   useEffect(() => {
     setLoopBeats(null);
@@ -711,117 +749,149 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 </span>
               )}
             </span>
-            {[
-              { ch: 'a', label: 'A' },
-              // one strip per manually cued track (named); plain B strip only as fallback for the auto-fade deck
-              ...(cueingPaths.length
-                ? cueingPaths.map((p, idx) => ({ ch: p, label: String.fromCharCode(66 + idx) })) // B, C, D...
-                : [{ ch: 'b', label: 'B' }]),
-            ].map(({ ch, label }) => {
-              const dis = ch !== 'a' && !strips[ch];
-              const v = strips[ch] ?? NEUTRAL_STRIP;
-              const set = (patch: Partial<StripState>) => {
-                mixTouch.current = Date.now();
-                setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? NEUTRAL_STRIP), ...patch } }));
-              };
-              const isCue = ch !== 'a' && ch !== 'b';
-              const bpm = isCue ? meta[ch]?.bpm : null;
-              const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
-              const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
-              const setChanLoop = (n: number | null) => {
-                const p = playerRef.current!;
-                if (isCue) {
-                  if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
-                  else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
-                } else {
-                  if (n == null) { p.exitLoop(); setLoopBeats(null); }
-                  else { p.setLoop(n); setLoopBeats(n); }
-                }
-              };
+            {(() => {
+              const activeChannels = [
+                { ch: 'a', label: 'A' },
+                // one strip per manually cued track (named); plain B strip only as fallback for the auto-fade deck
+                ...(cueingPaths.length
+                  ? cueingPaths.map((p, idx) => ({ ch: p, label: String.fromCharCode(66 + idx) })) // B, C, D...
+                  : [{ ch: 'b', label: 'B' }]),
+              ];
+
+              const renderedChannels = showAllStrips
+                ? activeChannels
+                : [activeChannels.find(x => x.ch === focusedStrip) ?? activeChannels[0]];
+
+              const currentStripCh = activeChannels.find(x => x.ch === focusedStrip)?.ch ?? 'a';
+
               return (
-                <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
-                  <span className="glc-strip-row">
-                  <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
-                  <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
-                  <label className="glc-ctl">
-                    <span className="glc-tag">VOL</span>
-                    <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
-                      title={`Volume ${label} (double-click: 100%)`}
-                      onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
-                      onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
-                  </label>
-                  <label className="glc-ctl">
-                    <span className="glc-tag">FLT</span>
-                    <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
-                      title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
-                      onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
-                      onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
-                  </label>
-                  {(['low', 'mid', 'high'] as const).map(band => (
-                    <label className="glc-ctl" key={band}>
-                      <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
-                      <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
-                        title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
-                        onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
-                        onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
-                    </label>
-                  ))}
-                  {monitorDeviceId && (
-                    <>
-                      <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
-                        title={`Pre-fade listen ${label} in headphones`}
-                        onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
-                        🎧
-                      </button>
-                      {ch !== 'a' && (
-                        <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
-                          title={`Push ${label} to master output (unmute from headphone-only)`}
-                          onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
-                          🔊
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {isCue && (
-                    <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
-                      onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
-                      <Square size={12} />
+                <>
+                  <span className="glc-group glc-header-controls">
+                    <button className={`btn wc-btn ${showAllStrips ? 'btn-primary' : 'btn-secondary'}`}
+                      title="Toggle showing all mixer strips at once or only the focused one"
+                      onClick={() => setShowAllStrips(prev => !prev)}>
+                      {showAllStrips ? 'Single' : 'All'}
                     </button>
-                  )}
+                    {!showAllStrips && activeChannels.length > 1 && (
+                      <span className="glc-tabs">
+                        {activeChannels.map(({ ch, label }) => (
+                          <button key={ch} className={`btn wc-btn ${currentStripCh === ch ? 'btn-accent' : 'btn-secondary'}`}
+                            title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}
+                            onClick={() => setFocusedStrip(ch)}>
+                            Ch {label}
+                          </button>
+                        ))}
+                      </span>
+                    )}
                   </span>
-                  {ch !== 'b' && (
-                    <span className="glc-strip-row glc-strip-perf">
-                      <span className="glc-tag">JMP</span>
-                      {[-4, -1, 1, 4].map(n => (
-                        <button key={n} className="btn btn-secondary wc-btn" disabled={dis || (isCue && !bpm)}
-                          title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
-                      ))}
-                      <span className="wc-sep" />
-                      <span className="glc-tag">LOOP</span>
-                      {[1, 2, 4, 8, 16].map(n => (
-                        <button key={n} className={`btn wc-btn ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
-                          disabled={dis || (isCue && !bpm)} title={`Loop ${n} beat${n > 1 ? 's' : ''} from here`}
-                          onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
-                      ))}
-                      {activeLoop != null && (
-                        <button className="btn btn-secondary wc-btn" onClick={() => setChanLoop(null)}>Exit</button>
-                      )}
-                      {isCue && (
-                        <>
-                          <span className="wc-sep" />
-                          <span className="glc-tag">PITCH</span>
-                          <input type="range" className="glc-pitch" min={-8} max={8} step={0.1} disabled={dis}
-                            value={((cuePitch[ch] ?? 1) - 1) * 100} title="Manual pitch % (double-click: 0)"
-                            onDoubleClick={() => { setCuePitchState(ps => ({ ...ps, [ch]: 1 })); playerRef.current!.setCuePitch(ch, 1); }}
-                            onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(ps => ({ ...ps, [ch]: r })); playerRef.current!.setCuePitch(ch, r); }} />
-                          <span className="wc-label">{(((cuePitch[ch] ?? 1) - 1) * 100).toFixed(1)}%</span>
-                        </>
-                      )}
-                    </span>
-                  )}
-                </span>
+                  {renderedChannels.map(({ ch, label }) => {
+                    const dis = ch !== 'a' && !strips[ch];
+                    const isCue = ch !== 'a' && ch !== 'b';
+                    const v = strips[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP);
+                    const set = (patch: Partial<StripState>) => {
+                      mixTouch.current = Date.now();
+                      setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP)), ...patch } }));
+                    };
+                    const bpm = isCue ? meta[ch]?.bpm : null;
+                    const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
+                    const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
+                    const setChanLoop = (n: number | null) => {
+                      const p = playerRef.current!;
+                      if (isCue) {
+                        if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
+                        else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
+                      } else {
+                        if (n == null) { p.exitLoop(); setLoopBeats(null); }
+                        else { p.setLoop(n); setLoopBeats(n); }
+                      }
+                    };
+                    return (
+                      <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
+                        <span className="glc-strip-row">
+                        <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                        <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
+                        <label className="glc-ctl">
+                          <span className="glc-tag">VOL</span>
+                          <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
+                            title={`Volume ${label} (double-click: 100%)`}
+                            onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
+                            onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
+                        </label>
+                        <label className="glc-ctl">
+                          <span className="glc-tag">FLT</span>
+                          <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
+                            title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
+                            onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
+                            onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
+                        </label>
+                        {(['low', 'mid', 'high'] as const).map(band => (
+                          <label className="glc-ctl" key={band}>
+                            <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
+                            <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
+                              title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
+                              onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
+                              onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
+                          </label>
+                        ))}
+                        {monitorDeviceId && (
+                          <>
+                            <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
+                              title={`Pre-fade listen ${label} in headphones`}
+                              onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
+                              🎧
+                            </button>
+                            {ch !== 'a' && (
+                              <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
+                                title={`Push ${label} to master output (unmute from headphone-only)`}
+                                onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
+                                🔊
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {isCue && (
+                          <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                            onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
+                            <Square size={12} />
+                          </button>
+                        )}
+                        </span>
+                        {ch !== 'b' && (
+                          <span className="glc-strip-row glc-strip-perf">
+                            <span className="glc-tag">JMP</span>
+                            {[-4, -1, 1, 4].map(n => (
+                              <button key={n} className="btn btn-secondary wc-btn" disabled={dis || (isCue && !bpm)}
+                                title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
+                            ))}
+                            <span className="wc-sep" />
+                            <span className="glc-tag">LOOP</span>
+                            {[1, 2, 4, 8, 16].map(n => (
+                              <button key={n} className={`btn wc-btn ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
+                                disabled={dis || (isCue && !bpm)} title={`Loop ${n} beat${n > 1 ? 's' : ''} from here`}
+                                onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
+                            ))}
+                            {activeLoop != null && (
+                              <button className="btn btn-secondary wc-btn" onClick={() => setChanLoop(null)}>Exit</button>
+                            )}
+                            {isCue && (
+                              <>
+                                <span className="wc-sep" />
+                                <span className="glc-tag">PITCH</span>
+                                <input type="range" className="glc-pitch" min={-8} max={8} step={0.1} disabled={dis}
+                                  value={((cuePitch[ch] ?? 1) - 1) * 100} title="Manual pitch % (double-click: 0)"
+                                  onDoubleClick={() => { setCuePitchState(ps => ({ ...ps, [ch]: 1 })); playerRef.current!.setCuePitch(ch, 1); }}
+                                  onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(ps => ({ ...ps, [ch]: r })); playerRef.current!.setCuePitch(ch, r); }} />
+                                <span className="wc-label">{(((cuePitch[ch] ?? 1) - 1) * 100).toFixed(1)}%</span>
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
 
             {audioOutputs.length > 1 && (
               <span className="glc-group">
