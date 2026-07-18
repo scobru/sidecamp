@@ -7,6 +7,7 @@ import {
   Eye, EyeOff
 } from 'lucide-react';
 import { GraphView, type LiveConfig } from 'graph-ui';
+import { Button } from 'tunecamp-design-system';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
@@ -1479,12 +1480,12 @@ function App() {
               <span style={{ flex: 1, fontSize: '0.9rem' }}>
                 Sidecamp <strong>{update.latestVersion}</strong> is available (you have {update.currentVersion}).
               </span>
-              <button className="btn btn-primary" style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem' }} onClick={() => window.electronAPI.openReleasesPage()}>
+              <Button variant="primary" style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem' }} onClick={() => window.electronAPI.openReleasesPage()}>
                 Download
-              </button>
-              <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }} onClick={() => setUpdateDismissed(true)} title="Dismiss">
+              </Button>
+              <Button variant="secondary" style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }} onClick={() => setUpdateDismissed(true)} title="Dismiss">
                 <X size={14} />
-              </button>
+              </Button>
             </div>
           )}
           {activeTab === 'peer' && (
@@ -1499,29 +1500,29 @@ function App() {
                 <>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
                     {browserRoots.map((r, i) => (
-                      <button key={i} className={`btn ${browserRoot === r.path ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(r.path)}>
+                      <Button key={i} variant={browserRoot === r.path ? 'primary' : 'secondary'} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => selectBrowserRoot(r.path)}>
                         <Folder size={13} /> {r.label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   {browserRoot && (
                     <>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}><ChevronUp size={13} /> Up</button>
+                        <Button variant="secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={browserGoUp} disabled={!browserPath}><ChevronUp size={13} /> Up</Button>
                         <span>{(browserRoot.split(/[/\\]/).pop() || browserRoot)}{browserPath ? ' / ' + browserPath.replace(/\//g, ' / ') : ''}</span>
                       </div>
                       {movingItem && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '0.6rem 0.9rem', marginBottom: '1rem', background: 'rgba(179,102,255,0.12)', border: '1px solid var(--primary)', borderRadius: '8px', fontSize: '0.85rem' }}>
                           <span>Moving <strong>{movingItem.name}</strong> — navigate to a folder, then:</span>
-                          <button className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={handleMoveHere}>Move here</button>
-                          <button className="btn btn-secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => setMovingItem(null)}>Cancel</button>
+                          <Button variant="primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={handleMoveHere}>Move here</Button>
+                          <Button variant="secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => setMovingItem(null)}>Cancel</Button>
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
                         <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="New subfolder name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} />
-                        <button className="btn btn-primary" onClick={handleCreateFolder} disabled={!newFolderName.trim()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Button variant="primary" onClick={handleCreateFolder} disabled={!newFolderName.trim()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <FolderPlus size={16} /> Create
-                        </button>
+                        </Button>
                       </div>
                       {browserError && <div style={{ color: '#e74c3c', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{browserError}</div>}
                       {browserEntries.length > 0 && (
@@ -1581,11 +1582,11 @@ function App() {
                 <div style={{ flex: '0 0 260px', minWidth: '220px' }}>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '0.5rem' }}>
                     <input type="text" value={newPlaylistName} onChange={e => setNewPlaylistName(e.target.value)} placeholder="New playlist name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && createPlaylist()} />
-                    <button className="btn btn-primary" onClick={createPlaylist} disabled={!newPlaylistName.trim()} title="Create playlist"><FolderPlus size={16} /></button>
+                    <Button variant="primary" onClick={createPlaylist} disabled={!newPlaylistName.trim()} title="Create playlist"><FolderPlus size={16} /></Button>
                   </div>
-                  <button className="btn btn-secondary" onClick={handleImportPlaylistJson} title="Import playlist with transitions" style={{ width: '100%', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0.45rem 0.8rem', fontSize: '0.82rem' }}>
+                  <Button variant="secondary" onClick={handleImportPlaylistJson} title="Import playlist with transitions" style={{ width: '100%', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0.45rem 0.8rem', fontSize: '0.82rem' }}>
                     <Share2 size={14} /> Import Playlist (JSON)
-                  </button>
+                  </Button>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {playlists.map(p => (
                       <div
@@ -1616,9 +1617,9 @@ function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                         <h4 style={{ margin: 0 }}>{activePlaylist.name} <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)' }}>({activePlaylist.tracks.length} tracks)</span></h4>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          {activePlaylist.tracks.length > 0 && <button className="btn btn-primary" onClick={() => playAt(playlistQueue, 0)} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>▶ Play</button>}
-                          <button className="btn btn-accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}><Download size={14} /> Export (CDJ)</button>
-                          <button className="btn btn-secondary" onClick={handleExportPlaylistJson} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Share2 size={14} /> Export Graph (JSON)</button>
+                          {activePlaylist.tracks.length > 0 && <Button variant="primary" onClick={() => playAt(playlistQueue, 0)} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>▶ Play</Button>}
+                          <Button variant="accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}><Download size={14} /> Export (CDJ)</Button>
+                          <Button variant="secondary" onClick={handleExportPlaylistJson} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Share2 size={14} /> Export Graph (JSON)</Button>
                         </div>
                       </div>
                       {exportMsg && <div style={{ padding: '0.5rem 0.8rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.82rem', wordBreak: 'break-all' }}>{exportMsg}</div>}
@@ -1649,7 +1650,7 @@ function App() {
                             return (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.45rem 0.8rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
                                 <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename}</span>
-                                <button className="btn btn-secondary" onClick={() => addTrackToActive(file)} disabled={already} style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }}>{already ? '✓ Added' : '+ Add'}</button>
+                                <Button variant="secondary" onClick={() => addTrackToActive(file)} disabled={already} style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }}>{already ? '✓ Added' : '+ Add'}</Button>
                               </div>
                             );
                           })}
@@ -1670,9 +1671,9 @@ function App() {
               {!activePlaylist ? (
                 <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
                   <p style={{ marginBottom: '1.2rem' }}>Select or create a playlist in the Library panel under Playlists first — the graph edits the active playlist.</p>
-                  <button className="btn btn-primary" onClick={() => { setActiveTab('library'); setLibraryPanel('playlists'); }}>
+                  <Button variant="primary" onClick={() => { setActiveTab('library'); setLibraryPanel('playlists'); }}>
                     Go to Library Playlists
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <GraphView
@@ -1721,9 +1722,9 @@ function App() {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                <button className="btn btn-secondary" onClick={handleOrganizePickFolder} disabled={organizeBusy} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Button variant="secondary" onClick={handleOrganizePickFolder} disabled={organizeBusy} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Folder size={16} /> {organizeRoot ? 'Change folder' : 'Pick folder'}
-                </button>
+                </Button>
                 {organizeRoot && <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)', wordBreak: 'break-all' }}>{organizeRoot}</span>}
               </div>
 
@@ -1740,23 +1741,23 @@ function App() {
                     <option value="artist-album">By Artist / Album</option>
                     <option value="genre">By Genre</option>
                   </select>
-                  <button className="btn btn-primary" onClick={() => handleOrganizeScan()} disabled={organizeBusy}>
+                  <Button variant="primary" onClick={() => handleOrganizeScan()} disabled={organizeBusy}>
                     {organizeBusy ? 'Working…' : 'Scan'}
-                  </button>
+                  </Button>
                   {organizePlan && organizePlan.actions.length > 0 && (
-                    <button className="btn btn-primary" onClick={handleOrganizeApply} disabled={organizeBusy}>
+                    <Button variant="primary" onClick={handleOrganizeApply} disabled={organizeBusy}>
                       Apply {organizePlan.actions.length} changes
-                    </button>
+                    </Button>
                   )}
                   {!genreBusy && (
-                    <button className="btn btn-secondary" onClick={handleFillGenres} disabled={organizeBusy} title="Look up missing genres — Beatport for electronic, MusicBrainz for the rest (~1.4s per track)">
+                    <Button variant="secondary" onClick={handleFillGenres} disabled={organizeBusy} title="Look up missing genres — Beatport for electronic, MusicBrainz for the rest (~1.4s per track)">
                       Fill genres
-                    </button>
+                    </Button>
                   )}
                   {genreBusy && (
-                    <button className="btn btn-secondary" onClick={() => window.electronAPI.organizeFillGenresCancel()}>
+                    <Button variant="secondary" onClick={() => window.electronAPI.organizeFillGenresCancel()}>
                       Cancel genre lookup
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -1880,28 +1881,28 @@ function App() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {selectedFiles.length > 0 && (
                     <>
-                      <button className="btn btn-accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Magnet size={14} /> Seed ({selectedFiles.length})</button>
-                      <button className="btn btn-accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Cloud size={14} /> Upload ({selectedFiles.length})</button>
-                      <button className="btn btn-secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Plus size={14} /> Playlist</button>
-                      <button className="btn btn-danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Trash2 size={14} /> Delete ({selectedFiles.length})</button>
-                      <button className="btn btn-secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
+                      <Button variant="accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Magnet size={14} /> Seed ({selectedFiles.length})</Button>
+                      <Button variant="accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Cloud size={14} /> Upload ({selectedFiles.length})</Button>
+                      <Button variant="secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Plus size={14} /> Playlist</Button>
+                      <Button variant="danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Trash2 size={14} /> Delete ({selectedFiles.length})</Button>
+                      <Button variant="secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
                     </>
                   )}
                   {analyzing ? (
-                    <button className="btn btn-secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ {analyzing.done}/{analyzing.total}</button>
+                    <Button variant="secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ {analyzing.done}/{analyzing.total}</Button>
                   ) : (
-                    <button className="btn btn-secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Headphones size={14} /> Analyze</button>
+                    <Button variant="secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Headphones size={14} /> Analyze</Button>
                   )}
                   {libraryFiltered.length > 0 && (
-                    <button className="btn btn-primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</button>
+                    <Button variant="primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</Button>
                   )}
-                  <button className={`btn ${showPlaylists ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('playlists')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</button>
-                  <button className={`btn ${showOrganize ? 'btn-accent' : 'btn-secondary'}`} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</button>
-                  <button className="btn btn-secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</button>
-                  <button className={`btn ${showLibraryTable ? 'btn-secondary' : 'btn-accent'}`} onClick={() => setShowLibraryTable(v => !v)}
+                  <Button variant={showPlaylists ? 'accent' : 'secondary'} onClick={() => togglePanel('playlists')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</Button>
+                  <Button variant={showOrganize ? 'accent' : 'secondary'} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</Button>
+                  <Button variant="secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</Button>
+                  <Button variant={showLibraryTable ? 'secondary' : 'accent'} onClick={() => setShowLibraryTable(v => !v)}
                     title={showLibraryTable ? 'Hide library table' : 'Show library table'} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
                     {showLibraryTable ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+                  </Button>
                 </div>
               </div>
               {showLibraryTable && <div className="library-body">
@@ -2083,9 +2084,9 @@ function App() {
               </div>
 
               <div className="btn-group" style={{ alignItems: 'center' }}>
-                <button className="btn btn-primary" onClick={handleSaveSettings}>
+                <Button variant="primary" onClick={handleSaveSettings}>
                   Save Configuration
-                </button>
+                </Button>
                 {settingsSaved && <span style={{ color: 'var(--accent)', marginLeft: '1rem', fontWeight: 600 }}>✓ Configuration saved!</span>}
               </div>
 
@@ -2125,9 +2126,9 @@ function App() {
               <div className="network-peers-pane" style={{ flex: '1', borderRight: '1px solid var(--glass-border)', paddingRight: '2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                   <h3 style={{ margin: 0, fontSize: '1.15rem', fontFamily: 'var(--font-headings)' }}>Connected Peers</h3>
-                  <button className="btn btn-secondary" onClick={loadNetworkPeers} disabled={isLoadingPeers} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
+                  <Button variant="secondary" onClick={loadNetworkPeers} disabled={isLoadingPeers} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
                     {isLoadingPeers ? 'Refreshing...' : 'Refresh'}
-                  </button>
+                  </Button>
                 </div>
                 {isLoadingPeers ? (
                   <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
@@ -2257,12 +2258,12 @@ function App() {
                   </div>
                 </div>
                 <div className="btn-group" style={{ marginTop: '1.5rem' }}>
-                  <button className="btn btn-primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || validFolders.length === 0}>
+                  <Button variant="primary" onClick={handleStartPeer} disabled={peerStatus === 'online' || validFolders.length === 0}>
                     Start Sharing
-                  </button>
-                  <button className="btn btn-danger" onClick={handleStopPeer} disabled={peerStatus === 'offline'}>
+                  </Button>
+                  <Button variant="danger" onClick={handleStopPeer} disabled={peerStatus === 'offline'}>
                     Stop
-                  </button>
+                  </Button>
                 </div>
               </div>
               
@@ -2305,9 +2306,9 @@ function App() {
                     disabled={peerStatus !== 'online'}
                     onKeyDown={e => e.key === 'Enter' && handleSendChat()}
                   />
-                  <button className="btn btn-primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatTo.trim() || !chatText.trim()}>
+                  <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatTo.trim() || !chatText.trim()}>
                     Send
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -2415,7 +2416,7 @@ function App() {
                       className="glass-input search-input"
                       onKeyDown={e => e.key === 'Enter' && handleSearch()}
                     />
-                    <button className="btn btn-primary" onClick={handleSearch}>Search</button>
+                    <Button variant="primary" onClick={handleSearch}>Search</Button>
                   </div>
 
                   {searchResults.length === 0 ? (
@@ -2470,13 +2471,13 @@ function App() {
                         className="glass-input search-input"
                         disabled={isDownloading}
                       />
-                      <button 
-                        className="btn btn-primary" 
+                      <Button 
+                        variant="primary" 
                         onClick={handleDirectDownload}
                         disabled={isDownloading || !directUrl}
                       >
                         {isDownloading ? 'Downloading...' : 'Download'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
@@ -2525,7 +2526,7 @@ function App() {
               {/* Transfer Queue Section */}
               <div className="files-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 style={{ margin: 0 }}>Active & Failed Transfers</h3>
-                <button className="btn btn-secondary" onClick={purgeFailedDownloads}>Purge Failed</button>
+                <Button variant="secondary" onClick={purgeFailedDownloads}>Purge Failed</Button>
               </div>
 
               <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '5px', marginBottom: '2rem' }}>
@@ -2551,10 +2552,10 @@ function App() {
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {dl.status === 'seeding' && (
-                        <button className="btn btn-secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</button>
+                        <Button variant="secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</Button>
                       )}
                       {(dl.status === 'failed' || dl.status === 'completed') && (
-                        <button className="btn btn-secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</button>
+                        <Button variant="secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
                       )}
                     </div>
                   </div>
@@ -2700,8 +2701,8 @@ function App() {
               <input type="text" value={metadataAlbum} onChange={e => setMetadataAlbum(e.target.value)} className="glass-input" />
             </div>
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setMetadataModalFile(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmUpload}>Upload</button>
+              <Button variant="secondary" onClick={() => setMetadataModalFile(null)}>Cancel</Button>
+              <Button variant="primary" onClick={confirmUpload}>Upload</Button>
             </div>
           </div>
         </div>
@@ -2720,8 +2721,8 @@ function App() {
               <input type="text" value={albumSeedName} onChange={e => setAlbumSeedName(e.target.value)} className="glass-input" placeholder="Enter album or torrent name" />
             </div>
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setAlbumSeedModalOpen(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmSeedSelected}>Start Seeding</button>
+              <Button variant="secondary" onClick={() => setAlbumSeedModalOpen(false)}>Cancel</Button>
+              <Button variant="primary" onClick={confirmSeedSelected}>Start Seeding</Button>
             </div>
           </div>
         </div>
@@ -2752,8 +2753,8 @@ function App() {
               <input type="text" value={editTagsData.filename} onChange={e => setEditTagsData(prev => ({ ...prev, filename: e.target.value }))} className="glass-input" />
             </div>
             <div className="btn-group" style={{ marginTop: '2rem', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setEditTagsFile(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmEditTags}>Save Tags</button>
+              <Button variant="secondary" onClick={() => setEditTagsFile(null)}>Cancel</Button>
+              <Button variant="primary" onClick={confirmEditTags}>Save Tags</Button>
             </div>
           </div>
         </div>

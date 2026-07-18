@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { GraphView, type LiveConfig, type GraphTrack, type GraphEdge, type GraphMeta } from 'graph-ui';
+import { Button } from 'tunecamp-design-system';
 import { Sun, Moon, HelpCircle } from 'lucide-react';
 import LibraryPanel, { type LibTrack } from './components/LibraryPanel';
 import QuickTour from './components/QuickTour';
@@ -149,12 +150,12 @@ function App() {
           GRAPHOFONE
         </h1>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setShowTour(true)} className="btn" style={{ padding: '0.4rem', background: 'transparent', border: 'none', color: 'var(--text-muted)' }} title="Quick tour">
+        <Button onClick={() => setShowTour(true)} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="Quick tour">
           <HelpCircle size={18} />
-        </button>
-        <button onClick={toggleTheme} className="btn" style={{ padding: '0.4rem', background: 'transparent', border: 'none', color: 'var(--text-muted)' }} title="Toggle light/dark mode">
+        </Button>
+        <Button onClick={toggleTheme} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="Toggle light/dark mode">
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        </Button>
       </header>
       
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

@@ -38,113 +38,12 @@
   box-shadow: 0 0 0 3px rgba(179, 102, 255, 0.15);
 }
 
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--tc-space-2);
-  padding: 0.75rem 1.4rem;
-  border-radius: var(--tc-radius-full);
-  font-family: var(--tc-font-family-sans);
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all var(--tc-transition-normal);
-  outline: none;
-  border: 1px solid transparent;
-  user-select: none;
-  position: relative;
-  overflow: hidden;
-  box-shadow: var(--tc-shadow-sm);
-}
-
-.btn::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 1px 0 var(--tc-color-glass-border-top), inset 0 -1px 0 var(--tc-color-glass-border-bottom);
-  pointer-events: none;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background-color: var(--tc-color-bg-surface-hover);
-  color: var(--tc-color-text-primary);
-  border-color: var(--tc-color-border-subtle);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: var(--tc-color-bg-surface-active);
-  border-color: var(--tc-color-border-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--tc-shadow-md);
-}
-
-.btn-primary:active:not(:disabled) {
-  transform: scale(0.95);
-  box-shadow: var(--tc-shadow-sm);
-}
-
-.btn-accent {
-  background-color: var(--tc-color-accent-cyan);
-  color: #0d0c10;
-}
-
-.btn-accent:hover:not(:disabled) {
-  box-shadow: var(--tc-glow-cyan);
-  transform: translateY(-2px);
-}
-
-.btn-accent:active:not(:disabled) {
-  transform: scale(0.95);
-  box-shadow: var(--tc-shadow-sm);
-}
-
-.btn-secondary {
-  background-color: var(--tc-color-glass-bg);
-  color: var(--tc-color-text-primary);
-  border-color: var(--tc-color-border-subtle);
-  backdrop-filter: blur(12px);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--tc-color-border-hover);
-  background-color: var(--tc-color-bg-surface-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--tc-shadow-md);
-}
-
-.btn-secondary:active:not(:disabled) {
-  transform: scale(0.95);
-  box-shadow: var(--tc-shadow-sm);
-}
-
-.btn-danger {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.2);
-}
-
-.btn-danger:hover:not(:disabled) {
-  background-color: rgba(239, 68, 68, 0.2);
-  transform: translateY(-2px);
-  box-shadow: var(--tc-shadow-md);
-}
+/* Button skin lives in packages/graph-ui/src/styles/graph.css — canonical
+   source since GraphView (used by both apps) still renders raw .btn-* nodes. */
 
 .btn-group {
   display: flex;
   gap: 1rem;
-}
-
-.btn:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 2px;
 }
 
 /* Terminal Log */

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FolderOpen, Plus, Trash2, Headphones, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Button } from 'tunecamp-design-system';
 
 export type LibTrack = {
   path: string;
@@ -38,9 +39,9 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
       <div style={{ padding: collapsed ? '1rem 0.5rem' : '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', minHeight: 0 }}>
         
         <div style={{ display: 'flex', justifyContent: collapsed ? 'center' : 'flex-end', marginBottom: '-0.5rem' }}>
-          <button onClick={() => setCollapsed(!collapsed)} className="btn" style={{ padding: '0.4rem', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}>
+          <Button onClick={() => setCollapsed(!collapsed)} variant="ghost" size="sm" style={{ padding: '0.4rem' }}>
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-          </button>
+          </Button>
         </div>
 
         {!collapsed && (
@@ -54,23 +55,23 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
         )}
         
         <div style={{ display: 'flex', gap: '0.5rem', flexDirection: collapsed ? 'column' : 'row', alignItems: 'center' }}>
-          <button data-tour="import" onClick={onImport} className="btn btn-secondary" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
+          <Button data-tour="import" onClick={onImport} variant="secondary" size="sm" style={{ flex: 1 }}>
             <FolderOpen size={14} /> {!collapsed && "Import"}
-          </button>
-          
+          </Button>
+
           {analyzing ? (
-            <button disabled className="btn btn-secondary" style={{ flex: 1, padding: '0.4rem 0.5rem', opacity: 0.7, display: 'flex', justifyContent: 'center' }}>
+            <Button disabled variant="secondary" size="sm" style={{ flex: 1, opacity: 0.7 }}>
               <Headphones size={14} /> {!collapsed && `${analyzing.done}/${analyzing.total}`}
-            </button>
+            </Button>
           ) : (
-            <button data-tour="analyze" onClick={onAnalyze} className="btn btn-accent" style={{ flex: 1, padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
+            <Button data-tour="analyze" onClick={onAnalyze} variant="accent" size="sm" style={{ flex: 1 }}>
               <Headphones size={14} /> {!collapsed && "Analyze"}
-            </button>
+            </Button>
           )}
 
-          <button onClick={onClear} className="btn btn-danger" style={{ padding: '0.4rem 0.5rem', display: 'flex', justifyContent: 'center' }}>
+          <Button onClick={onClear} variant="danger" size="sm">
             <Trash2 size={14} />
-          </button>
+          </Button>
         </div>
 
         <div className="track-table-wrap" data-tour="library" style={{ flex: 1, minHeight: 0, opacity: collapsed ? 0 : 1, pointerEvents: collapsed ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
@@ -93,9 +94,9 @@ export default function LibraryPanel({ library, onImport, onClear, onAnalyze, an
                     {t.artist && <div style={{ opacity: 0.6 }}>{t.artist}</div>}
                   </td>
                   <td>
-                    <button className="btn btn-primary" style={{ padding: '0.2rem', borderRadius: '50%' }} onClick={() => onAddTrack(t)}>
+                    <Button variant="primary" size="sm" style={{ padding: '0.2rem', borderRadius: '50%' }} onClick={() => onAddTrack(t)}>
                       <Plus size={14} />
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

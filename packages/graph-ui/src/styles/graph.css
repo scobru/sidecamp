@@ -100,7 +100,7 @@
   text-align: right;
 }
 .gpb-fading {
-  color: #fb923c;
+  color: var(--tc-color-accent-orange, #fb923c);
   font-weight: 700;
   font-size: 0.68rem;
   letter-spacing: 0.08em;
@@ -275,15 +275,15 @@
   transform: scale(calc(1 + var(--bass-amplitude, 0) * 0.12));
 }
 .graph-node.layerable circle {
-  stroke: #4ade80;
+  stroke: var(--accent, #4ade80);
   stroke-width: 2;
   animation: layer-pulse 1.5s ease-in-out infinite;
 }
 .graph-node.cued circle {
   fill: url(#node-grad-cued);
-  stroke: #fb923c;
+  stroke: var(--tc-color-accent-orange, #fb923c);
   stroke-width: 2.5;
-  filter: drop-shadow(0 0 8px #fb923c);
+  filter: drop-shadow(0 0 8px var(--tc-color-accent-orange, #fb923c));
 }
 
 /* Beat ripple effect */
@@ -301,7 +301,7 @@
 }
 .graph-node.cued .graph-node-ripple {
   display: block;
-  stroke: #fb923c;
+  stroke: var(--tc-color-accent-orange, #fb923c);
   animation: node-ripple 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
 }
 @keyframes node-ripple {
@@ -342,7 +342,7 @@
   stroke-width: 1.5px;
 }
 .graph-node-badge.cued-badge .badge-bg {
-  fill: #fb923c;
+  fill: var(--tc-color-accent-orange, #fb923c);
 }
 .graph-node-badge .badge-text {
   fill: var(--text-main);
@@ -384,6 +384,72 @@
   gap: 4px;
   padding: 0.15rem 0.1rem 0.4rem;
 }
+/* Shared button skin — canonical source for consuming apps too, since GraphView
+   is used by both and previously each app duplicated a diverged copy. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tc-space-2);
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--tc-radius-full);
+  font-family: var(--tc-font-family-sans);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--tc-transition-normal);
+  outline: none;
+  border: 1px solid transparent;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--tc-shadow-sm);
+}
+.btn::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 var(--tc-color-glass-border-top), inset 0 -1px 0 var(--tc-color-glass-border-bottom);
+  pointer-events: none;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary {
+  background-color: var(--tc-color-bg-surface-hover);
+  color: var(--tc-color-text-primary);
+  border-color: var(--tc-color-border-subtle);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--tc-color-bg-surface-active);
+  border-color: var(--tc-color-border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--tc-shadow-md);
+}
+.btn-primary:active:not(:disabled) { transform: scale(0.95); box-shadow: var(--tc-shadow-sm); }
+.btn-accent { background-color: var(--tc-color-accent-cyan); color: #0d0c10; }
+.btn-accent:hover:not(:disabled) { box-shadow: var(--tc-glow-cyan); transform: translateY(-2px); }
+.btn-accent:active:not(:disabled) { transform: scale(0.95); box-shadow: var(--tc-shadow-sm); }
+.btn-secondary {
+  background-color: var(--tc-color-glass-bg);
+  color: var(--tc-color-text-primary);
+  border-color: var(--tc-color-border-subtle);
+  backdrop-filter: blur(12px);
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--tc-color-border-hover);
+  background-color: var(--tc-color-bg-surface-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--tc-shadow-md);
+}
+.btn-secondary:active:not(:disabled) { transform: scale(0.95); box-shadow: var(--tc-shadow-sm); }
+.btn-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+.btn-danger:hover:not(:disabled) { background-color: rgba(239, 68, 68, 0.2); transform: translateY(-2px); box-shadow: var(--tc-shadow-md); }
+.btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; box-shadow: none; }
+
 .wc-btn { padding: 0.15rem 0.45rem !important; font-size: 0.75rem !important; line-height: 1.4; }
 .wc-sep {
   width: 1px;

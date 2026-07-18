@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button } from 'tunecamp-design-system';
 
 type Step = { selector: string; title: string; body: string };
 
@@ -74,11 +75,11 @@ export default function QuickTour({ onClose }: { onClose: () => void }) {
         <div className="tour-body">{step.body}</div>
         <div className="tour-nav">
           <span className="tour-progress">{idx + 1}/{STEPS.length}</span>
-          <button className="btn btn-secondary" onClick={onClose}>Skip</button>
-          {idx > 0 && <button className="btn btn-secondary" onClick={() => setIdx(idx - 1)}>Back</button>}
-          <button className="btn btn-primary" onClick={() => (last ? onClose() : setIdx(idx + 1))}>
+          <Button variant="secondary" size="sm" onClick={onClose}>Skip</Button>
+          {idx > 0 && <Button variant="secondary" size="sm" onClick={() => setIdx(idx - 1)}>Back</Button>}
+          <Button variant="primary" size="sm" onClick={() => (last ? onClose() : setIdx(idx + 1))}>
             {last ? 'Done' : 'Next'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
