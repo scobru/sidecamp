@@ -106,11 +106,14 @@ export class CrossfadePlayer {
   }
 
   /** Live frequency spectrum (0-255 per bin) of whatever's currently sounding, for the graph's animated background. */
+  private spectrumScratch: Uint8Array<ArrayBuffer> | null = null;
   getSpectrum(): Uint8Array | null {
     if (!this.analyser) return null;
-    const data = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteFrequencyData(data);
-    return data;
+    // reused scratch: called from two rAF loops, a fresh array per frame is pure GC churn
+    if (!this.spectrumScratch || this.spectrumScratch.length !== this.analyser.frequencyBinCount)
+      this.spectrumScratch = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(this.spectrumScratch);
+    return this.spectrumScratch;
   }
 
   private async load(path: string): Promise<AudioBuffer> {
@@ -168,7 +171,7 @@ export class CrossfadePlayer {
     const meter = ctx.createAnalyser();
     meter.fftSize = 1024;
     src.connect(low).connect(mid).connect(high).connect(hp).connect(lp).connect(gain).connect(vol).connect(master).connect(ctx.destination);
-    gain.connect(meter);
+    vol.connect(meter);
     gain.connect(pfl);
     if (this.monitorDest) pfl.connect(this.monitorDest);
     if (this.recordDest) master.connect(this.recordDest);
@@ -632,6 +635,23 @@ export class CrossfadePlayer {
     if (this.fadingDeck) { try { this.fadingDeck.src.stop(); } catch { /* already stopped */ } this.fadingDeck = null; }
     this.stopCue();
     this.onChange(null);
+  }
+
+  /** Full teardown for component unmount: stop() plus releasing the AudioContext.
+   * Without this every GraphView remount (playlist switch) leaks a live context —
+   * browsers cap them, so audio dies after a handful of switches. */
+  dispose() {
+    this.stop();
+    this.recorder?.stop();
+    this.recorder = null;
+    this.monitorEl?.pause();
+    this.monitorEl = null;
+    this.monitorDest = null;
+    this.bufCache.clear();
+    this.bufLoading.clear();
+    this.analyser = null;
+    this.ctx?.close().catch(() => {});
+    this.ctx = null;
   }
 
   private tick = () => {

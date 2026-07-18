@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu, safeStorage } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 
@@ -337,14 +337,39 @@ ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
   return true;
 });
 
+// Secrets at rest: renderer stores credentials encrypted with the OS keychain.
+// decrypt falls back to returning the input so legacy plaintext values keep working
+// (they get re-encrypted on the next settings save).
+ipcMain.handle('secure:encrypt', (_event, plain) => {
+  if (typeof plain !== 'string') throw new Error('Invalid input');
+  if (!safeStorage.isEncryptionAvailable()) return plain;
+  return safeStorage.encryptString(plain).toString('base64');
+});
+ipcMain.handle('secure:decrypt', (_event, stored) => {
+  if (typeof stored !== 'string') throw new Error('Invalid input');
+  try {
+    return safeStorage.decryptString(Buffer.from(stored, 'base64'));
+  } catch {
+    return stored; // legacy plaintext value
+  }
+});
+
 ipcMain.handle('downloads:rename', async (event, filePath, newFilename) => {
-  const dir = path.dirname(filePath);
-  const destPath = path.join(dir, newFilename);
+  if (typeof filePath !== 'string' || !isUnderAllowedRoot(path.resolve(filePath)))
+    throw new Error('Access denied: invalid path');
+  const dir = path.dirname(path.resolve(filePath));
+  // basename strips any path separators smuggled into the new filename
+  const destPath = path.join(dir, path.basename(String(newFilename)));
+  if (!isUnderAllowedRoot(destPath)) throw new Error('Access denied: invalid destination');
   await fs.promises.rename(filePath, destPath);
   return destPath;
 });
 
 ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
+  if (typeof filePath !== 'string' || !isUnderAllowedRoot(path.resolve(filePath)))
+    throw new Error('Access denied: invalid path');
+  if (typeof destFolder !== 'string' || !isUnderAllowedRoot(path.resolve(destFolder)))
+    throw new Error('Access denied: invalid destination');
   const fileName = path.basename(filePath);
   const destPath = path.join(destFolder, fileName);
   await fs.promises.mkdir(destFolder, { recursive: true });

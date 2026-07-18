@@ -173,7 +173,11 @@ function App() {
             edges={edges}
             meta={meta}
             library={libraryForGraph}
-            onAddTrack={() => {}} 
+            onAddTrack={(t, edgeFrom) => {
+              const lib = library.find(l => l.path === t.path);
+              if (lib) handleAddTrack(lib);
+              if (edgeFrom) setEdges(prev => prev.some(e => e[0] === edgeFrom && e[1] === t.path) ? prev : [...prev, [edgeFrom, t.path]]);
+            }}
             onAddEdge={(from, to) => setEdges(prev => [...prev, [from, to]])}
             onRemoveEdge={(from, to) => setEdges(prev => prev.filter(e => !(e[0] === from && e[1] === to)))}
             onRemoveTrack={(path) => {

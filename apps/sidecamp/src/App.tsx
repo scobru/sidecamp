@@ -251,9 +251,17 @@ function App() {
       setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-50));
     });
 
+    // Torrent progress can fire many times per second and each event re-renders the
+    // whole app — cap UI updates at ~4Hz per download. Final events (completed /
+    // seeding) always pass so the terminal state lands.
+    const lastProgressAt: Record<string, number> = {};
     window.electronAPI.onDownloadProgress((data: any) => {
+      const now = Date.now();
+      const isFinal = data.seeding || data.progress >= 1;
+      if (!isFinal && now - (lastProgressAt[data.id] || 0) < 250) return;
+      lastProgressAt[data.id] = now;
       setDlProgress(data);
-      
+
       setActiveDownloads(prev => {
         const index = prev.findIndex(d => d.id === data.id);
         if (index > -1) {
@@ -299,12 +307,16 @@ function App() {
     setFolder(savedFolders);
 
     const savedSlskUser = localStorage.getItem('slsk_user') || '';
-    const savedSlskPass = localStorage.getItem('slsk_pass') || '';
     setSlskUser(savedSlskUser);
-    setSlskPass(savedSlskPass);
+    // password is stored encrypted (OS keychain via safeStorage); decrypt returns
+    // legacy plaintext values unchanged
+    const storedPass = localStorage.getItem('slsk_pass') || '';
+    (async () => {
+      const savedSlskPass = storedPass ? await window.electronAPI.decryptString(storedPass) : '';
+      setSlskPass(savedSlskPass);
 
-    if (savedSlskUser && savedSlskPass) {
-      window.electronAPI.slskConnect(savedSlskUser, savedSlskPass)
+      if (savedSlskUser && savedSlskPass) {
+        await window.electronAPI.slskConnect(savedSlskUser, savedSlskPass)
         .then((connected: boolean) => {
           if (connected) {
             setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Auto-connected to Soulseek.`]);
@@ -312,7 +324,8 @@ function App() {
             setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Soulseek auto-connection failed.`]);
           }
         });
-    }
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1233,7 +1246,7 @@ function App() {
     localStorage.setItem('tc_server', server);
     localStorage.setItem('tc_token', token);
     localStorage.setItem('slsk_user', slskUser);
-    localStorage.setItem('slsk_pass', slskPass);
+    localStorage.setItem('slsk_pass', slskPass ? await window.electronAPI.encryptString(slskPass) : '');
     localStorage.setItem('shared_folders', folder);
 
     setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Connecting to Soulseek...`]);
@@ -2574,7 +2587,12 @@ function App() {
           el.play().catch(e => { if (e.name !== 'AbortError') console.error('Playback failed:', e); });
         }}
         onTimeUpdate={() => {
-          if (audioRef.current && !isSeeking) setCurrentTime(audioRef.current.currentTime);
+          if (!audioRef.current || isSeeking) return;
+          const t = audioRef.current.currentTime;
+          // whole-second granularity: skips ~3 of 4 timeupdate re-renders of the whole
+          // app; every readout is second- or percent-based so nothing visible changes
+          // (the big scrolling wave reads currentTime directly via rAF, not this state)
+          setCurrentTime(prev => (Math.floor(prev) === Math.floor(t) ? prev : t));
         }}
         onDurationChange={() => {
           // Network/live streams report Infinity or NaN — treat those as "unknown" (0)

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { _setCacheFile, getTracksMeta, setCachedAnalysis } from '../electron/track-meta';
+import { _setCacheFile, _flushWrites, getTracksMeta, setCachedAnalysis } from '../electron/track-meta';
 
 let tmp: string;
 let cacheFile: string;
@@ -15,6 +15,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await _flushWrites();
   await fs.remove(tmp);
 });
 
@@ -52,7 +53,6 @@ describe('track-meta', () => {
     const metas = await getTracksMeta([f]);
     expect(metas[f].bpm).toBe(140);
     expect(metas[f].peaks).toEqual([1, 2, 3]);
-    await new Promise(r => setTimeout(r, 50)); // let writeQueue drain before afterEach removes tmp
   });
 
   it('setCachedAnalysis on a vanished file is a no-op', async () => {
@@ -64,7 +64,7 @@ describe('track-meta', () => {
     await fs.writeFile(f, 'x');
     const first = await getTracksMeta([f]);
     expect(first[f].title).toBe('Gollum');
-    await new Promise(r => setTimeout(r, 50)); // let writeQueue drain
+    await _flushWrites();
     const data = await fs.readJson(cacheFile);
     expect(data[f].meta.artist).toBe('Homologo');
     const second = await getTracksMeta([f]);

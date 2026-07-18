@@ -4,6 +4,9 @@ import electron from 'vite-plugin-electron/simple'
 
 // https://vite.dev/config/
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ['audio-engine', 'graph-ui'],
+  },
   plugins: [
     react(),
     electron({

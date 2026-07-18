@@ -47,6 +47,9 @@ function getCacheFile(): string {
 // override for tests
 export function _setCacheFile(p: string) { cacheFile = p; cache = null; }
 
+// awaits any pending disk writes; tests use this before removing their tmp dir
+export function _flushWrites(): Promise<void> { return writeQueue; }
+
 async function loadCache(): Promise<Record<string, CacheEntry>> {
   if (cache) return cache;
   try {

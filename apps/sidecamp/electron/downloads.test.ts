@@ -65,7 +65,7 @@ describe('Downloads IPC Handlers', () => {
     const safePath = path.join('/test/downloads/Sidecamp', 'safe.txt');
     const result = await openHandler({}, safePath);
     expect(result).toBe(true);
-    expect(mockShell.openPath).toHaveBeenCalledWith(safePath);
+    expect(mockShell.openPath).toHaveBeenCalledWith(path.resolve(safePath));
   });
 
   it('should block opening a file outside the download directory (directory traversal)', async () => {

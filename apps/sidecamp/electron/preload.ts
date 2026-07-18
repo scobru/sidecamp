@@ -75,6 +75,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   organizeFillGenresCancel: () => ipcRenderer.invoke('organize:fill-genres-cancel'),
   onGenreProgress: (callback: (data: { current: number; total: number; file: string; genre: string | null }) => void) => { ipcRenderer.removeAllListeners('organize:genre-progress'); ipcRenderer.on('organize:genre-progress', (_, data) => callback(data)); },
 
+  encryptString: (plain: string) => ipcRenderer.invoke('secure:encrypt', plain),
+  decryptString: (stored: string) => ipcRenderer.invoke('secure:decrypt', stored),
+
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
   getPeerTracks: (server: string, token: string, sessionId: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId),

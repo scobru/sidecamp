@@ -8,6 +8,8 @@ import {
   type EqPreset, type NodeEqPreset, type BandPeaks, type QueueItem, type LiveConfig,
   type StripState, type NowPlaying, type EqBands,
 } from 'audio-engine';
+import { Button } from 'tunecamp-design-system';
+import 'tunecamp-design-system/style.css';
 import TransitionWave from './components/TransitionWave';
 import './styles/graph.css';
 // Re-export types that App.tsx imports from this module
@@ -94,6 +96,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [liveFilter, setLiveFilter] = useState(0); // -100..100
   const [masterOn, setMasterOn] = useState(() => liveConfig?.masterOn ?? false);
   const [masterBpm, setMasterBpm] = useState(() => liveConfig?.masterBpm ?? 125); // Ableton-style global tempo target
+  const [mixerLayout, setMixerLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [activeView, setActiveView] = useState<'arrangement' | 'session'>('arrangement');
   // restore saved master tempo on mount (player starts fresh each mount)
   useEffect(() => { if (masterOn) playerRef.current?.setMasterTempo(masterBpm); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // persist the live-set config with the playlist whenever any piece changes
@@ -120,6 +124,23 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     }, 600);
     return () => clearInterval(iv);
   }, [nowPlaying, masterOn]);
+
+  // Global keydown handler for Tab key view switcher
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        const activeEl = document.activeElement;
+        if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) {
+          return;
+        }
+        e.preventDefault();
+        setActiveView(prev => prev === 'arrangement' ? 'session' : 'arrangement');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // VU meters: style-only updates at display rate, no React re-render
   const vuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   // Playback progress bar — DOM-only updates at ~30fps, no React re-render
@@ -135,7 +156,14 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     const step = () => {
       // VU meters every frame
       for (const [ch, el] of Object.entries(vuRefs.current)) {
-        if (el) el.style.transform = `scaleX(${playerRef.current?.getDeckLevel(ch) ?? 0})`;
+        if (el) {
+          const lvl = playerRef.current?.getDeckLevel(ch) ?? 0;
+          if (mixerLayout === 'vertical') {
+            el.style.transform = `scaleY(${lvl})`;
+          } else {
+            el.style.transform = `scaleX(${lvl})`;
+          }
+        }
       }
 
       // Audio-reactive amplitude for CSS scale effect
@@ -310,7 +338,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         .catch(() => {})
         .finally(() => setSavingRec(false));
     };
-    return () => p.stop();
+    // dispose, not stop: unmount must also release the AudioContext or every
+    // playlist switch (remount via key) leaks one until the browser cap kills audio
+    return () => p.dispose();
   }, []);
 
   const toggleRecording = () => {
@@ -405,7 +435,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         n.x = Math.max(R, Math.min(W - R, n.x + n.vx));
         n.y = Math.max(R, Math.min(H - R, n.y + n.vy));
       }
-      force(v => v + 1);
+      // paint every other tick: sim stays at 60Hz but React re-renders at 30Hz —
+      // halves the render cost of the cooling phase; last tick always paints
+      if ((cooling & 1) === 0 || cooling === 1) force(v => v + 1);
       if (dragActive) cooling = 220;
       if (--cooling > 0) raf = requestAnimationFrame(step);
     };
@@ -654,6 +686,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     const cv = bgRef.current;
     if (!cv) return;
     const ctx = cv.getContext('2d')!;
+    // idle: one clear, no 60fps loop burning CPU while nothing plays
+    if (!nowPlaying) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
     let raf = 0;
     const draw = () => {
       const w = cv.clientWidth, h = cv.clientHeight;
@@ -680,27 +714,37 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     return () => cancelAnimationFrame(raf);
   }, [nowPlaying]);
 
+  const statusBarText = (() => {
+    if (savingRec) return 'Saving recording…';
+    if (selected) {
+      const m = meta[selected];
+      const details = m ? `${m.bpm ? Math.round(m.bpm) + ' BPM' : ''} ${m.key} ${m.genre}`.trim() : '';
+      return `${details} — Shift+click another node to link/unlink`;
+    }
+    return 'Click a node to select it (compatible nodes light up, suggestions appear below, and waveform opens to set cues/grid). Click an arrow to preview that transition.';
+  })();
+
   return (
     <div className="graph-view">
       <div className="graph-toolbar">
-        <button className={`btn ${recording ? 'btn-danger' : 'btn-secondary'}`} onClick={toggleRecording}
-          title={recording ? 'Stop recording and save the set' : 'Record this set to a file as you play it'}>
-          <Circle size={12} fill={recording ? 'currentColor' : 'none'} /> {recording ? 'Stop rec' : 'Rec'}
-        </button>
-        {savingRec && <span className="graph-hint">Saving recording…</span>}
-        <button className={`btn ${liveMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setLiveMode(v => !v)}
+        <Button variant={recording ? 'danger' : 'secondary'} size="sm" onClick={toggleRecording}
+          title={recording ? 'Stop recording and save the set' : 'Record this set to a file as you play it'}
+          leftIcon={<Circle size={12} fill={recording ? 'currentColor' : 'none'} />}>
+          {recording ? 'Stop rec' : 'Rec'}
+        </Button>
+        <Button variant={liveMode ? 'primary' : 'secondary'} size="sm" onClick={() => setLiveMode(v => !v)}
           title={liveMode ? 'Live: click an arrow to crossfade to that track now' : 'Enable live-arrow transitions while a track is playing'}>
           Live
-        </button>
+        </Button>
         {liveMode && (
-          <button className={`btn ${showShortcuts ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowShortcuts(v => !v)}
+          <Button variant={showShortcuts ? 'primary' : 'secondary'} size="sm" onClick={() => setShowShortcuts(v => !v)}
             title="Show/hide keyboard shortcuts">
             ⌨
-          </button>
+          </Button>
         )}
-        {selected ? (
+        {selected && (
           <>
-            <button className="btn btn-primary" onClick={() => playFrom(selected)}><Play size={13} /> Play path</button>
+            <Button variant="primary" size="sm" glowColor="cyan" onClick={() => playFrom(selected)} leftIcon={<Play size={13} />}>Play path</Button>
             <select className="transition-fade-select" value={nodeEq[selected] ?? 'off'}
               onChange={e => {
                 const p = e.target.value as NodeEqPreset;
@@ -710,22 +754,30 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               title="EQ preset held on this track's deck whenever it plays">
               {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>EQ: {NODE_EQ_LABELS[p]}</option>)}
             </select>
-            <button className="btn btn-danger" onClick={() => { onRemoveTrack(selected); setSelected(null); }}><X size={13} /> Remove</button>
-            <span className="graph-hint">
-              {(() => { const m = meta[selected]; return m ? `${m.bpm ? Math.round(m.bpm) + ' BPM' : ''} ${m.key} ${m.genre}`.trim() : ''; })()}
-              {' — Shift+click another node to link/unlink'}
-            </span>
+            <Button variant="danger" size="sm" onClick={() => { onRemoveTrack(selected); setSelected(null); }} leftIcon={<X size={13} />}>Remove</Button>
           </>
-        ) : (
-          <span className="graph-hint">Click a node to select it (compatible nodes light up, suggestions appear below, and waveform opens to set cues/grid). Click an arrow to preview that transition.</span>
         )}
         {nowPlaying && (
           <span className="graph-nowplaying">
             <Play size={12} /> {short(nowPlaying.name)}
-            <button className="btn btn-secondary" onClick={() => playerRef.current!.skip()} title="Skip to next (crossfade now)"><SkipForward size={12} /></button>
-            <button className="btn btn-secondary" onClick={() => playerRef.current!.stop()} title="Stop"><Square size={12} /></button>
+            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.skip()} title="Skip to next (crossfade now)" leftIcon={<SkipForward size={12} />} />
+            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.stop()} title="Stop" leftIcon={<Square size={12} />} />
           </span>
         )}
+        
+        <span className="wc-sep" style={{ marginLeft: nowPlaying ? 8 : 'auto' }} />
+        <span className="glc-tabs" style={{ background: 'rgba(0, 0, 0, 0.4)', flexShrink: 0 }}>
+          <button className={`btn wc-btn ${activeView === 'arrangement' ? 'btn-accent' : 'btn-secondary'}`}
+            onClick={() => setActiveView('arrangement')}
+            title="Arrangement (Graph View)">
+            Arrangement
+          </button>
+          <button className={`btn wc-btn ${activeView === 'session' ? 'btn-accent' : 'btn-secondary'}`}
+            onClick={() => setActiveView('session')}
+            title="Session (Mixer View)">
+            Session
+          </button>
+        </span>
       </div>
 
       {nowPlaying && (() => {
@@ -755,11 +807,254 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         </div>
       )}
 
-      {nowPlaying && (() => {
+      {activeView === 'session' && nowPlaying && (() => {
+        const activeChannels = [
+          { ch: 'a', label: 'A' },
+          // one strip per manually cued track (named); plain B strip only as fallback for the auto-fade deck
+          ...(cueingPaths.length
+            ? cueingPaths.map((p, idx) => ({ ch: p, label: String.fromCharCode(66 + idx) })) // B, C, D...
+            : [{ ch: 'b', label: 'B' }]),
+        ];
+
+        const renderedChannels = showAllStrips
+          ? activeChannels
+          : [activeChannels.find(x => x.ch === focusedStrip) ?? activeChannels[0]];
+
+        const currentStripCh = activeChannels.find(x => x.ch === focusedStrip)?.ch ?? 'a';
+
+        if (mixerLayout === 'vertical') {
+          return (
+            <div className="graph-live-controls glc-layout-vertical-main">
+              {/* Global / Master Control Column (Ableton Style Left Panel) */}
+              <div className="glc-global-panel-vertical">
+                <div className="glc-vert-header">
+                  <b className="wc-label glc-vert-ch-label" style={{ color: 'var(--text-muted)' }}>MST</b>
+                </div>
+
+                {/* Master Tempo Section */}
+                <div className="glc-global-section">
+                  <span className="glc-tag">TEMPO</span>
+                  <div className="glc-tempo-controls" style={{ flexDirection: 'column', gap: '6px', width: '100%' }}>
+                    <Button variant={masterOn ? 'primary' : 'secondary'} size="sm" className="wc-btn" style={{ width: '100%', padding: '4px 0' }}
+                      title="Master tempo: warp every deck to this BPM"
+                      onClick={() => {
+                        const on = !masterOn;
+                        let bpm = masterBpm;
+                        if (on) { const cur = meta[nowPlaying.path]?.bpm; if (cur) { bpm = Math.round(cur); setMasterBpm(bpm); } }
+                        setMasterOn(on);
+                        playerRef.current!.setMasterTempo(on ? bpm : null);
+                      }}>
+                      {masterOn ? 'Master ON' : 'Master OFF'}
+                    </Button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', width: '100%' }}>
+                      <input type="number" min={60} max={200} step={1} value={masterBpm} className="glc-tempo-input"
+                        onChange={e => {
+                          const v = Number(e.target.value) || 0;
+                          setMasterBpm(v);
+                          if (masterOn && v >= 60 && v <= 200) playerRef.current!.setMasterTempo(v);
+                        }} />
+                      <span className="glc-tag" style={{ margin: 0 }}>BPM</span>
+                    </div>
+                  </div>
+                  {masterOn && deckRates.a != null && (
+                    <div className="glc-warp-rates">
+                      <span>A×{deckRates.a.toFixed(2)}</span>
+                      {deckRates.cue != null && <span>B×{deckRates.cue.toFixed(2)}</span>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Layout & Focus Toggles */}
+                <div className="glc-global-section">
+                  <span className="glc-tag">LAYOUT</span>
+                  <div className="glc-layout-buttons">
+                    <button className="btn wc-btn btn-primary"
+                      title="Toggle vertical Ableton-style layout"
+                      onClick={() => setMixerLayout('horizontal')}>
+                      Horiz
+                    </button>
+                    <button className={`btn wc-btn ${showAllStrips ? 'btn-primary' : 'btn-secondary'}`}
+                      title="Toggle showing all mixer strips at once or only the focused one"
+                      onClick={() => setShowAllStrips(prev => !prev)}>
+                      {showAllStrips ? 'Single' : 'All'}
+                    </button>
+                  </div>
+                  
+                  {!showAllStrips && activeChannels.length > 1 && (
+                    <div className="glc-vert-tabs">
+                      {activeChannels.map(({ ch, label }) => (
+                        <button key={ch} className={`btn wc-btn ${currentStripCh === ch ? 'btn-accent' : 'btn-secondary'}`}
+                          title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}
+                          onClick={() => setFocusedStrip(ch)}>
+                          Ch {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Headphone Monitor Routing */}
+                {audioOutputs.length > 1 && (
+                  <div className="glc-global-section">
+                    <span className="glc-tag">🎧 MONITOR</span>
+                    <select className="transition-fade-select glc-monitor-select" value={monitorDeviceId ?? ''}
+                      title="Headphone output device for pre-fade listen (PFL)"
+                      onChange={e => {
+                        const id = e.target.value || null;
+                        setMonitorDeviceId(id);
+                        playerRef.current!.setMonitorDevice(id);
+                      }}>
+                      <option value="">Off</option>
+                      {audioOutputs.map(d => (
+                        <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Vertical Channel Strips Container */}
+              <div className="glc-strips-scroll-container">
+                {renderedChannels.map(({ ch, label }) => {
+                  const dis = ch !== 'a' && !strips[ch];
+                  const isCue = ch !== 'a' && ch !== 'b';
+                  const v = strips[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP);
+                  const set = (patch: Partial<StripState>) => {
+                    mixTouch.current = Date.now();
+                    setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP)), ...patch } }));
+                    if (['low', 'mid', 'high', 'filter'].some(k => k in patch))
+                      setStripPreset(s => s[ch] && s[ch] !== 'off' ? { ...s, [ch]: 'off' } : s);
+                  };
+                  const bpm = isCue ? meta[ch]?.bpm : null;
+                  const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
+                  const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
+                  const setChanLoop = (n: number | null) => {
+                    const p = playerRef.current!;
+                    if (isCue) {
+                      if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
+                      else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
+                    } else {
+                      if (n == null) { p.exitLoop(); setLoopBeats(null); }
+                      else { p.setLoop(n); setLoopBeats(n); }
+                    }
+                  };
+                  return (
+                    <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''} glc-strip-vertical`} key={ch}>
+                      <div className="glc-strip-vert-container">
+                        <div className="glc-vert-header">
+                          <b className="wc-label glc-vert-ch-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                        </div>
+                        
+                        <div className="glc-vert-eq-stack">
+                          {(['high', 'mid', 'low'] as const).map(band => {
+                            const val = Math.round(v[band]);
+                            return (
+                              <label className="glc-ctl glc-ctl-vert" key={band}>
+                                <div className="glc-ctl-vert-header">
+                                  <span className="glc-tag">{band === 'high' ? 'HI' : band === 'mid' ? 'MD' : 'LO'}</span>
+                                  <span className="glc-val-tag">{val > 0 ? `+${val}` : val}dB</span>
+                                </div>
+                                <input type="range" className="glc-eq" min={-24} max={6} value={val} disabled={dis}
+                                  title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
+                                  onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
+                                  onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
+                              </label>
+                            );
+                          })}
+                          
+                          <label className="glc-ctl glc-ctl-vert" style={{ marginTop: 4 }}>
+                            <div className="glc-ctl-vert-header">
+                              <span className="glc-tag">FLT</span>
+                              <span className="glc-val-tag">
+                                {v.filter === 0 ? 'FLAT' : v.filter > 0 ? `HP${Math.round(v.filter * 100)}` : `LP${Math.round(Math.abs(v.filter) * 100)}`}
+                              </span>
+                            </div>
+                            <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
+                              title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
+                              onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
+                              onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
+                          </label>
+                        </div>
+                        
+                        <div className="glc-vert-fader-area">
+                          <label className="glc-ctl glc-ctl-fader">
+                            <span className="glc-val-tag" style={{ marginBottom: 4 }}>{Math.round(v.vol * 100)}%</span>
+                            <input type="range" className="glc-vol glc-vol-vert" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
+                              title={`Volume ${label} (double-click: 100%)`}
+                              onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
+                              onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
+                            <span className="glc-tag" style={{ marginTop: 4 }}>VOL</span>
+                          </label>
+                          <span className="vu vu-vert"><span className="vu-fill vu-fill-vert" ref={el => { vuRefs.current[ch] = el; }} /></span>
+                        </div>
+                        
+                        <div className="glc-vert-buttons">
+                          {monitorDeviceId && (
+                            <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
+                              title={`Pre-fade listen ${label} in headphones`}
+                              onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
+                              🎧
+                            </button>
+                          )}
+                          {monitorDeviceId && ch !== 'a' && (
+                            <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
+                              title={`Push ${label} to master output`}
+                              onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
+                              🔊
+                            </button>
+                          )}
+                          {isCue && (
+                            <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                              onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
+                              <Square size={12} />
+                            </button>
+                          )}
+                        </div>
+                        
+                        {ch !== 'b' && (
+                          <div className="glc-vert-perf">
+                            <select className={`transition-fade-select glc-preset${(stripPreset[ch] ?? 'off') !== 'off' ? ' glc-preset-on' : ''}`}
+                              value={stripPreset[ch] ?? 'off'} disabled={dis} style={{ width: '100%', marginBottom: 4 }}
+                              onChange={e => applyStripPreset(ch, e.target.value as NodeEqPreset)}>
+                              {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>{NODE_EQ_LABELS[p]}</option>)}
+                            </select>
+                            <div className="glc-vert-perf-row">
+                              <span className="glc-tag" style={{ marginBottom: 2 }}>JMP</span>
+                              <div className="glc-midi-pads">
+                                {[-4, -1, 1, 4].map(n => (
+                                  <button key={n} className="btn wc-btn glc-midi-pad" disabled={dis || (isCue && !bpm)}
+                                    title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="glc-vert-perf-row">
+                              <span className="glc-tag" style={{ marginBottom: 2 }}>LOOP</span>
+                              <div className="glc-midi-pads">
+                                {[4, 8, 16].map(n => (
+                                  <button key={n} className={`btn wc-btn glc-midi-pad ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
+                                    disabled={dis || (isCue && !bpm)} onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
+                                ))}
+                                {activeLoop != null && (
+                                  <button className="btn btn-secondary wc-btn glc-midi-pad glc-midi-pad-exit" onClick={() => setChanLoop(null)}>EXIT</button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        // Horizontal Layout (Classic)
         return (
           <div className="graph-live-controls">
             <span className="glc-group">
-              <button className={`btn wc-btn ${masterOn ? 'btn-primary' : 'btn-secondary'}`}
+              <Button variant={masterOn ? 'primary' : 'secondary'} size="sm" className="wc-btn"
                 title="Master tempo: warp every deck to this BPM (Ableton-style). Enabling snaps to the current track's BPM."
                 onClick={() => {
                   const on = !masterOn;
@@ -767,7 +1062,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                   if (on) { const cur = meta[nowPlaying.path]?.bpm; if (cur) { bpm = Math.round(cur); setMasterBpm(bpm); } }
                   setMasterOn(on);
                   playerRef.current!.setMasterTempo(on ? bpm : null);
-                }}>Master</button>
+                }}>Master</Button>
               <input type="number" min={60} max={200} step={1} value={masterBpm} style={{ width: 52 }}
                 onChange={e => {
                   const v = Number(e.target.value) || 0;
@@ -780,161 +1075,147 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 </span>
               )}
             </span>
-            {(() => {
-              const activeChannels = [
-                { ch: 'a', label: 'A' },
-                // one strip per manually cued track (named); plain B strip only as fallback for the auto-fade deck
-                ...(cueingPaths.length
-                  ? cueingPaths.map((p, idx) => ({ ch: p, label: String.fromCharCode(66 + idx) })) // B, C, D...
-                  : [{ ch: 'b', label: 'B' }]),
-              ];
 
-              const renderedChannels = showAllStrips
-                ? activeChannels
-                : [activeChannels.find(x => x.ch === focusedStrip) ?? activeChannels[0]];
-
-              const currentStripCh = activeChannels.find(x => x.ch === focusedStrip)?.ch ?? 'a';
-
-              return (
-                <>
-                  <span className="glc-group glc-header-controls">
-                    <button className={`btn wc-btn ${showAllStrips ? 'btn-primary' : 'btn-secondary'}`}
-                      title="Toggle showing all mixer strips at once or only the focused one"
-                      onClick={() => setShowAllStrips(prev => !prev)}>
-                      {showAllStrips ? 'Single' : 'All'}
+            <span className="glc-group glc-header-controls">
+              <button className="btn wc-btn btn-secondary"
+                title="Toggle vertical Ableton-style layout"
+                onClick={() => setMixerLayout(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')}>
+                Horizontal
+              </button>
+              <button className={`btn wc-btn ${showAllStrips ? 'btn-primary' : 'btn-secondary'}`}
+                title="Toggle showing all mixer strips at once or only the focused one"
+                onClick={() => setShowAllStrips(prev => !prev)}>
+                {showAllStrips ? 'Single' : 'All'}
+              </button>
+              {!showAllStrips && activeChannels.length > 1 && (
+                <span className="glc-tabs">
+                  {activeChannels.map(({ ch, label }) => (
+                    <button key={ch} className={`btn wc-btn ${currentStripCh === ch ? 'btn-accent' : 'btn-secondary'}`}
+                      title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}
+                      onClick={() => setFocusedStrip(ch)}>
+                      Ch {label}
                     </button>
-                    {!showAllStrips && activeChannels.length > 1 && (
-                      <span className="glc-tabs">
-                        {activeChannels.map(({ ch, label }) => (
-                          <button key={ch} className={`btn wc-btn ${currentStripCh === ch ? 'btn-accent' : 'btn-secondary'}`}
-                            title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}
-                            onClick={() => setFocusedStrip(ch)}>
-                            Ch {label}
-                          </button>
-                        ))}
-                      </span>
-                    )}
+                  ))}
+                </span>
+              )}
+            </span>
+
+            {renderedChannels.map(({ ch, label }) => {
+              const dis = ch !== 'a' && !strips[ch];
+              const isCue = ch !== 'a' && ch !== 'b';
+              const v = strips[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP);
+              const set = (patch: Partial<StripState>) => {
+                mixTouch.current = Date.now();
+                setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP)), ...patch } }));
+                if (['low', 'mid', 'high', 'filter'].some(k => k in patch))
+                  setStripPreset(s => s[ch] && s[ch] !== 'off' ? { ...s, [ch]: 'off' } : s);
+              };
+              const bpm = isCue ? meta[ch]?.bpm : null;
+              const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
+              const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
+              const setChanLoop = (n: number | null) => {
+                const p = playerRef.current!;
+                if (isCue) {
+                  if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
+                  else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
+                } else {
+                  if (n == null) { p.exitLoop(); setLoopBeats(null); }
+                  else { p.setLoop(n); setLoopBeats(n); }
+                }
+              };
+              return (
+                <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
+                  <span className="glc-strip-row">
+                  <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                  <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
+                  <label className="glc-ctl">
+                    <span className="glc-tag">VOL</span>
+                    <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
+                      title={`Volume ${label} (double-click: 100%)`}
+                      onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
+                      onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
+                  </label>
+                  <label className="glc-ctl">
+                    <span className="glc-tag">FLT</span>
+                    <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
+                      title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
+                      onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
+                      onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
+                  </label>
+                  {(['low', 'mid', 'high'] as const).map(band => (
+                    <label className="glc-ctl" key={band}>
+                      <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
+                      <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
+                        title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
+                        onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
+                        onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
+                    </label>
+                  ))}
+                  <label className="glc-ctl">
+                    <span className="glc-tag">PST</span>
+                    <select className={`transition-fade-select glc-preset${(stripPreset[ch] ?? 'off') !== 'off' ? ' glc-preset-on' : ''}`}
+                      value={stripPreset[ch] ?? 'off'} disabled={dis}
+                      title={`EQ preset ${label} — moves the FLT/EQ faders; Flat or hand-tuning resets`}
+                      onChange={e => applyStripPreset(ch, e.target.value as NodeEqPreset)}>
+                      {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>{NODE_EQ_LABELS[p]}</option>)}
+                    </select>
+                  </label>
+                  {monitorDeviceId && (
+                    <>
+                      <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
+                        title={`Pre-fade listen ${label} in headphones`}
+                        onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
+                        🎧
+                      </button>
+                      {ch !== 'a' && (
+                        <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
+                          title={`Push ${label} to master output (unmute from headphone-only)`}
+                          onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
+                          🔊
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {isCue && (
+                    <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                      onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
+                      <Square size={12} />
+                    </button>
+                  )}
                   </span>
-                  {renderedChannels.map(({ ch, label }) => {
-                    const dis = ch !== 'a' && !strips[ch];
-                    const isCue = ch !== 'a' && ch !== 'b';
-                    const v = strips[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP);
-                    const set = (patch: Partial<StripState>) => {
-                      mixTouch.current = Date.now();
-                      setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP)), ...patch } }));
-                      // Hand-tuning EQ/filter leaves any preset behind — indicator drops back to Flat.
-                      if (['low', 'mid', 'high', 'filter'].some(k => k in patch))
-                        setStripPreset(s => s[ch] && s[ch] !== 'off' ? { ...s, [ch]: 'off' } : s);
-                    };
-                    const bpm = isCue ? meta[ch]?.bpm : null;
-                    const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
-                    const activeLoop = isCue ? cueLoopBeats[ch] : ch === 'a' ? loopBeats ?? undefined : undefined;
-                    const setChanLoop = (n: number | null) => {
-                      const p = playerRef.current!;
-                      if (isCue) {
-                        if (n == null) { p.exitCueLoop(ch); setCueLoopBeats(({ [ch]: _, ...rest }) => rest); }
-                        else if (bpm) { p.setCueLoop(ch, n, bpm); setCueLoopBeats(lb => ({ ...lb, [ch]: n })); }
-                      } else {
-                        if (n == null) { p.exitLoop(); setLoopBeats(null); }
-                        else { p.setLoop(n); setLoopBeats(n); }
-                      }
-                    };
-                    return (
-                      <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
-                        <span className="glc-strip-row">
-                        <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
-                        <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
-                        <label className="glc-ctl">
-                          <span className="glc-tag">VOL</span>
-                          <input type="range" className="glc-vol" min={0} max={100} value={Math.round(v.vol * 100)} disabled={dis}
-                            title={`Volume ${label} (double-click: 100%)`}
-                            onDoubleClick={() => { set({ vol: 1 }); playerRef.current!.setDeckVolume(ch, 1); }}
-                            onChange={e => { const x = Number(e.target.value) / 100; set({ vol: x }); playerRef.current!.setDeckVolume(ch, x); }} />
-                        </label>
-                        <label className="glc-ctl">
-                          <span className="glc-tag">FLT</span>
-                          <input type="range" className="glc-fil" min={-100} max={100} step={5} value={Math.round(v.filter * 100)} disabled={dis}
-                            title={`Filter ${label} — left: lowpass, right: highpass, center/double-click: off`}
-                            onDoubleClick={() => { set({ filter: 0 }); playerRef.current!.setDeckFilter(ch, 0); }}
-                            onChange={e => { const x = Number(e.target.value) / 100; set({ filter: x }); playerRef.current!.setDeckFilter(ch, x); }} />
-                        </label>
-                        {(['low', 'mid', 'high'] as const).map(band => (
-                          <label className="glc-ctl" key={band}>
-                            <span className="glc-tag">{band === 'low' ? 'LO' : band === 'mid' ? 'MD' : 'HI'}</span>
-                            <input type="range" className="glc-eq" min={-24} max={6} value={Math.round(v[band])} disabled={dis}
-                              title={`EQ ${band} ${label} (double-click: 0, -24 dB = kill)`}
-                              onDoubleClick={() => { set({ [band]: 0 }); playerRef.current!.setDeckEq(ch, band, 0); }}
-                              onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
-                          </label>
-                        ))}
-                        <label className="glc-ctl">
-                          <span className="glc-tag">PST</span>
-                          <select className={`transition-fade-select glc-preset${(stripPreset[ch] ?? 'off') !== 'off' ? ' glc-preset-on' : ''}`}
-                            value={stripPreset[ch] ?? 'off'} disabled={dis}
-                            title={`EQ preset ${label} — moves the FLT/EQ faders; Flat or hand-tuning resets`}
-                            onChange={e => applyStripPreset(ch, e.target.value as NodeEqPreset)}>
-                            {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>{NODE_EQ_LABELS[p]}</option>)}
-                          </select>
-                        </label>
-                        {monitorDeviceId && (
-                          <>
-                            <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
-                              title={`Pre-fade listen ${label} in headphones`}
-                              onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
-                              🎧
-                            </button>
-                            {ch !== 'a' && (
-                              <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
-                                title={`Push ${label} to master output (unmute from headphone-only)`}
-                                onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
-                                🔊
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {isCue && (
-                          <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
-                            onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
-                            <Square size={12} />
-                          </button>
-                        )}
-                        </span>
-                        {ch !== 'b' && (
-                          <span className="glc-strip-row glc-strip-perf">
-                            <span className="glc-tag">JMP</span>
-                            {[-4, -1, 1, 4].map(n => (
-                              <button key={n} className="btn btn-secondary wc-btn" disabled={dis || (isCue && !bpm)}
-                                title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
-                            ))}
-                            <span className="wc-sep" />
-                            <span className="glc-tag">LOOP</span>
-                            {[1, 2, 4, 8, 16].map(n => (
-                              <button key={n} className={`btn wc-btn ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
-                                disabled={dis || (isCue && !bpm)} title={`Loop ${n} beat${n > 1 ? 's' : ''} from here`}
-                                onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
-                            ))}
-                            {activeLoop != null && (
-                              <button className="btn btn-secondary wc-btn" onClick={() => setChanLoop(null)}>Exit</button>
-                            )}
-                            {isCue && (
-                              <>
-                                <span className="wc-sep" />
-                                <span className="glc-tag">PITCH</span>
-                                <input type="range" className="glc-pitch" min={-8} max={8} step={0.1} disabled={dis}
-                                  value={((cuePitch[ch] ?? 1) - 1) * 100} title="Manual pitch % (double-click: 0)"
-                                  onDoubleClick={() => { setCuePitchState(ps => ({ ...ps, [ch]: 1 })); playerRef.current!.setCuePitch(ch, 1); }}
-                                  onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(ps => ({ ...ps, [ch]: r })); playerRef.current!.setCuePitch(ch, r); }} />
-                                <span className="wc-label">{(((cuePitch[ch] ?? 1) - 1) * 100).toFixed(1)}%</span>
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })}
-                </>
+                  {ch !== 'b' && (
+                    <span className="glc-strip-row glc-strip-perf">
+                      <span className="glc-tag">JMP</span>
+                      {[-4, -1, 1, 4].map(n => (
+                        <button key={n} className="btn btn-secondary wc-btn" disabled={dis || (isCue && !bpm)}
+                          title={`Jump ${n > 0 ? '+' : ''}${n} beats`} onClick={() => jump(n)}>{n > 0 ? `+${n}` : n}</button>
+                      ))}
+                      <span className="wc-sep" />
+                      <span className="glc-tag">LOOP</span>
+                      {[1, 2, 4, 8, 16].map(n => (
+                        <button key={n} className={`btn wc-btn ${activeLoop === n ? 'btn-primary' : 'btn-secondary'}`}
+                          disabled={dis || (isCue && !bpm)} title={`Loop ${n} beat${n > 1 ? 's' : ''} from here`}
+                          onClick={() => setChanLoop(activeLoop === n ? null : n)}>{n}</button>
+                      ))}
+                      {activeLoop != null && (
+                        <button className="btn btn-secondary wc-btn" onClick={() => setChanLoop(null)}>Exit</button>
+                      )}
+                      {isCue && (
+                        <>
+                          <span className="wc-sep" />
+                          <span className="glc-tag">PITCH</span>
+                          <input type="range" className="glc-pitch" min={-8} max={8} step={0.1} disabled={dis}
+                            value={((cuePitch[ch] ?? 1) - 1) * 100} title="Manual pitch % (double-click: 0)"
+                            onDoubleClick={() => { setCuePitchState(ps => ({ ...ps, [ch]: 1 })); playerRef.current!.setCuePitch(ch, 1); }}
+                            onChange={e => { const r = 1 + Number(e.target.value) / 100; setCuePitchState(ps => ({ ...ps, [ch]: r })); playerRef.current!.setCuePitch(ch, r); }} />
+                          <span className="wc-label">{(((cuePitch[ch] ?? 1) - 1) * 100).toFixed(1)}%</span>
+                        </>
+                      )}
+                    </span>
+                  )}
+                </span>
               );
-            })()}
+            })}
 
             {audioOutputs.length > 1 && (
               <span className="glc-group">
@@ -957,7 +1238,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         );
       })()}
 
-      {nowPlaying && (
+      {activeView === 'session' && nowPlaying && (
         <div className="graph-live-fx">
           <span className="glc-tag graph-live-fx-label">⚡ Live Sweep</span>
           <span className="graph-live-fx-val">{liveFilter > 0 ? '+' : ''}{liveFilter}</span>
@@ -993,8 +1274,10 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         </div>
       )}
 
-      <div className="graph-canvas-wrap">
-      <canvas ref={bgRef} className="graph-spectrum-bg" />
+      {activeView === 'arrangement' && (
+        <>
+          <div className="graph-canvas-wrap">
+          <canvas ref={bgRef} className="graph-spectrum-bg" />
       <svg
         ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="graph-canvas"
         onClick={() => { setSelected(null); setDetailEdge(null); }}
@@ -1371,6 +1654,12 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           </div>
         </div>
       )}
+        </>
+      )}
+      <div className="graph-status-bar">
+        <span className="graph-status-icon">ℹ</span>
+        <span className="graph-status-text">{statusBarText}</span>
+      </div>
     </div>
   );
 }

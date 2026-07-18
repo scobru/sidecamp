@@ -142,7 +142,6 @@ Sidecamp is part of the [TuneCamp ecosystem](https://github.com/scobru/tunecamp#
 
 - [**tunecamp**](https://github.com/scobru/tunecamp) — The core self-hosted music streaming server.
 - [**tunecamp-website**](https://github.com/scobru/tunecamp-website) — Landing page and community directory.
-- [**tunecamp-peer**](https://github.com/scobru/tunecamp-peer) — Lightweight CLI-only peer daemon (headless alternative to Sidecamp's peer feature).
 
 ## License
 
