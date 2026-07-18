@@ -18,11 +18,25 @@ const SWEEP_HP_END_HZ = 800;     // Rise/Wave: outgoing highpass climbs from ope
 const MELT_HP_HZ = 1500;         // Melt: both sides sweep highpass through this frequency
 const LIVE_FILTER_LP_FLOOR_HZ = 200;  // live knob fully negative: lowpass cutoff floor ("underwater")
 const LIVE_FILTER_HP_CEIL_HZ = 2000;  // live knob fully positive: highpass cutoff ceiling ("distant")
-export type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null; eqPreset?: EqPreset; cue?: number; cueOut?: number };
+export type QueueItem = { path: string; name: string; bpm: number | null; beatOffset?: number | null; eqPreset?: EqPreset; nodeEq?: NodeEqPreset; cue?: number; cueOut?: number };
+
+/** Static per-track EQ shape, applied to a deck for as long as that node's track plays
+ *  (unlike EqPreset, which only sweeps during the transition window). */
+export type NodeEqPreset = 'off' | 'bass-cut' | 'warm' | 'bright' | 'scoop' | 'underwater' | 'distant';
+export const NODE_EQ_PRESETS: Record<NodeEqPreset, { low: number; mid: number; high: number; filter: number }> = {
+  off: { low: 0, mid: 0, high: 0, filter: 0 },
+  'bass-cut': { low: BASS_SWAP_CUT, mid: 0, high: 0, filter: 0 },   // room for a layered bassline
+  warm: { low: 0, mid: 0, high: -10, filter: 0 },
+  bright: { low: -8, mid: 0, high: 3, filter: 0 },
+  scoop: { low: 0, mid: -10, high: 0, filter: 0 },
+  underwater: { low: 0, mid: 0, high: 0, filter: -0.7 },            // same lowpass sweep as the live filter knob
+  distant: { low: 0, mid: 0, high: 0, filter: 0.6 },                // same highpass sweep as the live filter knob
+};
 
 /** Per-playlist live-set settings, persisted by the parent alongside tracks/edges. */
 export type LiveConfig = {
   edgePreset?: Record<string, EqPreset>;    // EQ preset per transition (edge key "from→to")
+  nodeEq?: Record<string, NodeEqPreset>;    // static EQ preset per track (keyed by path)
   beatOverride?: Record<string, number>;    // manual beat-grid corrections per track path
   fadeS?: number;
   masterOn?: boolean;
@@ -398,7 +412,10 @@ export class CrossfadePlayer {
   /** Per-deck filter knob (-1..1): negative sweeps a lowpass down, positive a highpass up, 0 = off. */
   setDeckFilter(which: string, knob: number) {
     const d = this.deckByLabel(which);
-    if (!d) return;
+    if (d) this.applyFilterKnob(d, knob);
+  }
+
+  private applyFilterKnob(d: Deck, knob: number) {
     const k = Math.max(-1, Math.min(1, knob));
     d.filterKnob = k;
     const now = this.getCtx().currentTime;
@@ -409,6 +426,15 @@ export class CrossfadePlayer {
       d.hp.frequency.setTargetAtTime(20 + (LIVE_FILTER_HP_CEIL_HZ - 20) * k, now, 0.03);
       d.lp.frequency.setTargetAtTime(20000, now, 0.03);
     }
+  }
+
+  /** Settle a deck onto its track's static node preset (no-op for 'off': fresh decks start flat). */
+  private applyNodeEq(d: Deck, preset?: NodeEqPreset) {
+    if (!preset || preset === 'off') return;
+    const p = NODE_EQ_PRESETS[preset];
+    const now = this.getCtx().currentTime;
+    for (const band of ['low', 'mid', 'high'] as const) d[band].gain.setTargetAtTime(p[band], now, 0.05);
+    if (p.filter) this.applyFilterKnob(d, p.filter);
   }
 
   setDeckEq(which: string, band: 'low' | 'mid' | 'high', dB: number) {
@@ -505,6 +531,7 @@ export class CrossfadePlayer {
       const end = queue[0].cueOut ?? buf.duration;
       const off = firstOffset < 0 ? end + firstOffset : firstOffset;
       this.deck = this.startDeck(buf, Math.max(0, Math.min(off, buf.duration - 1)), this.warpRate(queue[0].bpm), 1);
+      this.applyNodeEq(this.deck, queue[0].nodeEq);
       this.tick();
     }).catch(() => { if (sess === this.session) this.stop(); });
   }
@@ -684,6 +711,10 @@ export class CrossfadePlayer {
       b.gain.gain.setValueAtTime(0, t0);
       b.gain.gain.linearRampToValueAtTime(1, tEnd);
     } // else: already audible at full gain from the manual cue — only A fades out
+    // Plain fade: no band/filter automation will touch B, so the incoming node's
+    // static preset can shape it from the very start of the fade.
+    const plainFade = !to.eqPreset || to.eqPreset === 'off';
+    if (!bAlreadyCued && plainFade) this.applyNodeEq(b, to.nodeEq);
     // Transition presets: each drives the EQ bands and/or sweep filters (lp/hp)
     // of the two decks over the fade window on top of the volume crossfade above.
     const dur = tEnd - t0;
@@ -770,6 +801,9 @@ export class CrossfadePlayer {
       if (sess !== this.session) return;
       if (ctx.currentTime < tEnd) { requestAnimationFrame(finish); return; }
       this.deck = b;
+      // Land on the incoming node's static preset once the transition sweep has released
+      // its band automation; a hand-cued deck keeps whatever strip the user dialled in.
+      if (!bAlreadyCued && !plainFade) this.applyNodeEq(b, to.nodeEq);
       this.fadingDeck = null;
       this.idx += 1;
       this.fading = false;

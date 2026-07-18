@@ -4,13 +4,20 @@ import {
   CrossfadePlayer, bpmRatio, bpmClose,
   DEFAULT_FADE_S, FADE_OPTIONS, PREVIEW_LEAD_S, PREVIEW_TAIL_S,
   NEUTRAL_STRIP, CUE_INITIAL_STRIP,
-  type EqPreset, type BandPeaks, type QueueItem, type LiveConfig,
+  NODE_EQ_PRESETS,
+  type EqPreset, type NodeEqPreset, type BandPeaks, type QueueItem, type LiveConfig,
   type StripState, type NowPlaying, type EqBands,
 } from 'audio-engine';
 import TransitionWave from './components/TransitionWave';
 import './styles/graph.css';
 // Re-export types that App.tsx imports from this module
-export type { LiveConfig, EqPreset, EqBands, BandPeaks };
+export type { LiveConfig, EqPreset, NodeEqPreset, EqBands, BandPeaks };
+
+const NODE_EQ_LABELS: Record<NodeEqPreset, string> = {
+  off: 'Flat', 'bass-cut': 'Bass Cut', warm: 'Warm', bright: 'Bright',
+  scoop: 'Mid Scoop', underwater: 'Underwater', distant: 'Distant',
+};
+const NODE_EQ_OPTIONS = Object.keys(NODE_EQ_LABELS) as NodeEqPreset[];
 
 // Graph playlist: nodes are tracks, directed edges are transitions the user
 // draws. Selecting a node suggests library tracks with compatible BPM, genre
@@ -82,6 +89,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [beatOverride, setBeatOverride] = useState<Record<string, number>>(() => liveConfig?.beatOverride ?? {});
   const [fadeS, setFadeS] = useState(() => liveConfig?.fadeS ?? DEFAULT_FADE_S);
   const [edgePreset, setEdgePreset] = useState<Record<string, EqPreset>>(() => liveConfig?.edgePreset ?? {});
+  const [nodeEq, setNodeEq] = useState<Record<string, NodeEqPreset>>(() => liveConfig?.nodeEq ?? {});
   const [loopBeats, setLoopBeats] = useState<number | null>(null);
   const [liveFilter, setLiveFilter] = useState(0); // -100..100
   const [masterOn, setMasterOn] = useState(() => liveConfig?.masterOn ?? false);
@@ -90,11 +98,13 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   useEffect(() => { if (masterOn) playerRef.current?.setMasterTempo(masterBpm); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // persist the live-set config with the playlist whenever any piece changes
   useEffect(() => {
-    onLiveConfigChange?.({ edgePreset, beatOverride, fadeS, masterOn, masterBpm });
-  }, [edgePreset, beatOverride, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
+    onLiveConfigChange?.({ edgePreset, nodeEq, beatOverride, fadeS, masterOn, masterBpm });
+  }, [edgePreset, nodeEq, beatOverride, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
   const [deckRates, setDeckRates] = useState<{ a: number | null; cue: number | null }>({ a: null, cue: null });
   // mixer channels keyed by player channel id: 'a', 'b' (fallback incoming), or a cued track path
   const [strips, setStrips] = useState<Record<string, StripState | null>>({ a: NEUTRAL_STRIP });
+  // Ephemeral per-strip EQ preset (performance gesture, not persisted): 'off' snaps the strip back flat.
+  const [stripPreset, setStripPreset] = useState<Record<string, NodeEqPreset>>({});
   const [showAllStrips, setShowAllStrips] = useState(false);
   const [focusedStrip, setFocusedStrip] = useState<string>('a');
   const mixTouch = useRef(0); // last time the user moved a mixer slider — pause sync so it doesn't fight the drag
@@ -456,7 +466,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const queueItem = (p: string): QueueItem => {
     const t = tracks.find(x => x.path === p);
     if (!t) return { path: p, name: p.split(/[\\/]/).pop() || p, bpm: null };
-    return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null, beatOffset: beatOverride[p] ?? meta[p]?.beatOffset, cue: meta[p]?.cuePoint ?? undefined, cueOut: meta[p]?.cueOutPoint ?? undefined };
+    return { path: p, name: t.name, bpm: meta[p]?.bpm ?? null, beatOffset: beatOverride[p] ?? meta[p]?.beatOffset, nodeEq: nodeEq[p] ?? 'off', cue: meta[p]?.cuePoint ?? undefined, cueOut: meta[p]?.cueOutPoint ?? undefined };
   };
 
   const playFrom = (start: string) => {
@@ -495,6 +505,18 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     setCueingPaths(cs => cs.filter(x => x !== path));
     setCuePitchState(({ [path]: _, ...rest }) => rest);
     setCueLoopBeats(({ [path]: _, ...rest }) => rest);
+    setStripPreset(({ [path]: _, ...rest }) => rest);
+  };
+
+  /** Snap a mixer strip to an EQ preset ('off' = back to flat) and mirror it in the strip UI. */
+  const applyStripPreset = (ch: string, p: NodeEqPreset) => {
+    const v = NODE_EQ_PRESETS[p];
+    const pl = playerRef.current!;
+    (['low', 'mid', 'high'] as const).forEach(b => pl.setDeckEq(ch, b, v[b]));
+    pl.setDeckFilter(ch, v.filter);
+    mixTouch.current = Date.now();
+    setStripPreset(s => ({ ...s, [ch]: p }));
+    setStrips(prev => prev[ch] ? { ...prev, [ch]: { ...prev[ch]!, low: v.low, mid: v.mid, high: v.high, filter: v.filter } } : prev);
   };
 
   const toggleCue = (path: string, offset: number) => {
@@ -679,6 +701,15 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         {selected ? (
           <>
             <button className="btn btn-primary" onClick={() => playFrom(selected)}><Play size={13} /> Play path</button>
+            <select className="transition-fade-select" value={nodeEq[selected] ?? 'off'}
+              onChange={e => {
+                const p = e.target.value as NodeEqPreset;
+                setNodeEq(n => ({ ...n, [selected]: p }));
+                if (selected === nowPlaying?.path) applyStripPreset('a', p); // already on air: retune the live deck now
+              }}
+              title="EQ preset held on this track's deck whenever it plays">
+              {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>EQ: {NODE_EQ_LABELS[p]}</option>)}
+            </select>
             <button className="btn btn-danger" onClick={() => { onRemoveTrack(selected); setSelected(null); }}><X size={13} /> Remove</button>
             <span className="graph-hint">
               {(() => { const m = meta[selected]; return m ? `${m.bpm ? Math.round(m.bpm) + ' BPM' : ''} ${m.key} ${m.genre}`.trim() : ''; })()}
@@ -791,6 +822,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                     const set = (patch: Partial<StripState>) => {
                       mixTouch.current = Date.now();
                       setStrips(prev => ({ ...prev, [ch]: { ...(prev[ch] ?? (isCue ? CUE_INITIAL_STRIP : NEUTRAL_STRIP)), ...patch } }));
+                      // Hand-tuning EQ/filter leaves any preset behind — indicator drops back to Flat.
+                      if (['low', 'mid', 'high', 'filter'].some(k => k in patch))
+                        setStripPreset(s => s[ch] && s[ch] !== 'off' ? { ...s, [ch]: 'off' } : s);
                     };
                     const bpm = isCue ? meta[ch]?.bpm : null;
                     const jump = (n: number) => (isCue ? bpm && playerRef.current!.cueBeatJump(ch, n, bpm) : playerRef.current!.beatJump(n));
@@ -833,6 +867,15 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                               onChange={e => { const x = Number(e.target.value); set({ [band]: x }); playerRef.current!.setDeckEq(ch, band, x); }} />
                           </label>
                         ))}
+                        <label className="glc-ctl">
+                          <span className="glc-tag">PST</span>
+                          <select className={`transition-fade-select glc-preset${(stripPreset[ch] ?? 'off') !== 'off' ? ' glc-preset-on' : ''}`}
+                            value={stripPreset[ch] ?? 'off'} disabled={dis}
+                            title={`EQ preset ${label} — moves the FLT/EQ faders; Flat or hand-tuning resets`}
+                            onChange={e => applyStripPreset(ch, e.target.value as NodeEqPreset)}>
+                            {NODE_EQ_OPTIONS.map(p => <option key={p} value={p}>{NODE_EQ_LABELS[p]}</option>)}
+                          </select>
+                        </label>
                         {monitorDeviceId && (
                           <>
                             <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}

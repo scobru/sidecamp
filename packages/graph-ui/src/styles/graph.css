@@ -160,6 +160,8 @@
 .glc-strip .glc-fil { width: 64px; }
 .glc-strip .glc-eq { width: 38px; }
 .glc-strip-off { opacity: 0.35; }
+.glc-strip .glc-preset { padding: 0.15rem 0.3rem; font-size: 0.7rem; max-width: 92px; }
+.glc-preset-on { border-color: var(--primary); color: var(--primary); }
 /* ---- Live FX bar (filter sweep, separate from per-channel mixer) ---- */
 .graph-live-fx {
   display: flex;
