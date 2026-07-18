@@ -82,3 +82,12 @@ body {
                     radial-gradient(circle at 88% 70%, rgba(6, 182, 212, 0.06), transparent 30%);
   background-attachment: fixed;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

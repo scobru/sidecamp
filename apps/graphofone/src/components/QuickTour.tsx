@@ -29,6 +29,11 @@ const STEPS: Step[] = [
     body: '"Play path" follows the arrows with automatic beat-matched crossfades. "Live" arms arrows so you fire transitions manually, and "Rec" records your whole set to a file.'
   },
   {
+    selector: '[data-tour="live-mode"]',
+    title: 'Play it like an instrument',
+    body: 'Enable "Live" while a track is playing to drive decks from the keyboard — beat jump, loop and cue nudge without touching the mouse. Click the ⌨ button that appears next to Live for the full key list any time.'
+  },
+  {
     selector: '.graph-live-controls',
     title: 'Mixer & Cueing',
     body: 'Control volume, filter and EQ for active channels. Manually cued tracks start silent (VOL 0) with headphone pre-listen (🎧) active. Press Tab to cycle through channel strips, or toggle "All" to show them all at once.'

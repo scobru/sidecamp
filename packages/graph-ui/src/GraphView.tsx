@@ -58,6 +58,8 @@ const keysCompatible = (a: string, b: string) => {
 };
 
 const ZOOM_LEVELS = [1, 2, 4, 8] as const;
+// hard cap on simultaneous manual cues (B, C, D...) — channel labels run B..Z past this
+const MAX_CUE_CHANNELS = 8;
 
 // --- Force layout ------------------------------------------------------------
 type Node = { path: string; name: string; x: number; y: number; vx: number; vy: number };
@@ -124,22 +126,6 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     }, 600);
     return () => clearInterval(iv);
   }, [nowPlaying, masterOn]);
-
-  // Global keydown handler for Tab key view switcher
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') {
-        const activeEl = document.activeElement;
-        if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) {
-          return;
-        }
-        e.preventDefault();
-        setActiveView(prev => prev === 'arrangement' ? 'session' : 'arrangement');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // VU meters: style-only updates at display rate, no React re-render
   const vuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
@@ -297,29 +283,29 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     }
   }, [selected, nowPlaying?.path, cueingPaths]);
 
-  // Tab key navigation for mixer strips
+  // Tab: cycles mixer strips when the Session mixer is visible and has more than
+  // one active channel; otherwise switches between Arrangement and Session views.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-        
-        // Define active channels exactly like they are rendered
-        const activeChans = [
-          'a',
-          ...(cueingPaths.length ? cueingPaths : ['b'])
-        ];
-        
+      if (e.key !== 'Tab') return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+
+      if (activeView === 'session' && nowPlaying) {
+        const activeChans = ['a', ...(cueingPaths.length ? cueingPaths : ['b'])];
         if (activeChans.length > 1) {
           e.preventDefault();
           const idx = activeChans.indexOf(focusedStrip);
           const nextIdx = idx === -1 ? 0 : (idx + 1) % activeChans.length;
           setFocusedStrip(activeChans[nextIdx]);
+          return;
         }
       }
+      e.preventDefault();
+      setActiveView(prev => prev === 'arrangement' ? 'session' : 'arrangement');
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedStrip, cueingPaths]);
+  }, [focusedStrip, cueingPaths, activeView, nowPlaying]);
 
   // live-control state is per-track — reset when the playhead moves to a different track
   useEffect(() => {
@@ -552,6 +538,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   };
 
   const toggleCue = (path: string, offset: number) => {
+    if (!cueingPaths.includes(path) && cueingPaths.length >= MAX_CUE_CHANNELS) return;
     clearCueState(path);
     if (cueingPaths.includes(path)) {
       playerRef.current!.stopCue(path);
@@ -732,13 +719,13 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           leftIcon={<Circle size={12} fill={recording ? 'currentColor' : 'none'} />}>
           {recording ? 'Stop rec' : 'Rec'}
         </Button>
-        <Button variant={liveMode ? 'primary' : 'secondary'} size="sm" onClick={() => setLiveMode(v => !v)}
+        <Button data-tour="live-mode" variant={liveMode ? 'primary' : 'secondary'} size="sm" onClick={() => setLiveMode(v => !v)}
           title={liveMode ? 'Live: click an arrow to crossfade to that track now' : 'Enable live-arrow transitions while a track is playing'}>
           Live
         </Button>
         {liveMode && (
           <Button variant={showShortcuts ? 'primary' : 'secondary'} size="sm" onClick={() => setShowShortcuts(v => !v)}
-            title="Show/hide keyboard shortcuts">
+            title="Show/hide keyboard shortcuts" aria-label="Show/hide keyboard shortcuts">
             ⌨
           </Button>
         )}
@@ -760,8 +747,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         {nowPlaying && (
           <span className="graph-nowplaying">
             <Play size={12} /> {short(nowPlaying.name)}
-            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.skip()} title="Skip to next (crossfade now)" leftIcon={<SkipForward size={12} />} />
-            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.stop()} title="Stop" leftIcon={<Square size={12} />} />
+            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.skip()} title="Skip to next (crossfade now)" aria-label="Skip to next" leftIcon={<SkipForward size={12} />} />
+            <Button variant="secondary" size="sm" onClick={() => playerRef.current!.stop()} title="Stop" aria-label="Stop" leftIcon={<Square size={12} />} />
           </span>
         )}
         
@@ -991,26 +978,26 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                         <div className="glc-vert-buttons">
                           {monitorDeviceId && (
                             <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
-                              title={`Pre-fade listen ${label} in headphones`}
+                              title={`Pre-fade listen ${label} in headphones`} aria-label={`Pre-fade listen ${label} in headphones`}
                               onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
                               🎧
                             </button>
                           )}
                           {monitorDeviceId && ch !== 'a' && (
                             <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
-                              title={`Push ${label} to master output`}
+                              title={`Push ${label} to master output`} aria-label={`Push ${label} to master output`}
                               onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
                               🔊
                             </button>
                           )}
                           {isCue && (
-                            <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                            <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`} aria-label={`Stop cued track ${label}`}
                               onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
                               <Square size={12} />
                             </button>
                           )}
                         </div>
-                        
+
                         {ch !== 'b' && (
                           <div className="glc-vert-perf">
                             <select className={`transition-fade-select glc-preset${(stripPreset[ch] ?? 'off') !== 'off' ? ' glc-preset-on' : ''}`}
@@ -1163,13 +1150,13 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                   {monitorDeviceId && (
                     <>
                       <button className={`btn wc-btn ${routing[ch]?.pfl ? 'btn-accent' : 'btn-secondary'}`} disabled={dis}
-                        title={`Pre-fade listen ${label} in headphones`}
+                        title={`Pre-fade listen ${label} in headphones`} aria-label={`Pre-fade listen ${label} in headphones`}
                         onClick={() => { const on = !routing[ch]?.pfl; playerRef.current!.setPfl(ch, on); setRouting(r => ({ ...r, [ch]: { ...r[ch]!, pfl: on } })); }}>
                         🎧
                       </button>
                       {ch !== 'a' && (
                         <button className={`btn wc-btn ${routing[ch]?.master ? 'btn-primary' : 'btn-secondary'}`} disabled={dis}
-                          title={`Push ${label} to master output (unmute from headphone-only)`}
+                          title={`Push ${label} to master output (unmute from headphone-only)`} aria-label={`Push ${label} to master output`}
                           onClick={() => { const on = !routing[ch]?.master; playerRef.current!.setDeckMaster(ch, on); setRouting(r => ({ ...r, [ch]: r[ch] ? { ...r[ch]!, master: on } : null })); }}>
                           🔊
                         </button>
@@ -1177,7 +1164,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                     </>
                   )}
                   {isCue && (
-                    <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`}
+                    <button className="btn btn-secondary wc-btn" title={`Stop cued track ${label}`} aria-label={`Stop cued track ${label}`}
                       onClick={() => { playerRef.current!.stopCue(ch); clearCueState(ch); }}>
                       <Square size={12} />
                     </button>
@@ -1472,18 +1459,21 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                 <option value="slam">Slam</option>
               </select>
               <span className="transition-zoom">
-                <button className="btn btn-secondary" disabled={zoomIdx === 0} onClick={() => changeZoom(zoomIdx - 1)} title="Zoom out">−</button>
+                <button className="btn btn-secondary" disabled={zoomIdx === 0} onClick={() => changeZoom(zoomIdx - 1)} title="Zoom out" aria-label="Zoom out">−</button>
                 <span className="transition-zoom-label">{zoom}x</span>
-                <button className="btn btn-secondary" disabled={zoomIdx === ZOOM_LEVELS.length - 1} onClick={() => changeZoom(zoomIdx + 1)} title="Zoom in">+</button>
+                <button className="btn btn-secondary" disabled={zoomIdx === ZOOM_LEVELS.length - 1} onClick={() => changeZoom(zoomIdx + 1)} title="Zoom in" aria-label="Zoom in">+</button>
               </span>
               <button className="btn btn-secondary" onClick={() => previewEdge(a, b)} title="Replay this transition"><Play size={12} /> Preview</button>
               {liveMode && nowPlaying?.path === a && (
                 <>
                   <button className={`btn ${cueingPaths.includes(b) ? 'btn-danger' : 'btn-primary'}`}
+                    disabled={!cueingPaths.includes(b) && cueingPaths.length >= MAX_CUE_CHANNELS}
                     onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
                     title={cueingPaths.includes(b)
                       ? 'Stop the synced track'
-                      : 'Start the incoming track now, beat-synced, without crossfading — you decide when to go live'}>
+                      : cueingPaths.length >= MAX_CUE_CHANNELS
+                        ? `Max ${MAX_CUE_CHANNELS} simultaneous cues reached — stop one first`
+                        : 'Start the incoming track now, beat-synced, without crossfading — you decide when to go live'}>
                     {cueingPaths.includes(b) ? <><Square size={12} /> Stop</> : <><Play size={12} /> Play sync</>}
                   </button>
                   <button className={`btn btn-accent ${pendingLive === b ? 'blink' : ''}`} disabled={pendingLive === b}
@@ -1515,11 +1505,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <button className="btn btn-secondary wc-btn" disabled={pA >= maxPanA} onClick={() => setPanA(p => Math.min(maxPanA, p + aLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={pA <= 0} onClick={() => setPanA(p => Math.max(0, p - aLen * 0.4))} title="Pan back toward the fade">pan ▶</button>
               <span className="wc-sep" />
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, -0.05)} title="Grid −50ms">«</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, -0.01)} title="Grid −10ms">‹</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, -0.05)} title="Grid −50ms" aria-label="Grid −50ms">«</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, -0.01)} title="Grid −10ms" aria-label="Grid −10ms">‹</button>
               <span className="wc-label">beat grid</span>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, 0.01)} title="Grid +10ms">›</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, 0.05)} title="Grid +50ms">»</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, 0.01)} title="Grid +10ms" aria-label="Grid +10ms">›</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(a, ma?.bpm, beatOverride[a] ?? ma?.beatOffset, 0.05)} title="Grid +50ms" aria-label="Grid +50ms">»</button>
             </div>
             {maxPanB > 0 && (
               <div className="wave-scrub">
@@ -1537,16 +1527,22 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <button className="btn btn-secondary wc-btn" disabled={pB <= 0} onClick={() => setPanB(p => Math.max(0, p - bLen * 0.4))} title="Pan back toward the fade">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={pB >= maxPanB} onClick={() => setPanB(p => Math.min(maxPanB, p + bLen * 0.4))} title="Pan later">pan ▶</button>
               <span className="wc-sep" />
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, -0.05)} title="Grid −50ms">«</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, -0.01)} title="Grid −10ms">‹</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, -0.05)} title="Grid −50ms" aria-label="Grid −50ms">«</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, -0.01)} title="Grid −10ms" aria-label="Grid −10ms">‹</button>
               <span className="wc-label">beat grid</span>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.01)} title="Grid +10ms">›</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.05)} title="Grid +50ms">»</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.01)} title="Grid +10ms" aria-label="Grid +10ms">›</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(b, mb?.bpm, beatOverride[b] ?? mb?.beatOffset, 0.05)} title="Grid +50ms" aria-label="Grid +50ms">»</button>
               {liveMode && nowPlaying?.path === a && (
                 <>
                   <span className="wc-sep" />
-                  <button className="btn btn-secondary wc-btn" onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
-                    title={cueingPaths.includes(b) ? 'Stop cueing this track' : 'Cue this track in now, at full volume, to beatmatch by ear — layers on top of any other cued track'}>
+                  <button className="btn btn-secondary wc-btn"
+                    disabled={!cueingPaths.includes(b) && cueingPaths.length >= MAX_CUE_CHANNELS}
+                    onClick={() => toggleCue(b, mb?.cuePoint ?? 0)}
+                    title={cueingPaths.includes(b)
+                      ? 'Stop cueing this track'
+                      : cueingPaths.length >= MAX_CUE_CHANNELS
+                        ? `Max ${MAX_CUE_CHANNELS} simultaneous cues reached — stop one first`
+                        : 'Cue this track in now, at full volume, to beatmatch by ear — layers on top of any other cued track'}>
                     {cueingPaths.includes(b) ? <Square size={12} /> : <Play size={12} />} Cue
                   </button>
                 </>
@@ -1604,9 +1600,9 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <div className="transition-panel-head">
               <span className="transition-panel-title">Waveform: {short(t?.name || waveDetail)}{m?.bpm ? ` — ${Math.round(m.bpm)} BPM ${m.key}` : ''}</span>
               <span className="transition-zoom">
-                <button className="btn btn-secondary" disabled={waveZoomIdx === 0} onClick={() => changeWaveZoom(waveZoomIdx - 1)} title="Zoom out">−</button>
+                <button className="btn btn-secondary" disabled={waveZoomIdx === 0} onClick={() => changeWaveZoom(waveZoomIdx - 1)} title="Zoom out" aria-label="Zoom out">−</button>
                 <span className="transition-zoom-label">{waveZoom}x</span>
-                <button className="btn btn-secondary" disabled={waveZoomIdx === ZOOM_LEVELS.length - 1} onClick={() => changeWaveZoom(waveZoomIdx + 1)} title="Zoom in">+</button>
+                <button className="btn btn-secondary" disabled={waveZoomIdx === ZOOM_LEVELS.length - 1} onClick={() => changeWaveZoom(waveZoomIdx + 1)} title="Zoom in" aria-label="Zoom in">+</button>
               </span>
               <button className="btn btn-secondary" onClick={() => setWaveDetail(null)} title="Close"><X size={12} /></button>
             </div>
@@ -1626,11 +1622,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <button className="btn btn-secondary wc-btn" disabled={wp <= 0} onClick={() => setWavePan(p => Math.max(0, p - winLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={wp >= maxPan} onClick={() => setWavePan(p => Math.min(maxPan, p + winLen * 0.4))} title="Pan later">pan ▶</button>
               <span className="wc-sep" />
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(-0.05)} title="Grid −50ms">«</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(-0.01)} title="Grid −10ms">‹</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(-0.05)} title="Grid −50ms" aria-label="Grid −50ms">«</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(-0.01)} title="Grid −10ms" aria-label="Grid −10ms">‹</button>
               <span className="wc-label">beat grid</span>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.01)} title="Grid +10ms">›</button>
-              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.05)} title="Grid +50ms">»</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.01)} title="Grid +10ms" aria-label="Grid +10ms">›</button>
+              <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.05)} title="Grid +50ms" aria-label="Grid +50ms">»</button>
             </div>
             <div className="graph-hint">Click a waveform on a beat to set the grid, or use «›»‹ to nudge it. Shift+click to set the cue/start point (green line). Zoom in and pan to place it precisely.</div>
           </div>
