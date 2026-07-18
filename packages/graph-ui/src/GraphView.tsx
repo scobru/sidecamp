@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Square, SkipForward, X, Circle } from 'lucide-react';
+import { Play, Square, SkipForward, X, Circle, Repeat } from 'lucide-react';
 import {
   CrossfadePlayer, bpmRatio, bpmClose,
   DEFAULT_FADE_S, FADE_OPTIONS, PREVIEW_LEAD_S, PREVIEW_TAIL_S,
   NEUTRAL_STRIP, CUE_INITIAL_STRIP,
   NODE_EQ_PRESETS,
   type EqPreset, type NodeEqPreset, type BandPeaks, type QueueItem, type LiveConfig,
-  type StripState, type NowPlaying, type EqBands,
+  type StripState, type NowPlaying, type EqBands, type Clip,
 } from 'audio-engine';
 import { Button } from 'tunecamp-design-system';
 import 'tunecamp-design-system/style.css';
 import TransitionWave from './components/TransitionWave';
 import './styles/graph.css';
 // Re-export types that App.tsx imports from this module
-export type { LiveConfig, EqPreset, NodeEqPreset, EqBands, BandPeaks };
+export type { LiveConfig, EqPreset, NodeEqPreset, EqBands, BandPeaks, Clip };
 
 const NODE_EQ_LABELS: Record<NodeEqPreset, string> = {
   off: 'Flat', 'bass-cut': 'Bass Cut', warm: 'Warm', bright: 'Bright',
@@ -57,7 +57,7 @@ const keysCompatible = (a: string, b: string) => {
   return ka.letter === kb.letter && (d === 1 || d === 11); // adjacent on the wheel
 };
 
-const ZOOM_LEVELS = [1, 2, 4, 8] as const;
+const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32] as const;
 // hard cap on simultaneous manual cues (B, C, D...) — channel labels run B..Z past this
 const MAX_CUE_CHANNELS = 8;
 
@@ -94,6 +94,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [fadeS, setFadeS] = useState(() => liveConfig?.fadeS ?? DEFAULT_FADE_S);
   const [edgePreset, setEdgePreset] = useState<Record<string, EqPreset>>(() => liveConfig?.edgePreset ?? {});
   const [nodeEq, setNodeEq] = useState<Record<string, NodeEqPreset>>(() => liveConfig?.nodeEq ?? {});
+  const [clips, setClips] = useState<Record<string, Clip>>(() => liveConfig?.clips ?? {});
   const [loopBeats, setLoopBeats] = useState<number | null>(null);
   const [liveFilter, setLiveFilter] = useState(0); // -100..100
   const [masterOn, setMasterOn] = useState(() => liveConfig?.masterOn ?? false);
@@ -104,8 +105,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   useEffect(() => { if (masterOn) playerRef.current?.setMasterTempo(masterBpm); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // persist the live-set config with the playlist whenever any piece changes
   useEffect(() => {
-    onLiveConfigChange?.({ edgePreset, nodeEq, beatOverride, fadeS, masterOn, masterBpm });
-  }, [edgePreset, nodeEq, beatOverride, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
+    onLiveConfigChange?.({ edgePreset, nodeEq, beatOverride, clips, fadeS, masterOn, masterBpm });
+  }, [edgePreset, nodeEq, beatOverride, clips, fadeS, masterOn, masterBpm]); // eslint-disable-line react-hooks/exhaustive-deps
   const [deckRates, setDeckRates] = useState<{ a: number | null; cue: number | null }>({ a: null, cue: null });
   // mixer channels keyed by player channel id: 'a', 'b' (fallback incoming), or a cued track path
   const [strips, setStrips] = useState<Record<string, StripState | null>>({ a: NEUTRAL_STRIP });
@@ -114,6 +115,10 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
   const [showAllStrips, setShowAllStrips] = useState(false);
   const [focusedStrip, setFocusedStrip] = useState<string>('a');
   const mixTouch = useRef(0); // last time the user moved a mixer slider — pause sync so it doesn't fight the drag
+  // last hovered position (absolute track seconds) per wave — zoom recenters here instead of on the window center
+  const cursorARef = useRef<number | null>(null);
+  const cursorBRef = useRef<number | null>(null);
+  const cursorWaveRef = useRef<number | null>(null);
   useEffect(() => {
     if (!nowPlaying) return;
     const iv = setInterval(() => {
@@ -283,29 +288,17 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
     }
   }, [selected, nowPlaying?.path, cueingPaths]);
 
-  // Tab: cycles mixer strips when the Session mixer is visible and has more than
-  // one active channel; otherwise switches between Arrangement and Session views.
+  // Tab: switches between Arrangement and Session views.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-
-      if (activeView === 'session' && nowPlaying) {
-        const activeChans = ['a', ...(cueingPaths.length ? cueingPaths : ['b'])];
-        if (activeChans.length > 1) {
-          e.preventDefault();
-          const idx = activeChans.indexOf(focusedStrip);
-          const nextIdx = idx === -1 ? 0 : (idx + 1) % activeChans.length;
-          setFocusedStrip(activeChans[nextIdx]);
-          return;
-        }
-      }
       e.preventDefault();
       setActiveView(prev => prev === 'arrangement' ? 'session' : 'arrangement');
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedStrip, cueingPaths, activeView, nowPlaying]);
+  }, []);
 
   // live-control state is per-track — reset when the playhead moves to a different track
   useEffect(() => {
@@ -544,6 +537,35 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
       playerRef.current!.stopCue(path);
     } else {
       playerRef.current!.cueLive(path, offset, meta[path]?.bpm, beatOverride[path] ?? meta[path]?.beatOffset);
+      setCueingPaths(cs => [...cs, path]);
+    }
+  };
+
+  /** Track path actually behind a mixer channel id, so clicking its strip label can select/open that node. */
+  const stripPath = (ch: string): string | null => {
+    if (ch === 'a') return nowPlaying?.path ?? null;
+    if (ch === 'b') return playerRef.current?.getFadingPair()?.to ?? null;
+    return ch; // manually cued channels are keyed by the track's own path
+  };
+
+  /** Select a node and open its waveform detail panel — same toggle nodeClick uses. */
+  const enterStrip = (ch: string) => {
+    const p = stripPath(ch);
+    if (!p) return;
+    setSelected(s => (s === p ? null : p));
+    setWaveDetail(w => (w === p ? null : p));
+  };
+
+  /** Toggle a quantized loop clip on the track's cue-in/cue-out points (set via the waveform). */
+  const toggleClip = (path: string, start: number, end: number, bpm: number | null | undefined) => {
+    if (!cueingPaths.includes(path) && cueingPaths.length >= MAX_CUE_CHANNELS) return;
+    clearCueState(path);
+    if (cueingPaths.includes(path)) {
+      playerRef.current!.stopCue(path);
+    } else {
+      const clip: Clip = { start, end, markers: clips[path]?.markers ?? [], enabled: true };
+      setClips(c => ({ ...c, [path]: clip }));
+      playerRef.current!.cueClip(path, clip, bpm ?? null);
       setCueingPaths(cs => [...cs, path]);
     }
   };
@@ -929,7 +951,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                     <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''} glc-strip-vertical`} key={ch}>
                       <div className="glc-strip-vert-container">
                         <div className="glc-vert-header">
-                          <b className="wc-label glc-vert-ch-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                          <button type="button" className="wc-label glc-vert-ch-label glc-ch-label-btn" onClick={() => enterStrip(ch)}
+                            title={`Select ${tracks.find(t => t.path === stripPath(ch))?.name ?? label} to control it`}>{label}</button>
                         </div>
                         
                         <div className="glc-vert-eq-stack">
@@ -1113,7 +1136,8 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               return (
                 <span className={`glc-group glc-strip${dis ? ' glc-strip-off' : ''}`} key={ch}>
                   <span className="glc-strip-row">
-                  <b className="wc-label" title={ch !== 'a' && ch !== 'b' ? tracks.find(t => t.path === ch)?.name : undefined}>{label}</b>
+                  <button type="button" className="wc-label glc-ch-label-btn" onClick={() => enterStrip(ch)}
+                    title={`Select ${tracks.find(t => t.path === stripPath(ch))?.name ?? label} to control it`}>{label}</button>
                   <span className="vu"><span className="vu-fill" ref={el => { vuRefs.current[ch] = el; }} /></span>
                   <label className="glc-ctl">
                     <span className="glc-tag">VOL</span>
@@ -1410,15 +1434,20 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
         const pA = Math.min(panA, maxPanA), pB = Math.min(panB, maxPanB);
         const aWinStart = aDur - aLen - pA;
         const bWinStart = pB;
-        // Keep the point you're looking at under the cursor when zooming,
-        // instead of snapping the view back — otherwise every zoom click
-        // throws away where you were in the waveform.
+        // Recenter zoom on the active loop, else the last hovered point, else the
+        // window center — otherwise every zoom click throws away where you were.
+        const zoomCenter = (channel: string, cursorRef: React.MutableRefObject<number | null>, winStart: number, winLen: number) => {
+          const ls = playerRef.current?.getLoopState(channel);
+          if (ls && ls.end > ls.start) return (ls.start + ls.end) / 2;
+          return cursorRef.current ?? winStart + winLen / 2;
+        };
         const changeZoom = (newIdx: number) => {
           const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIdx));
           if (clamped === zoomIdx) return;
           const newZoom = ZOOM_LEVELS[clamped];
           const newALen = aFullLen / newZoom, newBLen = bFullLen / newZoom;
-          const centerA = aWinStart + aLen / 2, centerB = bWinStart + bLen / 2;
+          const centerA = zoomCenter('a', cursorARef, aWinStart, aLen);
+          const centerB = zoomCenter(b, cursorBRef, bWinStart, bLen);
           const newPanA = aDur - newALen - (centerA - newALen / 2);
           const newPanB = centerB - newBLen / 2;
           setZoomIdx(clamped);
@@ -1500,6 +1529,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               beats={beatFracs(ma?.bpm, beatOverride[a] ?? ma?.beatOffset, aWinStart, aLen)} onPick={pickBeat(a, ma?.bpm, aWinStart, aLen)}
               cueFrac={ma?.cueOutPoint != null ? (ma.cueOutPoint - aWinStart) / aLen : null}
               onSetCue={frac => onSetCueOut?.(a, Math.max(0, aWinStart + frac * aLen))}
+              onMouseMove={frac => { cursorARef.current = aWinStart + frac * aLen; }}
               getLoop={loopOverlay('a', aWinStart, aLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={pA >= maxPanA} onClick={() => setPanA(p => Math.min(maxPanA, p + aLen * 0.4))} title="Pan earlier">◀ pan</button>
@@ -1522,6 +1552,7 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               beats={beatFracs(mb?.bpm, beatOverride[b] ?? mb?.beatOffset, bWinStart, bLen)} onPick={pickBeat(b, mb?.bpm, bWinStart, bLen)}
               cueFrac={mb?.cuePoint != null ? (mb.cuePoint - bWinStart) / bLen : null}
               onSetCue={frac => onSetCue(b, Math.max(0, bWinStart + frac * bLen))}
+              onMouseMove={frac => { cursorBRef.current = bWinStart + frac * bLen; }}
               getLoop={loopOverlay(b, bWinStart, bLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={pB <= 0} onClick={() => setPanB(p => Math.max(0, p - bLen * 0.4))} title="Pan back toward the fade">◀ pan</button>
@@ -1544,6 +1575,16 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
                         ? `Max ${MAX_CUE_CHANNELS} simultaneous cues reached — stop one first`
                         : 'Cue this track in now, at full volume, to beatmatch by ear — layers on top of any other cued track'}>
                     {cueingPaths.includes(b) ? <Square size={12} /> : <Play size={12} />} Cue
+                  </button>
+                  <button className="btn btn-secondary wc-btn"
+                    disabled={mb?.cuePoint == null || mb?.cueOutPoint == null || (!cueingPaths.includes(b) && cueingPaths.length >= MAX_CUE_CHANNELS)}
+                    onClick={() => toggleClip(b, mb!.cuePoint!, mb!.cueOutPoint!, mb?.bpm)}
+                    title={mb?.cuePoint == null || mb?.cueOutPoint == null
+                      ? 'Set a cue-in and cue-out point on the wave above first'
+                      : cueingPaths.includes(b)
+                        ? 'Stop this loop clip'
+                        : 'Loop the cue-in→cue-out region, quantized to the beat grid'}>
+                    {cueingPaths.includes(b) ? <Square size={12} /> : <Repeat size={12} />} Clip
                   </button>
                 </>
               )}
@@ -1585,12 +1626,14 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
           const period = 60 / m.bpm;
           setBeatOverride(o => ({ ...o, [waveDetail]: (((offset + deltaS) % period) + period) % period }));
         };
+        const waveCh = nowPlaying?.path === waveDetail ? 'a' : waveDetail;
         const changeWaveZoom = (newIdx: number) => {
           const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIdx));
           if (clamped === waveZoomIdx) return;
           const newZoom = ZOOM_LEVELS[clamped];
           const newWinLen = dur > 0 ? dur / newZoom : 0;
-          const center = winStart + winLen / 2;
+          const ls = playerRef.current?.getLoopState(waveCh);
+          const center = ls && ls.end > ls.start ? (ls.start + ls.end) / 2 : cursorWaveRef.current ?? winStart + winLen / 2;
           const newPan = center - newWinLen / 2;
           setWaveZoomIdx(clamped);
           setWavePan(Math.max(0, Math.min(Math.max(0, dur - newWinLen), newPan)));
@@ -1616,8 +1659,11 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
             <TransitionWave peaks={waveDetailPeaks} fadeFrom={0} fadeTo={0} tone="in"
               beats={beatFracs()} onPick={pickBeat}
               cueFrac={m?.cuePoint != null && winLen > 0 ? (m.cuePoint - winStart) / winLen : null}
+              cueOutFrac={m?.cueOutPoint != null && winLen > 0 ? (m.cueOutPoint - winStart) / winLen : null}
               onSetCue={frac => onSetCue(waveDetail, Math.max(0, winStart + frac * winLen))}
-              getLoop={loopOverlay(nowPlaying?.path === waveDetail ? 'a' : waveDetail, winStart, winLen)} />
+              onSetCueOut={frac => onSetCueOut?.(waveDetail, Math.max(0, winStart + frac * winLen))}
+              onMouseMove={frac => { cursorWaveRef.current = winStart + frac * winLen; }}
+              getLoop={loopOverlay(waveCh, winStart, winLen)} />
             <div className="wave-controls">
               <button className="btn btn-secondary wc-btn" disabled={wp <= 0} onClick={() => setWavePan(p => Math.max(0, p - winLen * 0.4))} title="Pan earlier">◀ pan</button>
               <button className="btn btn-secondary wc-btn" disabled={wp >= maxPan} onClick={() => setWavePan(p => Math.min(maxPan, p + winLen * 0.4))} title="Pan later">pan ▶</button>
@@ -1627,8 +1673,21 @@ export default function GraphView({ tracks, edges, meta, library, onAddTrack, on
               <span className="wc-label">beat grid</span>
               <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.01)} title="Grid +10ms" aria-label="Grid +10ms">›</button>
               <button className="btn btn-secondary wc-btn" onClick={nudgeBeat(0.05)} title="Grid +50ms" aria-label="Grid +50ms">»</button>
+              {liveMode && (
+                <>
+                  <span className="wc-sep" />
+                  <button className="btn btn-secondary wc-btn"
+                    disabled={m?.cuePoint == null || m?.cueOutPoint == null || (!cueingPaths.includes(waveDetail) && cueingPaths.length >= MAX_CUE_CHANNELS)}
+                    onClick={() => toggleClip(waveDetail, m!.cuePoint!, m!.cueOutPoint!, m?.bpm)}
+                    title={m?.cuePoint == null || m?.cueOutPoint == null
+                      ? 'Set a cue-in (Shift+click) and cue-out (Ctrl+click) point on the wave above first'
+                      : cueingPaths.includes(waveDetail) ? 'Stop this loop clip' : 'Loop the cue-in→cue-out region, quantized to the beat grid'}>
+                    {cueingPaths.includes(waveDetail) ? <Square size={12} /> : <Repeat size={12} />} Clip
+                  </button>
+                </>
+              )}
             </div>
-            <div className="graph-hint">Click a waveform on a beat to set the grid, or use «›»‹ to nudge it. Shift+click to set the cue/start point (green line). Zoom in and pan to place it precisely.</div>
+            <div className="graph-hint">Click a waveform on a beat to set the grid, or use «›»‹ to nudge it. Shift+click to set the cue-in point (green line), Ctrl+click to set the cue-out point (red line). Zoom in and pan to place them precisely.</div>
           </div>
         );
       })()}

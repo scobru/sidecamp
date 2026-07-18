@@ -8,7 +8,7 @@ const WAVE_TONES = { out: { zone: 'rgba(251,191,36,0.10)' }, in: { zone: 'rgba(1
 
 export type LoopOverlay = { startFrac: number; endFrac: number; posFrac: number };
 
-export default function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onPick, onSetCue, getLoop }: { peaks: BandPeaks | null; fadeFrom: number; fadeTo: number; tone: 'out' | 'in'; beats?: number[]; cueFrac?: number | null; onPick?: (frac: number) => void; onSetCue?: (frac: number) => void; getLoop?: () => LoopOverlay | null }) {
+export default function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, cueFrac, cueOutFrac, onPick, onSetCue, onSetCueOut, onMouseMove, getLoop }: { peaks: BandPeaks | null; fadeFrom: number; fadeTo: number; tone: 'out' | 'in'; beats?: number[]; cueFrac?: number | null; cueOutFrac?: number | null; onPick?: (frac: number) => void; onSetCue?: (frac: number) => void; onSetCueOut?: (frac: number) => void; onMouseMove?: (frac: number) => void; getLoop?: () => LoopOverlay | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -68,9 +68,8 @@ export default function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, c
         ctx.globalAlpha = 1;
       }
     }
-    if (cueFrac != null && cueFrac >= 0 && cueFrac <= 1) {
-      const cx = cueFrac * W;
-      const color = tone === 'out' ? '#ef4444' : '#4ade80'; // red for out point, green for in point
+    const drawMarker = (frac: number, color: string) => {
+      const cx = frac * W;
       ctx.save();
       ctx.shadowColor = color;
       ctx.shadowBlur = 6;
@@ -86,8 +85,10 @@ export default function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, c
       ctx.lineTo(cx, 8);
       ctx.closePath();
       ctx.fill();
-    }
-  }, [peaks, fadeFrom, fadeTo, tone, beats, cueFrac, onSetCue]);
+    };
+    if (cueFrac != null && cueFrac >= 0 && cueFrac <= 1) drawMarker(cueFrac, tone === 'out' ? '#ef4444' : '#4ade80'); // red for out point, green for in point
+    if (cueOutFrac != null && cueOutFrac >= 0 && cueOutFrac <= 1) drawMarker(cueOutFrac, '#ef4444');
+  }, [peaks, fadeFrom, fadeTo, tone, beats, cueFrac, cueOutFrac, onSetCue, onSetCueOut]);
 
   // Animated loop overlay on a second stacked canvas: breathing green region with
   // a sweeping playhead, redrawn per frame so it appears/disappears with the loop
@@ -139,13 +140,21 @@ export default function TransitionWave({ peaks, fadeFrom, fadeTo, tone, beats, c
   const pick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const frac = (e.clientX - r.left) / r.width;
+    if ((e.ctrlKey || e.metaKey) && onSetCueOut) { onSetCueOut(frac); return; }
     if (e.shiftKey && onSetCue) { onSetCue(frac); return; }
     if (onPick) onPick(frac);
   };
-  const title = onSetCue ? `Click: mark the beat — Shift+click: set ${tone === 'out' ? 'closing/end' : 'cue/start'} point` : onPick ? 'Click to mark the beat' : undefined;
+  const move = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onMouseMove) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    onMouseMove((e.clientX - r.left) / r.width);
+  };
+  const title = onSetCueOut
+    ? `Click: mark the beat — Shift+click: set cue-in — Ctrl+click: set cue-out`
+    : onSetCue ? `Click: mark the beat — Shift+click: set ${tone === 'out' ? 'closing/end' : 'cue/start'} point` : onPick ? 'Click to mark the beat' : undefined;
   return (
     <div className="transition-wave-wrap">
-      <canvas ref={ref} className="transition-wave-canvas" onClick={pick} title={title} />
+      <canvas ref={ref} className="transition-wave-canvas" onClick={pick} onMouseMove={move} title={title} />
       {hasLoop && <canvas ref={loopRef} className="transition-wave-loop" />}
     </div>
   );

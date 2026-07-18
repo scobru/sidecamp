@@ -36,7 +36,7 @@ const STEPS: Step[] = [
   {
     selector: '.graph-live-controls',
     title: 'Mixer & Cueing',
-    body: 'Control volume, filter and EQ for active channels. Manually cued tracks start silent (VOL 0) with headphone pre-listen (🎧) active. Press Tab to cycle through channel strips, or toggle "All" to show them all at once.'
+    body: 'Control volume, filter and EQ for active channels. Manually cued tracks start silent (VOL 0) with headphone pre-listen (🎧) active. Click a strip to focus it, or toggle "All" to show them all at once.'
   }
 ];
 

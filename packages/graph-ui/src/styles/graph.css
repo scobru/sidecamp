@@ -392,6 +392,8 @@
   margin: 0 4px;
 }
 .wc-label { font-size: 0.7rem; color: var(--text-subtle); margin: 0 2px; }
+.glc-ch-label-btn { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
+.glc-ch-label-btn:hover { text-decoration: underline; }
 .wave-scrub {
   display: flex;
   align-items: center;

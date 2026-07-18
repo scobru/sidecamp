@@ -33,11 +33,18 @@ export const NODE_EQ_PRESETS: Record<NodeEqPreset, { low: number; mid: number; h
   distant: { low: 0, mid: 0, high: 0, filter: 0.6 },                // same highpass sweep as the live filter knob
 };
 
+/** A user-defined loop region with beat keyframes ("markers"), Ableton-warp-marker style:
+ *  each pair of consecutive bounds (start, ...markers, end) is stretched to exactly one
+ *  beat at the track's BPM, straightening local tempo drift so the region locks to the
+ *  grid when cued. markers empty = plain unwarped loop of [start, end]. */
+export type Clip = { start: number; end: number; markers: number[]; enabled: boolean };
+
 /** Per-playlist live-set settings, persisted by the parent alongside tracks/edges. */
 export type LiveConfig = {
   edgePreset?: Record<string, EqPreset>;    // EQ preset per transition (edge key "from→to")
   nodeEq?: Record<string, NodeEqPreset>;    // static EQ preset per track (keyed by path)
   beatOverride?: Record<string, number>;    // manual beat-grid corrections per track path
+  clips?: Record<string, Clip>;             // quantized loop clip per track path
   fadeS?: number;
   masterOn?: boolean;
   masterBpm?: number;
@@ -72,6 +79,7 @@ export class CrossfadePlayer {
   // manually cued decks by track path, played alongside the live deck before a fade fires;
   // multiple entries let 2-3 tracks be layered/beatmatched at once. deck is null while loading.
   private cues = new Map<string, { deck: Deck | null; bpm: number | null }>();
+  private clipTimers = new Map<string, ReturnType<typeof setTimeout>>(); // reloop watchdogs, see cueClip
   private masterBpm: number | null = null; // Ableton-style global tempo; null = tracks play native
   fadeS = DEFAULT_FADE_S;
   private eq: EqBands = { ...DEFAULT_EQ };
@@ -261,12 +269,60 @@ export class CrossfadePlayer {
     });
   }
 
+  /** Cue a user-defined clip: starts at clip.start, straightens local tempo across the
+   *  marker keyframes so the region locks to the beat grid, then reloops [start, end]
+   *  indefinitely — bypasses the normal cue-offset/BPM-ratio path entirely. Reuses the
+   *  cue deck slot, so mixer strip, PFL, filter/EQ etc. all work on it unchanged. */
+  cueClip(path: string, clip: Clip, bpm: number | null) {
+    const old = this.cues.get(path);
+    if (old?.deck) { try { old.deck.src.stop(); } catch { /* already stopped */ } }
+    clearTimeout(this.clipTimers.get(path));
+    const entry = { deck: null as Deck | null, bpm: bpm ?? null };
+    this.cues.set(path, entry);
+    const markers = clip.markers.filter(m => m > clip.start && m < clip.end).sort((a, b) => a - b);
+    if (markers.length === 0) {
+      // no keyframes to straighten — plain native loop of [start, end] at native tempo
+      this.load(path).then(buf => {
+        if (this.cues.get(path) !== entry) return;
+        entry.deck = this.startDeck(buf, clip.start, 1, 1, 0, 0, 1);
+        entry.deck.src.loopStart = clip.start;
+        entry.deck.src.loopEnd = clip.end;
+        entry.deck.src.loop = true;
+      });
+      return;
+    }
+    const spin = () => {
+      if (this.cues.get(path) !== entry) return; // stopped/replaced meanwhile
+      this.load(path).then(buf => {
+        if (this.cues.get(path) !== entry) return;
+        const bounds = [clip.start, ...markers, clip.end];
+        const beatDur = bpm ? 60 / bpm : null;
+        entry.deck = this.startDeck(buf, clip.start, 1, 1, 0, 0, 1);
+        const d = entry.deck;
+        const ctx = this.getCtx();
+        let t = ctx.currentTime;
+        d.src.playbackRate.cancelScheduledValues(t);
+        for (let i = 0; i < bounds.length - 1; i++) {
+          const span = bounds[i + 1] - bounds[i];
+          const rate = beatDur ? span / beatDur : 1;
+          d.src.playbackRate.setValueAtTime(rate, t);
+          t += span / rate;
+        }
+        const wallDur = t - ctx.currentTime;
+        this.clipTimers.set(path, setTimeout(spin, Math.max(20, wallDur * 1000)));
+      });
+    };
+    spin();
+  }
+
   /** Stop one cued track, or every cued track when no path is given. */
   stopCue(path?: string) {
     for (const [p, e] of [...this.cues]) {
       if (path && p !== path) continue;
       if (e.deck) { try { e.deck.src.stop(); } catch { /* already stopped */ } }
       this.cues.delete(p);
+      clearTimeout(this.clipTimers.get(p));
+      this.clipTimers.delete(p);
     }
   }
 
