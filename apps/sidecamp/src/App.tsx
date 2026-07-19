@@ -6,7 +6,6 @@ import {
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
   Eye, EyeOff
 } from 'lucide-react';
-import { GraphView, type LiveConfig } from 'graph-ui';
 import { Button } from 'tunecamp-design-system';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
@@ -141,7 +140,7 @@ function App() {
     }
   };
   // Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
-  type Playlist = { id: string; name: string; tracks: { path: string; name: string }[]; edges?: [string, string][]; liveConfig?: LiveConfig };
+  type Playlist = { id: string; name: string; tracks: { path: string; name: string }[] };
   // Library sub-panels are mutually exclusive — one workspace at a time, not stacked overlays.
   const [libraryPanel, setLibraryPanel] = useState<'none' | 'playlists' | 'organize'>('none');
   const showPlaylists = libraryPanel === 'playlists';
@@ -886,8 +885,6 @@ function App() {
         id: crypto.randomUUID(),
         name: data.name.endsWith('(Imported)') ? data.name : `${data.name} (Imported)`,
         tracks: data.tracks,
-        edges: Array.isArray(data.edges) ? data.edges : [],
-        liveConfig: data.liveConfig || {},
       };
       setPlaylists(prev => [...prev, newPlaylist]);
       setActivePlaylistId(newPlaylist.id);
@@ -1438,9 +1435,6 @@ function App() {
           <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
             <span className="icon"><Music size={16} /></span> {!sidebarCollapsed && 'Library'}
           </button>
-          <button className={`nav-item ${activeTab === 'graph' ? 'active' : ''}`} onClick={() => setActiveTab('graph')} title="Playlist Graph (Transitions & Suggestion Engine)">
-            <span className="icon"><Share2 size={16} /></span> {!sidebarCollapsed && 'Graph'}
-          </button>
           <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
             <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && 'Network'}
           </button>
@@ -1584,7 +1578,7 @@ function App() {
                     <input type="text" value={newPlaylistName} onChange={e => setNewPlaylistName(e.target.value)} placeholder="New playlist name" className="glass-input" style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && createPlaylist()} />
                     <Button variant="primary" onClick={createPlaylist} disabled={!newPlaylistName.trim()} title="Create playlist"><FolderPlus size={16} /></Button>
                   </div>
-                  <Button variant="secondary" onClick={handleImportPlaylistJson} title="Import playlist with transitions" style={{ width: '100%', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0.45rem 0.8rem', fontSize: '0.82rem' }}>
+                  <Button variant="secondary" onClick={handleImportPlaylistJson} title="Import playlist" style={{ width: '100%', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0.45rem 0.8rem', fontSize: '0.82rem' }}>
                     <Share2 size={14} /> Import Playlist (JSON)
                   </Button>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1619,7 +1613,7 @@ function App() {
                         <div style={{ display: 'flex', gap: '8px' }}>
                           {activePlaylist.tracks.length > 0 && <Button variant="primary" onClick={() => playAt(playlistQueue, 0)} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>▶ Play</Button>}
                           <Button variant="accent" onClick={handleExportPlaylist} disabled={activePlaylist.tracks.length === 0} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}><Download size={14} /> Export (CDJ)</Button>
-                          <Button variant="secondary" onClick={handleExportPlaylistJson} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Share2 size={14} /> Export Graph (JSON)</Button>
+                          <Button variant="secondary" onClick={handleExportPlaylistJson} style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Share2 size={14} /> Export Playlist (JSON)</Button>
                         </div>
                       </div>
                       {exportMsg && <div style={{ padding: '0.5rem 0.8rem', marginBottom: '1rem', background: 'rgba(102,255,153,0.08)', border: '1px solid rgba(102,255,153,0.4)', borderRadius: '8px', fontSize: '0.82rem', wordBreak: 'break-all' }}>{exportMsg}</div>}
@@ -1664,56 +1658,6 @@ function App() {
             </div>
             );
           })()}
-
-          {activeTab === 'graph' && (
-            <div className="glass-card">
-              <h3 style={{ marginTop: 0 }}>Playlist Graph{activePlaylist ? ` — ${activePlaylist.name}` : ''}</h3>
-              {!activePlaylist ? (
-                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
-                  <p style={{ marginBottom: '1.2rem' }}>Select or create a playlist in the Library panel under Playlists first — the graph edits the active playlist.</p>
-                  <Button variant="primary" onClick={() => { setActiveTab('library'); setLibraryPanel('playlists'); }}>
-                    Go to Library Playlists
-                  </Button>
-                </div>
-              ) : (
-                <GraphView
-                  key={activePlaylist.id}
-                  tracks={activePlaylist.tracks}
-                  edges={activePlaylist.edges || []}
-                  liveConfig={activePlaylist.liveConfig}
-                  onLiveConfigChange={cfg => updatePlaylist(activePlaylist.id, p => ({ ...p, liveConfig: cfg }))}
-                  meta={trackMeta}
-                  library={downloadedFiles.map((f: any) => ({ path: f.path, name: f.name }))}
-                  onAddTrack={(t, edgeFrom) => updatePlaylist(activePlaylist.id, p => ({
-                    ...p,
-                    tracks: p.tracks.some(x => x.path === t.path) ? p.tracks : [...p.tracks, { path: t.path, name: t.name.split(/[/\\]/).pop() || t.name }],
-                    edges: edgeFrom ? [...(p.edges || []), [edgeFrom, t.path] as [string, string]] : p.edges,
-                  }))}
-                  onAddEdge={(from, to) => updatePlaylist(activePlaylist.id, p => ({
-                    ...p,
-                    edges: (p.edges || []).some(([a, b]) => a === from && b === to) ? p.edges : [...(p.edges || []), [from, to]],
-                  }))}
-                  onRemoveEdge={(from, to) => updatePlaylist(activePlaylist.id, p => ({
-                    ...p,
-                    edges: (p.edges || []).filter(([a, b]) => !(a === from && b === to)),
-                  }))}
-                  onRemoveTrack={path => updatePlaylist(activePlaylist.id, p => ({
-                    ...p,
-                    tracks: p.tracks.filter(t => t.path !== path),
-                    edges: (p.edges || []).filter(([a, b]) => a !== path && b !== path),
-                  }))}
-                  onSetCue={(path, cue) => {
-                    setTrackMeta(m => ({ ...m, [path]: { ...(m[path] as any), cuePoint: cue } }));
-                    window.electronAPI.setTrackAnalysis(path, { cuePoint: cue });
-                  }}
-                  onSetCueOut={(path, cueOut) => {
-                    setTrackMeta(m => ({ ...m, [path]: { ...(m[path] as any), cueOutPoint: cueOut } }));
-                    window.electronAPI.setTrackAnalysis(path, { cueOutPoint: cueOut });
-                  }}
-                />
-              )}
-            </div>
-          )}
 
           {activeTab === 'library' && showOrganize && (
             <div className="glass-card">

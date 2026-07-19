@@ -15,7 +15,7 @@ packages/graph-ui     # React graph view: track graph, transitions, waveforms, r
 
 ## Graphofone
 
-**Graphofone** is a focused live-performance tool: import a music folder, arrange tracks as a graph, link them with beat-matched crossfade transitions, and perform — no P2P, no server, no network features. It ships with a first-run quick tour (reopen it anytime from the `?` button in the header). Both apps consume the same `graph-ui` and `audio-engine` packages, so every mixing feature lands in both.
+**Graphofone** is a focused live-performance tool: import a music folder, arrange tracks as a graph, link them with beat-matched crossfade transitions, and perform — no P2P, no server, no network features. It ships with a first-run quick tour (reopen it anytime from the `?` button in the header). Sidecamp stays a lean player with classic playlists; the graph/mixing engine (`graph-ui`, `audio-engine`) lives in Graphofone only.
 
 ## Why Sidecamp?
 
@@ -39,9 +39,6 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
 - 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with light/dark themes and a collapsible sidebar.
-- 🕸️ **Graph Playlist View** — Visualize your library as a track graph; edges are auto-suggested by BPM/key/genre compatibility, with beat-synced crossfade transitions and one-click A→B preview.
-- 🎚️ **DJ Mixing Tools** — Zoomable waveform preview, in/out cue points, and EQ-based transition presets (bass-swap, echo-out) for smooth track blending.
-- 🔴 **Set Recording** — Record your live mix session to a file as you play through the graph.
 
 ## Prerequisites
 
