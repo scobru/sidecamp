@@ -8,5 +8,10 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present"
+  },
+  "dependencies": {
+    "p-finally": "^2.0.1",
+    "symbol-tree": "^3.2.4",
+    "tinyglobby": "^0.2.17"
   }
 }

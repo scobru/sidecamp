@@ -47,7 +47,16 @@ vi.mock('electron', () => ({
     handle: vi.fn(),
   },
   net: { fetch: vi.fn() },
-  dialog: { showOpenDialog: vi.fn() }
+  dialog: { showOpenDialog: vi.fn() },
+  Menu: {
+    buildFromTemplate: vi.fn(),
+    setApplicationMenu: vi.fn(),
+  },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn().mockReturnValue(false),
+    encryptString: vi.fn(),
+    decryptString: vi.fn(),
+  },
 }));
 
 describe('Downloads IPC Handlers', () => {
