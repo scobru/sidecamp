@@ -25,6 +25,7 @@
     "music-metadata": "^11.14.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tunecamp-design-system": "github:scobru/tunecamp-design-system#v1.0.0",
     "web-audio-beat-detector": "^8.2.37"
   },
   "devDependencies": {
