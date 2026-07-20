@@ -1065,7 +1065,10 @@ function App() {
             .catch((e: any) => { console.error("Network search failed:", e); return []; }),
           window.electronAPI.searchWeb(searchQuery, 'archive')
             .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'archive' })))
-            .catch((e: any) => { console.error("Archive.org search failed:", e); return []; })
+            .catch((e: any) => { console.error("Archive.org search failed:", e); return []; }),
+          window.electronAPI.searchWeb(searchQuery, 'youtube')
+            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'youtube' })))
+            .catch((e: any) => { console.error("YouTube search failed:", e); return []; })
         ];
         
         const settled = await Promise.allSettled(promises);
@@ -1107,7 +1110,7 @@ function App() {
     setDlLogs(prev => [...prev, `[${source.toUpperCase()}] Starting download of: ${filename}...`]);
     try {
       let filePath = '';
-      if (source === 'soundcloud' || source === 'bandcamp' || source === 'archive') {
+      if (source === 'soundcloud' || source === 'bandcamp' || source === 'archive' || source === 'youtube') {
         filePath = await window.electronAPI.ytdlpDownload(result.url);
       } else if (source === 'torrent_search') {
         const paths = await window.electronAPI.torrentDownload(result.url, downloadId);
@@ -2349,6 +2352,16 @@ function App() {
                       />
                       Archive.org
                     </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                      <input
+                        type="radio"
+                        name="searchSource"
+                        value="youtube"
+                        checked={searchSource === 'youtube'}
+                        onChange={() => { setSearchSource('youtube'); setSearchResults([]); }}
+                      />
+                      YouTube
+                    </label>
                   </div>
 
                   <div className="search-bar">
@@ -2356,7 +2369,7 @@ function App() {
                       type="text" 
                       value={searchQuery} 
                       onChange={e => setSearchQuery(e.target.value)} 
-                      placeholder={`Search on ${searchSource === 'soulseek' ? 'Soulseek' : searchSource === 'soundcloud' ? 'SoundCloud' : searchSource === 'bandcamp' ? 'Bandcamp' : searchSource === 'network' ? 'TuneCamp Network' : searchSource === 'archive' ? 'Archive.org' : 'Torrent (PirateBay)'}...`}
+                      placeholder={`Search on ${searchSource === 'soulseek' ? 'Soulseek' : searchSource === 'soundcloud' ? 'SoundCloud' : searchSource === 'bandcamp' ? 'Bandcamp' : searchSource === 'network' ? 'TuneCamp Network' : searchSource === 'archive' ? 'Archive.org' : searchSource === 'youtube' ? 'YouTube' : 'Torrent (PirateBay)'}...`}
                       className="glass-input search-input"
                       onKeyDown={e => e.key === 'Enter' && handleSearch()}
                     />

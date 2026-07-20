@@ -167,6 +167,8 @@ ipcMain.handle('search:web', async (event, query, source, server, token) => {
     return await searchPeerNetwork(query, server, token);
   } else if (source === 'archive') {
     return await searchArchiveOrg(query);
+  } else if (source === 'youtube') {
+    return await ytdlp.search(query);
   }
   return [];
 });

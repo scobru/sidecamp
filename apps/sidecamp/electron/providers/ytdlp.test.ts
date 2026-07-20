@@ -3,17 +3,14 @@ import { YtdlpService } from './ytdlp';
 import child_process from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import ffmpeg from '@ffmpeg-installer/ffmpeg';
 
 vi.mock('child_process', async (importOriginal) => {
     const actual = await importOriginal<typeof import('child_process')>();
+    const execFile = vi.fn();
     return {
         ...actual,
-        default: {
-            ...actual,
-            execFile: vi.fn(),
-        },
-        execFile: vi.fn(),
+        default: { ...actual, execFile },
+        execFile,
     };
 });
 
@@ -72,7 +69,7 @@ describe('YtdlpService', () => {
                 '--user-agent',
                 'curl/8.9.1',
                 '--ffmpeg-location',
-                ffmpeg.path,
+                binDir,
                 '-o',
                 path.join(downloadDir, '%(title)s.%(ext)s'),
                 '--',
@@ -80,5 +77,81 @@ describe('YtdlpService', () => {
             ],
             expect.any(Function)
         );
+    });
+
+    it('should return empty array for blank query without calling execFile', async () => {
+        const result = await service.search('   ');
+
+        expect(result).toEqual([]);
+        expect(child_process.execFile).not.toHaveBeenCalled();
+    });
+
+    it('should call execFile with ytsearch pseudo-URL and map entries', async () => {
+        const json = JSON.stringify({
+            entries: [
+                { id: 'abc123', title: 'Test Track', uploader: 'Test Channel', webpage_url: 'https://www.youtube.com/watch?v=abc123' },
+                { id: 'def456', title: 'No Uploader Track' }
+            ]
+        });
+
+        vi.mocked(child_process.execFile).mockImplementation(((cmd: string, args: string[], opts: any, cb: Function) => {
+            cb(null, json, '');
+            return { stdout: { on: vi.fn() }, stderr: { on: vi.fn() } };
+        }) as any);
+
+        const result = await service.search('lofi beats');
+
+        expect(child_process.execFile).toHaveBeenCalledWith(
+            binPath,
+            ['--flat-playlist', '--dump-single-json', '--no-warnings', 'ytsearch15:lofi beats'],
+            expect.any(Object),
+            expect.any(Function)
+        );
+        expect(result).toEqual([
+            {
+                id: 'yt_abc123',
+                title: 'Test Track',
+                artist: 'Test Channel',
+                album: '',
+                url: 'https://www.youtube.com/watch?v=abc123',
+                source: 'youtube',
+                size: 0,
+                bitrate: 0,
+                user: 'YouTube'
+            },
+            {
+                id: 'yt_def456',
+                title: 'No Uploader Track',
+                artist: 'Unknown Artist',
+                album: '',
+                url: 'https://www.youtube.com/watch?v=def456',
+                source: 'youtube',
+                size: 0,
+                bitrate: 0,
+                user: 'YouTube'
+            }
+        ]);
+    });
+
+    it('should return empty array when execFile errors', async () => {
+        vi.mocked(child_process.execFile).mockImplementation(((cmd: string, args: string[], opts: any, cb: Function) => {
+            cb(new Error('yt-dlp crashed'), '', '');
+            return { stdout: { on: vi.fn() }, stderr: { on: vi.fn() } };
+        }) as any);
+
+        const result = await service.search('some query');
+
+        expect(result).toEqual([]);
+    });
+
+    it('should return empty array on malformed JSON output', async () => {
+        vi.mocked(child_process.execFile).mockImplementation(((cmd: string, args: string[], opts: any, cb: Function) => {
+            cb(null, 'not json', '');
+            return { stdout: { on: vi.fn() }, stderr: { on: vi.fn() } };
+        }) as any);
+
+        const result = await service.search('some query');
+
+        expect(result).toEqual([]);
     });
 });

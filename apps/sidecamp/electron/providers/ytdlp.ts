@@ -3,7 +3,8 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
-import ffmpeg from '@ffmpeg-installer/ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 
 const YTDLP_BINARY_NAME = process.platform === 'win32' ? 'yt-dlp.exe' : process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp';
 const YTDLP_RELEASE_URL = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YTDLP_BINARY_NAME}`;
@@ -44,6 +45,64 @@ export class YtdlpService extends EventEmitter {
         return binPath;
     }
 
+    // yt-dlp cerca ffprobe nella stessa cartella di ffmpeg via --ffmpeg-location:
+    // @ffmpeg-installer e @ffprobe-installer non garantiscono stessa dir -> li colochiamo insieme
+    private ensureFfmpegDir(): string {
+        if (!fs.existsSync(this.binDir)) {
+            fs.mkdirSync(this.binDir, { recursive: true });
+        }
+
+        const ffmpegDest = path.join(this.binDir, path.basename(ffmpegInstaller.path));
+        if (!fs.existsSync(ffmpegDest)) {
+            fs.copyFileSync(ffmpegInstaller.path, ffmpegDest);
+            if (process.platform !== 'win32') fs.chmodSync(ffmpegDest, 0o755);
+        }
+
+        const ffprobeDest = path.join(this.binDir, path.basename(ffprobeInstaller.path));
+        if (!fs.existsSync(ffprobeDest)) {
+            fs.copyFileSync(ffprobeInstaller.path, ffprobeDest);
+            if (process.platform !== 'win32') fs.chmodSync(ffprobeDest, 0o755);
+        }
+
+        return this.binDir;
+    }
+
+    // ytsearchN: e' un pseudo-URL yt-dlp nativo -> nessuna API key, nessuna dipendenza esterna.
+    public async search(query: string, limit = 15): Promise<any[]> {
+        if (!query.trim()) return [];
+
+        const binPath = await this.ensureYtdlp();
+        const args = ['--flat-playlist', '--dump-single-json', '--no-warnings', `ytsearch${limit}:${query}`];
+
+        return new Promise((resolve) => {
+            execFile(binPath, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+                if (error) {
+                    this.emit('log', `Ricerca YouTube fallita: ${error.message}`);
+                    return resolve([]);
+                }
+
+                try {
+                    const data = JSON.parse(stdout);
+                    const entries = Array.isArray(data.entries) ? data.entries : [];
+                    resolve(entries.map((entry: any) => ({
+                        id: 'yt_' + entry.id,
+                        title: entry.title || 'Unknown Title',
+                        artist: entry.uploader || entry.channel || 'Unknown Artist',
+                        album: '',
+                        url: entry.webpage_url || entry.url || `https://www.youtube.com/watch?v=${entry.id}`,
+                        source: 'youtube',
+                        size: 0,
+                        bitrate: 0,
+                        user: 'YouTube'
+                    })));
+                } catch (e) {
+                    this.emit('log', `Parsing risultati YouTube fallito: ${e}`);
+                    resolve([]);
+                }
+            });
+        });
+    }
+
     public async download(url: string): Promise<string> {
         try {
             new URL(url);
@@ -62,7 +121,7 @@ export class YtdlpService extends EventEmitter {
             const args = [
                 '-x', '--audio-format', 'mp3',
                 '--user-agent', 'curl/8.9.1',
-                '--ffmpeg-location', ffmpeg.path,
+                '--ffmpeg-location', this.ensureFfmpegDir(),
                 '-o', outputPath,
                 '--', url
             ];
