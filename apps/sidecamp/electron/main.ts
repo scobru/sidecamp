@@ -697,12 +697,12 @@ ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);
 });
 
-ipcMain.handle('network:tracks', async (event, server, token, sessionId) => {
-  return await network.getPeerTracks(server, token, sessionId);
+ipcMain.handle('network:tracks', async (event, server, token, sessionId, origin) => {
+  return await network.getPeerTracks(server, token, sessionId, origin);
 });
 
-ipcMain.handle('network:download', async (event, server, token, sessionId, trackId, artist, title) => {
-  return await network.downloadPeerTrack(server, token, sessionId, trackId, artist, title);
+ipcMain.handle('network:download', async (event, server, token, sessionId, trackId, artist, title, origin) => {
+  return await network.downloadPeerTrack(server, token, sessionId, trackId, artist, title, origin);
 });
 
 ipcMain.handle('network:catalog-tracks', async (event, server, token) => {

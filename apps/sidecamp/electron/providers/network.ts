@@ -17,9 +17,12 @@ export class NetworkService {
     return response.data;
   }
 
-  public async getPeerTracks(server: string, token: string, sessionId: string) {
+  public async getPeerTracks(server: string, token: string, sessionId: string, origin?: string) {
     const cleanServer = server.replace(/\/$/, '');
-    const response = await axios.get(`${cleanServer}/api/peers/${sessionId}/tracks`, {
+    const url = origin
+      ? `${cleanServer}/api/peers/${sessionId}/tracks?origin=${encodeURIComponent(origin)}`
+      : `${cleanServer}/api/peers/${sessionId}/tracks`;
+    const response = await axios.get(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     return response.data;
@@ -31,10 +34,15 @@ export class NetworkService {
     sessionId: string,
     trackId: string,
     artist: string,
-    title: string
+    title: string,
+    origin?: string
   ): Promise<string> {
-    const cleanServer = server.replace(/\/$/, '');
-    const url = `${cleanServer}/api/peers/${sessionId}/tracks/${trackId}/download?token=${token}`;
+    // Remote federated instances have no knowledge of our local JWT and expose
+    // their download endpoint publicly (opt-in), so we fetch directly from the
+    // origin instead of tunneling through our own server.
+    const url = origin
+      ? `${origin.replace(/\/$/, '')}/api/peers/${sessionId}/tracks/${trackId}/federated-download`
+      : `${server.replace(/\/$/, '')}/api/peers/${sessionId}/tracks/${trackId}/download?token=${token}`;
 
     if (!fs.existsSync(this.downloadDir)) {
       fs.mkdirSync(this.downloadDir, { recursive: true });
@@ -44,7 +52,7 @@ export class NetworkService {
       method: 'get',
       url: url,
       responseType: 'stream',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: origin ? {} : { 'Authorization': `Bearer ${token}` }
     });
 
     const contentDisposition = response.headers['content-disposition'];

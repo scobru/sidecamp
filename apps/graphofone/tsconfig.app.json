@@ -8,6 +8,10 @@
     "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
+    "paths": {
+      "audio-engine": ["../../packages/audio-engine/src/index.ts"],
+      "graph-ui": ["../../packages/graph-ui/src/index.ts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

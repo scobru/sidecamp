@@ -386,7 +386,7 @@ function App() {
         setPeerTracks(mappedTracks);
         setNetworkPeers(prev => prev.map(p => p.id === 'server' ? { ...p, trackCount: mappedTracks.length } : p));
       } else {
-        const res = await window.electronAPI.getPeerTracks(server, token, peer.id);
+        const res = await window.electronAPI.getPeerTracks(server, token, peer.id, peer.origin);
         setPeerTracks(res || []);
       }
     } catch (e: any) {
@@ -432,7 +432,8 @@ function App() {
           selectedPeer.id,
           track.id,
           track.artist,
-          track.title
+          track.title,
+          selectedPeer.origin
         );
       }
       setDlLogs(prev => [...prev, `${logPrefix} Download completed! Saved to: ${filePath}`]);
@@ -1116,7 +1117,7 @@ function App() {
         const paths = await window.electronAPI.torrentDownload(result.url, downloadId);
         filePath = paths.length > 0 ? paths[0] : '';
       } else if (source === 'peer') {
-        filePath = await window.electronAPI.downloadPeerTrack(server, token, result.sessionId, result.trackId, result.artist, result.title);
+        filePath = await window.electronAPI.downloadPeerTrack(server, token, result.sessionId, result.trackId, result.artist, result.title, result.origin);
       } else {
         filePath = await window.electronAPI.slskDownload(result);
       }
@@ -2106,6 +2107,7 @@ function App() {
                         <span style={{ fontWeight: 600, color: selectedPeer?.id === p.id ? 'var(--primary)' : 'var(--text-main)', fontSize: '0.95rem' }}>
                           {p.id === 'server' ? <Cloud size={14} style={{ verticalAlign: '-2px', marginRight: '6px' }} /> : <User size={14} style={{ verticalAlign: '-2px', marginRight: '6px' }} />}
                           {p.username || 'Unknown'}
+                          {p.origin && <span style={{ marginLeft: '8px', fontSize: '0.7rem', color: 'var(--primary)', background: 'rgba(var(--primary-rgb), 0.15)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', border: '1px solid rgba(var(--primary-rgb), 0.3)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '100px', display: 'inline-block' }}>{new URL(p.origin).hostname}</span>}
                         </span>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.04)', padding: '2px 8px', borderRadius: '12px' }}>{p.trackCount || 0} tracks</span>
                       </div>
@@ -2527,6 +2529,77 @@ function App() {
 
             </div>
           )}
+
+        {/* Audio Player Bar — integrated footer of main-content, not a floating overlay */}
+        {currentPlayback && (
+          <div className="audio-player-bar">
+            <div className="player-info">
+              <span className="player-track-icon"><Music size={18} /></span>
+              <div className="player-track-details">
+                <span className="player-track-title">{currentPlayback.name}</span>
+                <span className="player-track-path">{queue.length > 1 ? `${queueIndex + 1}/${queue.length} — ` : ''}{currentPlayback.path}</span>
+              </div>
+            </div>
+
+            <div className="player-controls-center">
+              <div className="player-buttons">
+                {queue.length > 1 && (
+                  <button className="player-btn" onClick={playPrev} disabled={queueIndex <= 0} title="Previous" style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}>
+                    <SkipBack size={14} />
+                  </button>
+                )}
+                <button className="player-btn toggle-play" onClick={togglePlay}>
+                  {isPlaying ? <Pause size={16} /> : <Play size={16} style={{ marginLeft: '2px' }} />}
+                </button>
+                {queue.length > 1 && (
+                  <button className="player-btn" onClick={playNext} disabled={queueIndex + 1 >= queue.length} title="Next" style={{ opacity: queueIndex + 1 >= queue.length ? 0.4 : 1 }}>
+                    <SkipForward size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="player-seeker">
+                <span className="time-display">{formatTime(currentTime)}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max={duration || 100}
+                  value={duration ? Math.min(currentTime, duration) : 0}
+                  disabled={!duration}
+                  // Explicit pointer capture guarantees onPointerUp fires on this
+                  // element even if the drag ends outside the bar or the window
+                  // loses focus mid-drag. Without it, isSeeking could get stuck
+                  // true (no matching pointerup) and the bar would stop following
+                  // playback until the next reload — onPointerCancel/LostPointerCapture
+                  // are the fallback release for whatever interrupts the drag.
+                  onPointerDown={(e) => { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ } setIsSeeking(true); }}
+                  onChange={(e) => handleSeekChange(parseFloat(e.target.value))}
+                  onPointerUp={handleSeekCommit}
+                  onPointerCancel={() => setIsSeeking(false)}
+                  onLostPointerCapture={() => setIsSeeking(false)}
+                  className="seeker-slider"
+                />
+                <span className="time-display">{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            <div className="player-controls-right">
+              <span className="volume-icon"><Volume2 size={14} /></span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="volume-slider"
+              />
+              <button className="player-btn stop-play" onClick={stopPlayback} title="Close Player">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <audio
@@ -2565,77 +2638,6 @@ function App() {
           else stopPlayback();
         }}
       />
-
-      {/* Audio Player Bar */}
-      {currentPlayback && (
-        <div className="audio-player-bar">
-          <div className="player-info">
-            <span className="player-track-icon"><Music size={32} /></span>
-            <div className="player-track-details">
-              <span className="player-track-title">{currentPlayback.name}</span>
-              <span className="player-track-path">{queue.length > 1 ? `${queueIndex + 1}/${queue.length} — ` : ''}{currentPlayback.path}</span>
-            </div>
-          </div>
-          
-          <div className="player-controls-center">
-            <div className="player-buttons">
-              {queue.length > 1 && (
-                <button className="player-btn" onClick={playPrev} disabled={queueIndex <= 0} title="Previous" style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}>
-                  <SkipBack size={18} />
-                </button>
-              )}
-              <button className="player-btn toggle-play" onClick={togglePlay}>
-                {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '4px' }} />}
-              </button>
-              {queue.length > 1 && (
-                <button className="player-btn" onClick={playNext} disabled={queueIndex + 1 >= queue.length} title="Next" style={{ opacity: queueIndex + 1 >= queue.length ? 0.4 : 1 }}>
-                  <SkipForward size={18} />
-                </button>
-              )}
-            </div>
-
-            <div className="player-seeker">
-              <span className="time-display">{formatTime(currentTime)}</span>
-              <input
-                type="range"
-                min="0"
-                max={duration || 100}
-                value={duration ? Math.min(currentTime, duration) : 0}
-                disabled={!duration}
-                // Explicit pointer capture guarantees onPointerUp fires on this
-                // element even if the drag ends outside the bar or the window
-                // loses focus mid-drag. Without it, isSeeking could get stuck
-                // true (no matching pointerup) and the bar would stop following
-                // playback until the next reload — onPointerCancel/LostPointerCapture
-                // are the fallback release for whatever interrupts the drag.
-                onPointerDown={(e) => { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ } setIsSeeking(true); }}
-                onChange={(e) => handleSeekChange(parseFloat(e.target.value))}
-                onPointerUp={handleSeekCommit}
-                onPointerCancel={() => setIsSeeking(false)}
-                onLostPointerCapture={() => setIsSeeking(false)}
-                className="seeker-slider"
-              />
-              <span className="time-display">{formatTime(duration)}</span>
-            </div>
-          </div>
-          
-          <div className="player-controls-right">
-            <span className="volume-icon"><Volume2 size={18} /></span>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.05" 
-              value={volume} 
-              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))} 
-              className="volume-slider"
-            />
-            <button className="player-btn stop-play" onClick={stopPlayback} title="Close Player">
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Metadata Editor Modal */}
       {metadataModalFile && (

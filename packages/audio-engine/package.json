@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./src/index.ts",
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.js",
+    "build": "npm run build:wasm"
+  },
   "devDependencies": {
     "typescript": "~6.0.2"
   }

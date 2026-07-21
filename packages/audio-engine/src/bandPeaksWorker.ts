@@ -1,6 +1,8 @@
 // Computes 3-band peak envelopes off the main thread. Channel data crosses the
 // thread boundary once per track and is cached here (same cap as bufCache); if a
 // path was evicted the worker answers needData and the main side resends.
+import { getWasmEngineSync, compute3BandPeaksWasm } from './wasm/audioWasm.js';
+
 type Req = { id: number; path: string; ch?: Float32Array; sr: number; s0: number; e0: number; N: number };
 
 const cache = new Map<string, Float32Array>();
@@ -16,6 +18,18 @@ self.onmessage = (ev: MessageEvent<Req>) => {
     (self as unknown as Worker).postMessage({ id, needData: true });
     return;
   }
+
+  // Attempt WASM calculation
+  const wasmEngine = getWasmEngineSync();
+  if (wasmEngine) {
+    const wasmPeaks = compute3BandPeaksWasm(wasmEngine, data, sr, s0, e0, N);
+    if (wasmPeaks) {
+      (self as unknown as Worker).postMessage({ id, peaks: wasmPeaks });
+      return;
+    }
+  }
+
+  // JS Fallback
   const bucket = Math.max(1, Math.floor((e0 - s0) / N));
   const aLow = 1 - Math.exp((-2 * Math.PI * 250) / sr);
   const aMid = 1 - Math.exp((-2 * Math.PI * 2000) / sr);

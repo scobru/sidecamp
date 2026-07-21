@@ -172,7 +172,6 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 2rem;
-  padding-bottom: 110px;
   gap: 1.5rem;
   background: var(--tc-color-glass-bg);
   backdrop-filter: blur(24px);
@@ -197,7 +196,6 @@
 
 .content-area {
   padding: 2.2rem;
-  padding-bottom: 110px;
   flex-grow: 1;
   overflow-y: auto;
 }

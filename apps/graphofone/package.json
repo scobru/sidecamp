@@ -1,7 +1,7 @@
 {
   "name": "graphofone",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Standalone live performance tool.",
   "author": {
     "name": "scobru",
@@ -23,7 +23,7 @@
     "music-metadata": "^11.14.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "tunecamp-design-system": "github:scobru/tunecamp-design-system#v1.0.0",
+    "tunecamp-design-system": "github:scobru/tunecamp-design-system#v1.0.1",
     "web-audio-beat-detector": "^8.2.37"
   },
   "devDependencies": {

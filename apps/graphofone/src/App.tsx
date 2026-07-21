@@ -174,19 +174,19 @@ function App() {
             edges={edges}
             meta={meta}
             library={libraryForGraph}
-            onAddTrack={(t, edgeFrom) => {
+            onAddTrack={(t: GraphTrack, edgeFrom?: string) => {
               const lib = library.find(l => l.path === t.path);
               if (lib) handleAddTrack(lib);
               if (edgeFrom) setEdges(prev => prev.some(e => e[0] === edgeFrom && e[1] === t.path) ? prev : [...prev, [edgeFrom, t.path]]);
             }}
-            onAddEdge={(from, to) => setEdges(prev => [...prev, [from, to]])}
-            onRemoveEdge={(from, to) => setEdges(prev => prev.filter(e => !(e[0] === from && e[1] === to)))}
-            onRemoveTrack={(path) => {
+            onAddEdge={(from: string, to: string) => setEdges(prev => [...prev, [from, to]])}
+            onRemoveEdge={(from: string, to: string) => setEdges(prev => prev.filter(e => !(e[0] === from && e[1] === to)))}
+            onRemoveTrack={(path: string) => {
               setTracks(prev => prev.filter(t => t.path !== path));
               setEdges(prev => prev.filter(e => e[0] !== path && e[1] !== path));
             }}
-            onSetCue={(path, val) => setMeta(prev => ({...prev, [path]: {...prev[path], cuePoint: val}} as any))}
-            onSetCueOut={(path, val) => setMeta(prev => ({...prev, [path]: {...prev[path], cueOutPoint: val}} as any))}
+            onSetCue={(path: string, val: number) => setMeta(prev => ({...prev, [path]: {...prev[path], cuePoint: val}} as any))}
+            onSetCueOut={(path: string, val: number) => setMeta(prev => ({...prev, [path]: {...prev[path], cueOutPoint: val}} as any))}
             liveConfig={liveConfig}
             onLiveConfigChange={setLiveConfig}
           />
