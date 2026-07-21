@@ -1348,6 +1348,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = ['light', 'nordic'].includes(theme) ? 'light' : 'dark';
     localStorage.setItem('theme', theme);
   }, [theme]);
 

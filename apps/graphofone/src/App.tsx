@@ -136,6 +136,7 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('graphofone-theme') || 'dark');
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = ['light', 'nordic'].includes(theme) ? 'light' : 'dark';
     localStorage.setItem('graphofone-theme', theme);
   }, [theme]);
 
