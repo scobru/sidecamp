@@ -2,6 +2,12 @@ import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu, safeSt
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 
+// Windows-only bug: Chromium's native window-occlusion tracking can leave a minimized
+// window unable to restore after switching away and back. Disable it.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+}
+
 protocol.registerSchemesAsPrivileged([
   // corsEnabled: false — renderer fetch() of media:// (waveform/BPM analysis) comes from an
   // http/file origin and would otherwise be blocked by CORS for custom schemes.
