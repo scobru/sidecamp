@@ -26,6 +26,8 @@ jobs:
           node-version: 22
           cache: npm
 
+      - run: rustup target add wasm32-unknown-unknown
+
       - run: npm install --no-audit --no-fund
 
       # Asset filenames come from package.json "version" — sync it from the tag
