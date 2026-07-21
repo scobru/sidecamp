@@ -18,9 +18,7 @@
   },
   "dependencies": {
     "@types/fs-extra": "^11.0.4",
-    "audio-engine": "*",
     "fs-extra": "^11.3.6",
-    "graph-ui": "*",
     "lucide-react": "^1.23.0",
     "music-metadata": "^11.14.0",
     "react": "^19.2.7",
@@ -29,6 +27,8 @@
     "web-audio-beat-detector": "^8.2.37"
   },
   "devDependencies": {
+    "audio-engine": "*",
+    "graph-ui": "*",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
