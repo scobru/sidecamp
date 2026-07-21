@@ -135,8 +135,15 @@ export class PeerDaemon extends EventEmitter {
         if (!this.isRunning) return;
         
         try {
-            const indexData = await this.scanFolders();
-            
+            // Only walk the filesystem + re-parse metadata on the first connect.
+            // Reconnects (WS drops, server restarts) reuse the cached index —
+            // rescanning every 5s on a flaky connection pegs the main process
+            // and freezes the whole window (Electron's message pump shares its
+            // thread with the Node event loop).
+            const indexData = this.fileIndex.size > 0
+                ? Array.from(this.fileIndex.values()).map(t => ({ ...t, path: undefined }))
+                : await this.scanFolders();
+
             const wsUrl = new URL(this.config.server);
             wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
             wsUrl.pathname = '/ws/peer';
