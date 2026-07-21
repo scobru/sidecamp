@@ -2054,14 +2054,24 @@ function App() {
                     <div>
                       <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)', fontSize: '1.8rem' }}>Sidecamp</h2>
                       <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Powered by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>TuneCamp</span></p>
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Version {update?.currentVersion ?? '…'}</p>
                     </div>
                   </div>
                   <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1rem' }}>
                     <strong style={{ color: 'var(--text-main)' }}>Sidecamp</strong> is a desktop companion app for <strong style={{ color: 'var(--primary)' }}>TuneCamp</strong> — an independent music platform built for artists and listeners who believe in open, decentralized music distribution.
                   </p>
-                  <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 0 }}>
+                  <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
                     With Sidecamp you can discover and download music from the TuneCamp network and from peer-to-peer sources (Soulseek, BitTorrent, YouTube), manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
                   </p>
+                  {update?.updateAvailable ? (
+                    <Button variant="primary" size="sm" onClick={() => window.electronAPI.openReleasesPage()}>
+                      Update to {update.latestVersion}
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" size="sm" onClick={() => window.electronAPI.checkForUpdate().then(setUpdate)}>
+                      Check for updates
+                    </Button>
+                  )}
                 </div>
 
                 <div className="glass-card">

@@ -562,8 +562,12 @@ ipcMain.handle('recordings:save', async (event, filename: string, data: Uint8Arr
 });
 
 // --- Update check against GitHub releases ---
+// Sidecamp and graphofone ship independent versions from one shared repo, tagged
+// `sidecamp-v*` / `graphofone-v*` — filter releases by prefix, not /releases/latest.
+const TAG_PREFIX = 'sidecamp-v';
+const FALLBACK_RELEASES_URL = 'https://github.com/scobru/sidecamp/releases';
+let releasesPageUrl = FALLBACK_RELEASES_URL;
 // Cached for the process lifetime: one GitHub API hit per app launch.
-const RELEASES_URL = 'https://github.com/scobru/sidecamp/releases/latest';
 let updateCheckResult: { currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null = null;
 
 ipcMain.handle('app:update-check', async () => {
@@ -571,11 +575,18 @@ ipcMain.handle('app:update-check', async () => {
   const currentVersion = app.getVersion();
   let latestVersion: string | null = null;
   try {
-    const res = await fetch('https://api.github.com/repos/scobru/sidecamp/releases/latest', {
+    const res = await fetch('https://api.github.com/repos/scobru/sidecamp/releases?per_page=30', {
       headers: { Accept: 'application/vnd.github+json' },
       signal: AbortSignal.timeout(10_000),
     });
-    if (res.ok) latestVersion = ((await res.json() as { tag_name?: string }).tag_name ?? '').replace(/^v/, '') || null;
+    if (res.ok) {
+      const releases = await res.json() as { tag_name?: string; html_url?: string }[];
+      const match = releases.find(r => r.tag_name?.startsWith(TAG_PREFIX));
+      if (match?.tag_name) {
+        latestVersion = match.tag_name.slice(TAG_PREFIX.length) || null;
+        if (match.html_url) releasesPageUrl = match.html_url;
+      }
+    }
   } catch { /* offline: report no update, retry next launch */ }
   const cmp = (a: string, b: string) => {
     const pa = a.split('.').map(n => parseInt(n, 10) || 0);
@@ -591,7 +602,7 @@ ipcMain.handle('app:update-check', async () => {
   return updateCheckResult;
 });
 
-ipcMain.handle('app:open-releases', () => shell.openExternal(RELEASES_URL));
+ipcMain.handle('app:open-releases', () => shell.openExternal(releasesPageUrl));
 
 ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => {
   if (!name) return { error: 'Nothing to move' };
@@ -783,7 +794,15 @@ app.whenReady().then(() => {
     // instead of surfacing net::ERR_FAILED / NotSupportedError to the player.
     for (let attempt = 0; ; attempt++) {
       try {
-        return await net.fetch(target, { headers });
+        const res = await net.fetch(target, { headers });
+        // A transient server hiccup (5xx) or not-yet-refreshed token (401) forwarded
+        // as-is would hand <audio> a non-audio body, surfacing as NotSupportedError
+        // instead of the real cause — retry once before giving up.
+        if (!res.ok && attempt === 0) {
+          await new Promise(r => setTimeout(r, 400));
+          continue;
+        }
+        return res;
       } catch (err: any) {
         if (attempt > 0) return new Response('Stream error: ' + err.message, { status: 502 });
         await new Promise(r => setTimeout(r, 400));

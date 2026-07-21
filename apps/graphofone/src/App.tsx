@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { GraphView, type LiveConfig, type GraphTrack, type GraphEdge, type GraphMeta } from 'graph-ui';
 import { Button } from 'tunecamp-design-system';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Info, ArrowUpCircle, X } from 'lucide-react';
 import LibraryPanel, { type LibTrack } from './components/LibraryPanel';
 import QuickTour from './components/QuickTour';
 import { computePeaks } from './audio-utils';
@@ -133,6 +133,14 @@ function App() {
     setShowTour(false);
   };
 
+  const [showAbout, setShowAbout] = useState(false);
+  const [update, setUpdate] = useState<{ currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  useEffect(() => {
+    // One check per launch — result is cached in the main process.
+    window.electronAPI.checkForUpdate?.().then(setUpdate).catch(() => {});
+  }, []);
+
   const [theme, setTheme] = useState(() => localStorage.getItem('graphofone-theme') || 'dark');
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -149,6 +157,31 @@ function App() {
           GRAPHOFONE
         </h1>
         <div style={{ flex: 1 }} />
+        <div style={{ position: 'relative' }}>
+          <Button onClick={() => setShowAbout(v => !v)} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="About">
+            <Info size={18} />
+          </Button>
+          {showAbout && (
+            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', width: '260px', background: 'var(--terminal-header-bg)', border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '1rem', zIndex: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+              <div style={{ fontWeight: 700, marginBottom: '4px' }}>Graphofone</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>Version {update?.currentVersion ?? '…'}</div>
+              {update?.updateAvailable ? (
+                <Button variant="primary" size="sm" style={{ width: '100%' }} onClick={() => window.electronAPI.openReleasesPage()}>
+                  Update to {update.latestVersion}
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  style={{ width: '100%' }}
+                  onClick={() => window.electronAPI.checkForUpdate().then(setUpdate)}
+                >
+                  Check for updates
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
         <Button onClick={() => setShowTour(true)} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="Quick tour">
           <HelpCircle size={18} />
         </Button>
@@ -166,8 +199,22 @@ function App() {
         </select>
       </header>
       
+      {update?.updateAvailable && !updateDismissed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.5rem 1rem', background: 'var(--terminal-header-bg)', borderBottom: '1px solid var(--glass-border)' }}>
+          <ArrowUpCircle size={16} style={{ color: '#4ade80', flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: '0.85rem' }}>
+            Graphofone <strong>{update.latestVersion}</strong> is available (you have {update.currentVersion}).
+          </span>
+          <Button variant="primary" size="sm" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => window.electronAPI.openReleasesPage()}>
+            Download
+          </Button>
+          <Button variant="ghost" size="sm" style={{ padding: '0.3rem' }} onClick={() => setUpdateDismissed(true)} title="Dismiss">
+            <X size={14} />
+          </Button>
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <LibraryPanel 
+        <LibraryPanel
           library={library} 
           onImport={handleImport}
           onClear={handleClear}
