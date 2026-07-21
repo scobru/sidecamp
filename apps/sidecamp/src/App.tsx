@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
-  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Sun, Moon,
+  Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Palette,
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
   Eye, EyeOff
 } from 'lucide-react';
@@ -1450,15 +1450,22 @@ function App() {
           </button>
         </nav>
 
-        <button
-          className="nav-item"
-          onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-          title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          style={{ marginTop: 'auto' }}
-        >
-          <span className="icon">{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</span>
-          {!sidebarCollapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
-        </button>
+        <label className="nav-item" title="Theme" style={{ marginTop: 'auto', cursor: 'pointer' }}>
+          <span className="icon"><Palette size={16} /></span>
+          {!sidebarCollapsed && (
+            <select
+              value={theme}
+              onChange={e => setTheme(e.target.value)}
+              style={{ background: 'transparent', color: 'inherit', border: 'none', font: 'inherit', flex: 1 }}
+            >
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="grey">Grey</option>
+              <option value="nordic">Nordic</option>
+              <option value="nordic-dark">Nordic Dark</option>
+            </select>
+          )}
+        </label>
 
         <div className="status-indicator" style={{ marginTop: '0.5rem' }}>
           <div className={`status-dot ${peerStatus}`}></div>

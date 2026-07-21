@@ -1,7 +1,7 @@
 {
   "name": "graphofone",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Standalone live performance tool.",
   "author": {
     "name": "scobru",
@@ -23,18 +23,18 @@
     "music-metadata": "^11.14.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "tunecamp-design-system": "github:scobru/tunecamp-design-system#v1.0.1",
+    "tunecamp-design-system": "github:scobru/tunecamp-design-system#v1.2.0",
     "web-audio-beat-detector": "^8.2.37"
   },
   "devDependencies": {
-    "audio-engine": "*",
-    "graph-ui": "*",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "audio-engine": "*",
     "electron": "43.1.0",
     "electron-builder": "^26.15.3",
+    "graph-ui": "*",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vite-plugin-electron": "^1.1.0",

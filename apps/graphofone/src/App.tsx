@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { GraphView, type LiveConfig, type GraphTrack, type GraphEdge, type GraphMeta } from 'graph-ui';
 import { Button } from 'tunecamp-design-system';
-import { Sun, Moon, HelpCircle } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 import LibraryPanel, { type LibTrack } from './components/LibraryPanel';
 import QuickTour from './components/QuickTour';
 import { computePeaks } from './audio-utils';
@@ -133,13 +133,11 @@ function App() {
     setShowTour(false);
   };
 
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
-  };
+  const [theme, setTheme] = useState(() => localStorage.getItem('graphofone-theme') || 'dark');
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('graphofone-theme', theme);
+  }, [theme]);
 
   const libraryForGraph: GraphTrack[] = library.map(t => ({ path: t.path, name: t.name }));
 
@@ -153,9 +151,18 @@ function App() {
         <Button onClick={() => setShowTour(true)} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="Quick tour">
           <HelpCircle size={18} />
         </Button>
-        <Button onClick={toggleTheme} variant="ghost" size="sm" style={{ padding: '0.4rem' }} title="Toggle light/dark mode">
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </Button>
+        <select
+          value={theme}
+          onChange={e => setTheme(e.target.value)}
+          title="Theme"
+          style={{ background: 'transparent', color: 'inherit', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '0.3rem 0.5rem', font: 'inherit' }}
+        >
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="grey">Grey</option>
+          <option value="nordic">Nordic</option>
+          <option value="nordic-dark">Nordic Dark</option>
+        </select>
       </header>
       
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
