@@ -11,6 +11,8 @@ import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
 
+import platformAPI from './services/platform';
+
 // Shared collator: options are parsed once, not on every comparison.
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
 
@@ -19,6 +21,11 @@ declare global {
   interface Window {
     electronAPI: any;
   }
+}
+
+// Fallback window.electronAPI to platformAPI for Capacitor / Web environments
+if (typeof window !== 'undefined' && !window.electronAPI) {
+  window.electronAPI = platformAPI;
 }
 
 // Big scrolling waveform (rekordbox-style): playhead fixed at center, wave
