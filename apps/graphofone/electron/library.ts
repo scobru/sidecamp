@@ -178,3 +178,12 @@ export async function updateTrackMeta(filePath: string, data: Partial<LibTrack>)
     await saveLibrary();
   }
 }
+
+// Apply many metadata updates in memory and persist once (avoids O(n) disk
+// writes per track when analyzing a whole library).
+export async function updateTrackMetaBatch(updates: { path: string; data: Partial<LibTrack> }[]): Promise<LibTrack[]> {
+  const byPath = new Map(updates.map(u => [u.path, u.data]));
+  libraryCache = libraryCache.map(t => byPath.has(t.path) ? { ...t, ...byPath.get(t.path) } : t);
+  await saveLibrary();
+  return libraryCache;
+}

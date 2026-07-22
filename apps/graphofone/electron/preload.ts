@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadGraph: () => ipcRenderer.invoke('graph:load'),
   readAudioFile: (path: string) => ipcRenderer.invoke('fs:readAudio', path),
   updateTrackMeta: (path: string, data: any) => ipcRenderer.invoke('library:updateTrackMeta', path, data),
+  updateTrackMetaBatch: (updates: { path: string; data: any }[]) => ipcRenderer.invoke('library:updateTrackMetaBatch', updates),
   saveRecording: (filename: string, buffer: Uint8Array) => ipcRenderer.invoke('app:saveRecording', filename, buffer),
   checkForUpdate: () => ipcRenderer.invoke('app:update-check'),
   openReleasesPage: () => ipcRenderer.invoke('app:open-releases'),

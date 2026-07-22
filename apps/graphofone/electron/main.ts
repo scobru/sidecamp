@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
-import { importFolder, loadLibrary, clearLibrary, saveGraph, loadGraph, readAudioFile, updateTrackMeta } from './library'
+import { importFolder, loadLibrary, clearLibrary, saveGraph, loadGraph, readAudioFile, updateTrackMeta, updateTrackMetaBatch } from './library'
 import * as fs from 'fs/promises'
 
 protocol.registerSchemesAsPrivileged([
@@ -78,6 +78,7 @@ function createWindow() {
   ipcMain.handle('graph:load', () => loadGraph());
   ipcMain.handle('fs:readAudio', (_, path) => readAudioFile(path));
   ipcMain.handle('library:updateTrackMeta', (_, path, data) => updateTrackMeta(path, data));
+  ipcMain.handle('library:updateTrackMetaBatch', (_, updates) => updateTrackMetaBatch(updates));
 
   ipcMain.handle('app:update-check', async () => {
     if (updateCheckResult) return updateCheckResult;

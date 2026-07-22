@@ -66,17 +66,20 @@ function App() {
     
     analyzeCancelRef.current = false;
     setAnalyzing({ done: 0, total: targets.length });
-    
+
+    const updates: { path: string; data: Partial<LibTrack> }[] = [];
+    const trackPaths = new Set(tracks.map(t => t.path));
+
     for (const f of targets) {
       if (analyzeCancelRef.current) break;
       try {
         const u8 = await window.electronAPI.readAudioFile(f.path);
         const raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
         const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw);
-        
+
         const data: Partial<LibTrack> = {};
         if (!f.peaks) data.peaks = computePeaks(decoded);
-        
+
         if (!f.bpm || f.beatOffset == null) {
           const windowStart = Math.max(0, (decoded.duration - 60) / 2);
           try {
@@ -85,27 +88,36 @@ function App() {
             data.beatOffset = (windowStart + offset) % (60 / bpm);
           } catch { /* no clear tempo */ }
         }
-        
+
         if (data.bpm || data.peaks) {
-          await window.electronAPI.updateTrackMeta(f.path, data);
-          setLibrary(prev => prev.map(t => t.path === f.path ? { ...t, ...data } : t));
-          // Update graph meta too if it's already in the set
-          if (tracks.some(t => t.path === f.path)) {
-            setMeta(prev => ({
-              ...prev,
-              [f.path]: {
-                ...prev[f.path],
-                ...(data.bpm ? { bpm: data.bpm, beatOffset: data.beatOffset } : {}),
-                ...(data.peaks ? { peaks: data.peaks } : {})
-              } as GraphMeta
-            }));
-          }
+          updates.push({ path: f.path, data });
         }
       } catch (e) {
         console.warn('Analysis failed for', f.path, e);
       }
       setAnalyzing(s => (s ? { done: s.done + 1, total: s.total } : s));
     }
+
+    if (updates.length > 0) {
+      const updated = await window.electronAPI.updateTrackMetaBatch(updates);
+      setLibrary(updated);
+
+      const graphUpdates = updates.filter(u => trackPaths.has(u.path));
+      if (graphUpdates.length > 0) {
+        setMeta(prev => {
+          const next = { ...prev };
+          for (const { path, data } of graphUpdates) {
+            next[path] = {
+              ...next[path],
+              ...(data.bpm ? { bpm: data.bpm, beatOffset: data.beatOffset } : {}),
+              ...(data.peaks ? { peaks: data.peaks } : {})
+            } as GraphMeta;
+          }
+          return next;
+        });
+      }
+    }
+
     setAnalyzing(null);
   };
 

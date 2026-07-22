@@ -11,6 +11,7 @@ interface Window {
     loadGraph: () => Promise<any>;
     readAudioFile: (path: string) => Promise<Uint8Array>;
     updateTrackMeta: (path: string, data: any) => Promise<void>;
+    updateTrackMetaBatch: (updates: { path: string; data: any }[]) => Promise<import('./components/LibraryPanel').LibTrack[]>;
     saveRecording: (filename: string, buffer: Uint8Array) => Promise<boolean>;
     checkForUpdate: () => Promise<{ currentVersion: string; latestVersion: string | null; updateAvailable: boolean }>;
     openReleasesPage: () => Promise<void>;

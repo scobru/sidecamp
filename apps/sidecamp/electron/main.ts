@@ -449,7 +449,7 @@ ipcMain.handle('torrent:download', async (event, magnetUri, downloadId) => {
 ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
   const magnetUri = await torrent.seed(input, torrentName);
   if (daemon) {
-    daemon.rescanAndSendManifest();
+    daemon.refreshAndSendManifest();
   }
   return magnetUri;
 });
@@ -457,7 +457,7 @@ ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
 ipcMain.handle('torrent:remove', async (event, infoHash) => {
   await torrent.remove(infoHash);
   if (daemon) {
-    daemon.rescanAndSendManifest();
+    daemon.refreshAndSendManifest();
   }
   return true;
 });

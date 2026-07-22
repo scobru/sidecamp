@@ -56,46 +56,47 @@ export class PeerDaemon extends EventEmitter {
         files = files.filter(f => validExtensions.has(path.extname(f).toLowerCase()));
         this.emit("log", `Trovati ${files.length} file audio. Estrazione metadati...`);
 
-        const indexData = [];
+        const indexData: any[] = [];
         let processed = 0;
 
         const musicMetadata = await import("music-metadata");
-        for (const file of files) {
-            try {
-                const [metadata, stat] = await Promise.all([
-                    musicMetadata.parseFile(file),
-                    fs.promises.stat(file)
-                ]);
-                
-                const trackData = {
-                    id: crypto.createHash('md5').update(file).digest('hex'),
-                    path: file,
-                    title: metadata.common.title || path.basename(file, path.extname(file)),
-                    artist: metadata.common.artist || 'Unknown Artist',
-                    album: metadata.common.album || 'Unknown Album',
-                    duration: metadata.format.duration || 0,
-                    sizeBytes: stat.size,
-                    fileSizeBytes: stat.size,
-                    format: path.extname(file).substring(1).toLowerCase(),
-                    mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
-                    bitrate: metadata.format.bitrate || 0,
-                    allowDownload: this.config.allowDownloads,
-                    magnetUri: this.getMagnetUriForFile ? this.getMagnetUriForFile(file) : undefined
-                };
+        const CONCURRENCY = 8;
+        for (let i = 0; i < files.length; i += CONCURRENCY) {
+            const batch = files.slice(i, i + CONCURRENCY);
+            await Promise.all(batch.map(async (file) => {
+                try {
+                    const [metadata, stat] = await Promise.all([
+                        musicMetadata.parseFile(file),
+                        fs.promises.stat(file)
+                    ]);
 
-                this.fileIndex.set(trackData.id, trackData);
-                indexData.push({ ...trackData, path: undefined }); // Don't leak local paths
-                
-                processed++;
-                if (processed % 100 === 0) {
-                    this.emit("progress", processed, files.length);
+                    const trackData = {
+                        id: crypto.createHash('md5').update(file).digest('hex'),
+                        path: file,
+                        title: metadata.common.title || path.basename(file, path.extname(file)),
+                        artist: metadata.common.artist || 'Unknown Artist',
+                        album: metadata.common.album || 'Unknown Album',
+                        duration: metadata.format.duration || 0,
+                        sizeBytes: stat.size,
+                        fileSizeBytes: stat.size,
+                        format: path.extname(file).substring(1).toLowerCase(),
+                        mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
+                        bitrate: metadata.format.bitrate || 0,
+                        allowDownload: this.config.allowDownloads,
+                        magnetUri: this.getMagnetUriForFile ? this.getMagnetUriForFile(file) : undefined
+                    };
+
+                    this.fileIndex.set(trackData.id, trackData);
+                    indexData.push({ ...trackData, path: undefined }); // Don't leak local paths
+                } catch (err: any) {
+                    this.emit("log", `Errore lettura metadati per ${file}: ${err.message}`);
+                } finally {
+                    processed++;
                 }
-            } catch (err: any) {
-                this.emit("log", `Errore lettura metadati per ${file}: ${err.message}`);
-            }
+            }));
+            this.emit("progress", processed, files.length);
         }
 
-        this.emit("progress", processed, files.length);
         this.emit("log", `Scansione completata. ${indexData.length} tracce indicizzate.`);
         return indexData;
     }
@@ -270,6 +271,24 @@ export class PeerDaemon extends EventEmitter {
         } catch (err: any) {
             this.emit("log", `Errore durante l'aggiornamento dell'indice libreria: ${err.message}`);
         }
+    }
+
+    // Torrent seed/remove only change a track's magnetUri — refresh that field
+    // from the in-memory index and resend, instead of re-walking + re-parsing
+    // the whole library (rescanAndSendManifest).
+    public refreshAndSendManifest() {
+        if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        if (this.getMagnetUriForFile) {
+            for (const track of this.fileIndex.values()) {
+                track.magnetUri = this.getMagnetUriForFile(track.path);
+            }
+        }
+        const indexData = Array.from(this.fileIndex.values()).map(t => ({ ...t, path: undefined }));
+        this.ws.send(JSON.stringify({
+            type: 'manifest',
+            tracks: indexData
+        }));
+        this.emit("log", "Indice libreria aggiornato inviato al server.");
     }
 
     private cleanupStreams() {

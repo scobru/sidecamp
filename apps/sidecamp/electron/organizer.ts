@@ -47,37 +47,46 @@ function parseFilename(file: string): { artist: string; title: string } {
   return { artist: '', title: base };
 }
 
+async function scanOne(full: string): Promise<Track | null> {
+  try {
+    const stat = await fs.stat(full);
+    let artist = '', title = '', album = '', genre = '', lossless = false, bitrate = 0;
+    try {
+      const meta = await parseFile(full, { duration: false, skipCovers: true });
+      artist = meta.common.artist?.trim() || '';
+      title = meta.common.title?.trim() || '';
+      album = meta.common.album?.trim() || '';
+      genre = meta.common.genre?.[0]?.trim() || '';
+      lossless = !!meta.format.lossless;
+      bitrate = meta.format.bitrate || 0;
+    } catch { /* unreadable tags → filename fallback below */ }
+    let inferred = false;
+    if (!artist || !title) {
+      const fromName = parseFilename(full);
+      artist = artist || fromName.artist;
+      title = title || fromName.title;
+      inferred = true;
+    }
+    return { path: full, size: stat.size, ext: path.extname(full).toLowerCase(), artist, title, album, genre, lossless, bitrate, inferred };
+  } catch { return null; }
+}
+
 export async function scanDir(dir: string): Promise<Track[]> {
-  const tracks: Track[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true });
+  const candidates: string[] = [];
   for (const e of entries) {
     if (!e.isFile() || !AUDIO_EXTS.has(path.extname(e.name).toLowerCase())) continue;
     const full = path.join(e.parentPath ?? (e as any).path, e.name);
     // skip files we already parked as duplicates
     if (full.includes(path.sep + DUPES_DIR + path.sep)) continue;
-    let track: Track;
-    try {
-      const stat = await fs.stat(full);
-      let artist = '', title = '', album = '', genre = '', lossless = false, bitrate = 0;
-      try {
-        const meta = await parseFile(full, { duration: false, skipCovers: true });
-        artist = meta.common.artist?.trim() || '';
-        title = meta.common.title?.trim() || '';
-        album = meta.common.album?.trim() || '';
-        genre = meta.common.genre?.[0]?.trim() || '';
-        lossless = !!meta.format.lossless;
-        bitrate = meta.format.bitrate || 0;
-      } catch { /* unreadable tags → filename fallback below */ }
-      let inferred = false;
-      if (!artist || !title) {
-        const fromName = parseFilename(full);
-        artist = artist || fromName.artist;
-        title = title || fromName.title;
-        inferred = true;
-      }
-      track = { path: full, size: stat.size, ext: path.extname(full).toLowerCase(), artist, title, album, genre, lossless, bitrate, inferred };
-    } catch { continue; }
-    tracks.push(track);
+    candidates.push(full);
+  }
+
+  const CONCURRENCY = 8;
+  const tracks: Track[] = [];
+  for (let i = 0; i < candidates.length; i += CONCURRENCY) {
+    const batch = await Promise.all(candidates.slice(i, i + CONCURRENCY).map(scanOne));
+    for (const t of batch) if (t) tracks.push(t);
   }
   return tracks;
 }
