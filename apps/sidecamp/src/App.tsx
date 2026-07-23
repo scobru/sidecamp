@@ -12,6 +12,7 @@ import './index.css';
 import logo from './assets/logo.png';
 
 import platformAPI, { currentPlatform } from './services/platform';
+import ConnectScreen from './components/ConnectScreen';
 import pingSound from './audio/ping-bing_E_major.wav';
 
 const isCapacitor = currentPlatform.isCapacitor;
@@ -96,8 +97,12 @@ const Waveform = memo(function Waveform({ peaks, progress, active }: { peaks?: n
 });
 
 function App() {
-  const [server, setServer] = useState('');
-  const [token, setToken] = useState('');
+  const [server, setServer] = useState(() => localStorage.getItem('tc_server') || '');
+  const [token, setToken] = useState(() => localStorage.getItem('tc_token') || '');
+  // Gates ConnectScreen vs. the app shell. Deliberately separate from `token` above:
+  // that field is also live-edited in the Settings tab, and briefly going empty
+  // while editing (e.g. select-all before paste) must not bounce the user out.
+  const [hasConnected, setHasConnected] = useState(() => !!localStorage.getItem('tc_token'));
   const [folder, setFolder] = useState('');
   const [peerStatus, setPeerStatus] = useState('offline');
   const [logs, setLogs] = useState<string[]>([]);
@@ -314,12 +319,6 @@ function App() {
         }
       });
     });
-
-    // Try to load saved config from local storage
-    const savedServer = localStorage.getItem('tc_server') || '';
-    const savedToken = localStorage.getItem('tc_token') || '';
-    setServer(savedServer);
-    setToken(savedToken);
 
     const savedFolders = localStorage.getItem('shared_folders') || '';
     setFolder(savedFolders);
@@ -1452,6 +1451,20 @@ function App() {
     }
   };
 
+  if (!hasConnected) {
+    return (
+      <ConnectScreen
+        onConnected={(connectedServer, connectedToken) => {
+          setServer(connectedServer);
+          setToken(connectedToken);
+          localStorage.setItem('tc_server', connectedServer);
+          localStorage.setItem('tc_token', connectedToken);
+          setHasConnected(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-container">
       <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -2151,6 +2164,21 @@ function App() {
                   Save Configuration
                 </Button>
                 {settingsSaved && <span style={{ color: 'var(--accent)', marginLeft: '1rem', fontWeight: 600 }}>✓ Configuration saved!</span>}
+              </div>
+
+              <div className="btn-group" style={{ marginTop: '1rem' }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    localStorage.removeItem('tc_server');
+                    localStorage.removeItem('tc_token');
+                    setServer('');
+                    setToken('');
+                    setHasConnected(false);
+                  }}
+                >
+                  Disconnect / Switch Instance
+                </Button>
               </div>
 
               {/* About */}

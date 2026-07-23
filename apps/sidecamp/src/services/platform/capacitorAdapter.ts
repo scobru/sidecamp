@@ -474,6 +474,21 @@ export function createCapacitorAdapter() {
     encryptString: async (plain: string) => plain,
     decryptString: async (stored: string) => stored,
 
+    // Onboarding: register/login against a TuneCamp instance. Uses CapacitorHttp
+    // (native request, not the webview's fetch) so it isn't subject to the
+    // webview's CORS restrictions the way a plain fetch() would be.
+    authConnect: async (server: string, mode: 'login' | 'register', username: string, password: string) => {
+      const res = await CapacitorHttp.post({
+        url: `${server.replace(/\/$/, '')}/api/auth/${mode}`,
+        headers: { 'Content-Type': 'application/json' },
+        data: { username, password }
+      });
+      if (res.status < 200 || res.status >= 300) {
+        throw new Error(res.data?.error || 'Connection failed');
+      }
+      return res.data;
+    },
+
     // Network Explorer (HTTP API native fetches)
     getNetworkPeers: async (server: string, token: string) => {
       const res = await CapacitorHttp.get({

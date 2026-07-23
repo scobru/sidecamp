@@ -702,6 +702,11 @@ ipcMain.handle('organize:fill-genres', async (event, root: string) => {
   }
 });
 
+// --- Onboarding ---
+ipcMain.handle('auth:connect', async (event, server, mode, username, password) => {
+  return await network.authConnect(server, mode, username, password);
+});
+
 // --- Network Explorer IPC ---
 ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);

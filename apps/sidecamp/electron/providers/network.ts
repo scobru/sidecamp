@@ -9,6 +9,16 @@ export class NetworkService {
     this.downloadDir = downloadDir;
   }
 
+  public async authConnect(server: string, mode: 'login' | 'register', username: string, password: string) {
+    const cleanServer = server.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${cleanServer}/api/auth/${mode}`, { username, password });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || error.message || 'Connection failed');
+    }
+  }
+
   public async getPeers(server: string, token: string) {
     const cleanServer = server.replace(/\/$/, '');
     const response = await axios.get(`${cleanServer}/api/peers`, {

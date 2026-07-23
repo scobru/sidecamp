@@ -78,6 +78,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   encryptString: (plain: string) => ipcRenderer.invoke('secure:encrypt', plain),
   decryptString: (stored: string) => ipcRenderer.invoke('secure:decrypt', stored),
 
+  // Onboarding
+  authConnect: (server: string, mode: 'login' | 'register', username: string, password: string) =>
+    ipcRenderer.invoke('auth:connect', server, mode, username, password),
+
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
   getPeerTracks: (server: string, token: string, sessionId: string, origin?: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId, origin),
