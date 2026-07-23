@@ -374,7 +374,24 @@ function App() {
         username: 'TuneCamp Server (Catalog)',
         trackCount: 0
       };
-      const allPeers = [serverPeer, ...(res || [])];
+      // Federated instances' public catalogs (/api/catalog/full) — separate from
+      // peer-daemon sessions above, and not gated by any admin opt-in.
+      let federatedPeers: any[] = [];
+      try {
+        const sites = await window.electronAPI.getCommunitySites(server);
+        federatedPeers = (sites || [])
+          .filter((s: any) => s.federation !== 'local')
+          .map((s: any) => ({
+            id: `fed_${s.url}`,
+            username: s.name || s.url,
+            origin: s.url,
+            isCatalog: true,
+            trackCount: 0
+          }));
+      } catch (e: any) {
+        console.error('Failed to load community sites:', e);
+      }
+      const allPeers = [serverPeer, ...federatedPeers, ...(res || [])];
       setNetworkPeers(allPeers);
       selectPeer(serverPeer);
     } catch (e: any) {
@@ -402,6 +419,22 @@ function App() {
         }));
         setPeerTracks(mappedTracks);
         setNetworkPeers(prev => prev.map(p => p.id === 'server' ? { ...p, trackCount: mappedTracks.length } : p));
+      } else if (peer.isCatalog) {
+        const catalog = await window.electronAPI.getFederatedCatalog(peer.origin);
+        const mappedTracks: any[] = [];
+        for (const r of (catalog?.releases || [])) {
+          for (const t of (r.tracks || [])) {
+            mappedTracks.push({
+              id: String(t.id),
+              title: t.title,
+              artist: t.artist_name || r.artist_name || 'Unknown Artist',
+              album: r.title || 'Unknown Album',
+              format: t.format || 'mp3'
+            });
+          }
+        }
+        setPeerTracks(mappedTracks);
+        setNetworkPeers(prev => prev.map(p => p.id === peer.id ? { ...p, trackCount: mappedTracks.length } : p));
       } else {
         const res = await window.electronAPI.getPeerTracks(server, token, peer.id, peer.origin);
         setPeerTracks(res || []);
@@ -429,7 +462,7 @@ function App() {
         status: 'downloading'
       }
     ]);
-    const logPrefix = selectedPeer.id === 'server' ? '[Catalog]' : '[Network]';
+    const logPrefix = selectedPeer.id === 'server' ? '[Catalog]' : selectedPeer.isCatalog ? '[Federated]' : '[Network]';
     setDlLogs(prev => [...prev, `${logPrefix} Starting download of: ${filename}...`]);
 
     try {
@@ -438,6 +471,13 @@ function App() {
         filePath = await window.electronAPI.downloadCatalogTrack(
           server,
           token,
+          track.id,
+          track.artist,
+          track.title
+        );
+      } else if (selectedPeer.isCatalog) {
+        filePath = await window.electronAPI.downloadFederatedCatalogTrack(
+          selectedPeer.origin,
           track.id,
           track.artist,
           track.title
@@ -510,6 +550,16 @@ function App() {
   });
 
   const networkQueueItem = (peer: any, track: any) => {
+    // Federated-catalog tracks stream directly from the remote instance's public
+    // endpoint — no local server tunnel, no local token involved.
+    if (peer.isCatalog) {
+      const streamUrl = `${peer.origin.replace(/\/$/, '')}/api/tracks/${track.id}/stream`;
+      return {
+        name: `${track.artist} - ${track.title}`,
+        src: `stream://audio?url=${encodeURIComponent(streamUrl)}&token=`,
+        path: `${peer.username} (Federated)`
+      };
+    }
     const cleanServer = server.replace(/\/$/, '');
     const streamUrl = peer.id === 'server'
       ? `${cleanServer}/api/tracks/${track.id}/stream`

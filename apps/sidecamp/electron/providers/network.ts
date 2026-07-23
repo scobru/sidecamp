@@ -19,6 +19,58 @@ export class NetworkService {
     }
   }
 
+  public async getCommunitySites(server: string) {
+    const cleanServer = server.replace(/\/$/, '');
+    const response = await axios.get(`${cleanServer}/api/community/sites`);
+    return response.data;
+  }
+
+  public async getFederatedCatalog(origin: string) {
+    // Public, unauthenticated — /api/catalog/full only ever returns the
+    // remote instance's Public Stage releases, regardless of who calls it.
+    const cleanOrigin = origin.replace(/\/$/, '');
+    const response = await axios.get(`${cleanOrigin}/api/catalog/full`);
+    return response.data;
+  }
+
+  public async downloadFederatedCatalogTrack(
+    origin: string,
+    trackId: string,
+    artist: string,
+    title: string
+  ): Promise<string> {
+    // Streams directly from the remote instance's public /stream endpoint —
+    // no local server/token involved, unlike downloadCatalogTrack/downloadPeerTrack.
+    const cleanOrigin = origin.replace(/\/$/, '');
+    const url = `${cleanOrigin}/api/tracks/${trackId}/stream`;
+
+    if (!fs.existsSync(this.downloadDir)) {
+      fs.mkdirSync(this.downloadDir, { recursive: true });
+    }
+
+    const response = await axios({ method: 'get', url, responseType: 'stream' });
+
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`;
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="(.+?)"/);
+      if (match) {
+        filename = match[1];
+      }
+    }
+
+    filename = filename.replace(/[<>:"/\\|?*]/g, '_');
+    const destPath = path.join(this.downloadDir, filename);
+
+    const writer = fs.createWriteStream(destPath);
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => resolve(destPath));
+      writer.on('error', (err) => reject(err));
+    });
+  }
+
   public async getPeers(server: string, token: string) {
     const cleanServer = server.replace(/\/$/, '');
     const response = await axios.get(`${cleanServer}/api/peers`, {

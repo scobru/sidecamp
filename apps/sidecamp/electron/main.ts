@@ -728,6 +728,18 @@ ipcMain.handle('network:catalog-download', async (event, server, token, trackId,
   return await network.downloadCatalogTrack(server, token, trackId, artist, title);
 });
 
+ipcMain.handle('network:community-sites', async (event, server) => {
+  return await network.getCommunitySites(server);
+});
+
+ipcMain.handle('network:federated-catalog', async (event, origin) => {
+  return await network.getFederatedCatalog(origin);
+});
+
+ipcMain.handle('network:federated-catalog-download', async (event, origin, trackId, artist, title) => {
+  return await network.downloadFederatedCatalogTrack(origin, trackId, artist, title);
+});
+
 app.whenReady().then(() => {
   buildMenu();
 

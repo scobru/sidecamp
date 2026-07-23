@@ -533,5 +533,28 @@ export function createCapacitorAdapter() {
       });
       return `catalog_${trackId}`;
     },
+
+    // Federated catalog browsing (public, unauthenticated — /api/community/sites
+    // and /api/catalog/full never require a token, even cross-instance)
+    getCommunitySites: async (server: string) => {
+      const res = await CapacitorHttp.get({
+        url: `${server.replace(/\/$/, '')}/api/community/sites`
+      });
+      return Array.isArray(res.data) ? res.data : [];
+    },
+
+    getFederatedCatalog: async (origin: string) => {
+      const res = await CapacitorHttp.get({
+        url: `${origin.replace(/\/$/, '')}/api/catalog/full`
+      });
+      return res.data;
+    },
+
+    downloadFederatedCatalogTrack: async (origin: string, trackId: string, _artist: string, _title: string) => {
+      await CapacitorHttp.get({
+        url: `${origin.replace(/\/$/, '')}/api/tracks/${trackId}/stream`
+      });
+      return `federated_${trackId}`;
+    },
   };
 }

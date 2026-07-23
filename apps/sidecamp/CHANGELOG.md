@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0] - 2026-07-23
+
+### Added
+- **Network tab now shows federated instances' public catalogs.** Alongside the local server catalog and connected peer-daemon sessions, each instance the server is federated with (via `/api/community/sites`) now appears as a browsable, streamable, downloadable pseudo-peer backed by its public `/api/catalog/full` endpoint. No admin opt-in required — this catalog is already publicly served by every instance (same mechanism the TuneCamp webapp's own Network page uses), Sidecamp just wasn't consuming it. Streaming and downloads go directly to the remote instance, bypassing the local server tunnel/token.
+
+## [0.22.1] - 2026-07-23
+
+### Fixed
+- **Mobile player unreachable after scroll**: on Android, starting playback from a track far down a scrolled list (e.g. Network tab) left the player bar effectively lost — `position: fixed` nested inside the `.main-content` scroll container is unreliable on some Android WebViews and could scroll away with the content. Switched to `position: sticky`, which is spec-guaranteed to stay pinned within the scroll container's visible viewport.
+
 ## [0.22.0] - 2026-07-23
 
 ### Added

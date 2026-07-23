@@ -88,5 +88,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadPeerTrack: (server: string, token: string, sessionId: string, trackId: string, artist: string, title: string, origin?: string) => ipcRenderer.invoke('network:download', server, token, sessionId, trackId, artist, title, origin),
   getCatalogTracks: (server: string, token: string) => ipcRenderer.invoke('network:catalog-tracks', server, token),
   downloadCatalogTrack: (server: string, token: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:catalog-download', server, token, trackId, artist, title),
+  getCommunitySites: (server: string) => ipcRenderer.invoke('network:community-sites', server),
+  getFederatedCatalog: (origin: string) => ipcRenderer.invoke('network:federated-catalog', origin),
+  downloadFederatedCatalogTrack: (origin: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:federated-catalog-download', origin, trackId, artist, title),
 })
 // End of file

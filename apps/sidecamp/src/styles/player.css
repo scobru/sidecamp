@@ -199,12 +199,14 @@
   max-width: 100px;
 }
 
-/* Mobile: compact single-row player, sits above the bottom tab bar */
+/* Mobile: compact single-row player, sits above the bottom tab bar.
+   position: sticky (not fixed) — .main-content is the scrolling container here,
+   and a fixed element nested inside it can scroll away with the content on some
+   Android WebViews instead of staying pinned to the viewport. Sticky is
+   spec-guaranteed to stay within .main-content's visible scrollport. */
 @media (max-width: 768px) {
   .audio-player-bar {
-    position: fixed;
-    left: 0;
-    right: 0;
+    position: sticky;
     bottom: calc(64px + env(safe-area-inset-bottom));
     z-index: 25;
     height: 48px;
