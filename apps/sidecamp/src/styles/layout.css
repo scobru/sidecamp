@@ -164,15 +164,13 @@
   100% { opacity: 0.6; }
 }
 
-/* Main Content */
+/* Main Content — flex column; .content-area scrolls, .audio-player-bar (if
+   present) is a plain sibling flex item so it always stays pinned at the
+   bottom without relying on position: sticky/fixed. */
 .main-content {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 2rem;
-  gap: 1.5rem;
   background: var(--tc-color-glass-bg);
   backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
@@ -181,6 +179,7 @@
   box-shadow: var(--tc-shadow-lg);
   position: relative;
   min-width: 0;
+  overflow: hidden;
 }
 
 .topbar {
@@ -196,8 +195,13 @@
 
 .content-area {
   padding: 2.2rem;
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 /* Smooth transitions from theme.css */
@@ -253,8 +257,9 @@ body, .app-container, .sidebar, .main-content {
 
   .main-content {
     border-radius: 0;
-    padding: 1rem;
-    padding-bottom: calc(64px + 48px + env(safe-area-inset-bottom) + 1rem);
+    /* Reserve space for the fixed bottom nav only — the player bar is now a
+       normal flex sibling, not an overlay, so it needs no extra padding. */
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
   .topbar {

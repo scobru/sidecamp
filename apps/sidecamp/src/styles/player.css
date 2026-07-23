@@ -1,12 +1,12 @@
-/* AUDIO PLAYER FOOTER — sticky bottom of main-content, integrated in the panel */
+/* AUDIO PLAYER FOOTER — plain flex sibling of .content-area inside
+   .main-content, always pinned at the true bottom of the panel. No
+   position: sticky/fixed needed (both are unreliable inside a scrolling
+   flex column on Android WebView), and it can never scroll away since it
+   lives outside the scrolling .content-area. */
 .audio-player-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
   flex-shrink: 0;
   height: 52px;
-  margin: 0 -2rem -2rem;
-  width: calc(100% + 4rem);
+  width: 100%;
   background: var(--tc-color-glass-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -199,19 +199,12 @@
   max-width: 100px;
 }
 
-/* Mobile: compact single-row player, sits above the bottom tab bar.
-   position: sticky (not fixed) — .main-content is the scrolling container here,
-   and a fixed element nested inside it can scroll away with the content on some
-   Android WebViews instead of staying pinned to the viewport. Sticky is
-   spec-guaranteed to stay within .main-content's visible scrollport. */
+/* Mobile: compact single-row player. Sits above the fixed bottom tab bar
+   as a plain flex sibling of .content-area — no position needed, .main-content's
+   padding-bottom (layout.css) reserves the tab bar's height. */
 @media (max-width: 768px) {
   .audio-player-bar {
-    position: sticky;
-    bottom: calc(64px + env(safe-area-inset-bottom));
-    z-index: 25;
     height: 48px;
-    margin: 0;
-    width: 100%;
     padding: 0 0.75rem;
     gap: 6px;
     border-radius: 0;

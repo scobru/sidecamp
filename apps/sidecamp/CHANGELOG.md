@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.1] - 2026-07-24
+
+### Fixed
+- **Audio player floating loose instead of pinned above the bottom nav on Android.** `.audio-player-bar` used `position: sticky` inside a scrolling flex column (`.main-content`), a combination known to be unreliable on Android WebView (sticky silently degrades to static). Restructured so tab content lives in `.content-area` (the sole scroll container) and the player bar is a plain flex sibling of it — pinned by layout alone, no sticky/fixed needed.
+
 ## [0.23.0] - 2026-07-23
 
 ### Added

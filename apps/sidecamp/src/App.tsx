@@ -1577,6 +1577,7 @@ function App() {
       </div>
 
       <main className="main-content">
+        <div className="content-area">
           {currentPlayback && scrollWave && scrollWave.path === currentPlayback.path && (
             <div className="scrollwave-wrap">
               <ScrollWave peaks={scrollWave.peaks} pps={SCROLL_PPS} audioRef={audioRef} />
@@ -2743,8 +2744,12 @@ function App() {
 
             </div>
           )}
+        </div>
 
-        {/* Audio Player Bar — integrated footer of main-content, not a floating overlay */}
+        {/* Audio Player Bar — flex-pinned footer of main-content, outside the
+            scrolling .content-area so it can never scroll away with content
+            and never needs sticky/fixed (both are unreliable inside a
+            scrolling flex column on Android WebView). */}
         {currentPlayback && (
           <div className="audio-player-bar">
             <div className="player-info">
