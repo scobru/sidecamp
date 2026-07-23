@@ -137,11 +137,12 @@ jobs:
         if: steps.gate.outputs.skip == 'false' || github.event_name == 'workflow_dispatch'
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/sidecamp.apk
         working-directory: apps/${{ matrix.app }}/android
 
       - name: Attach APK to GitHub Release
         if: steps.gate.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          files: apps/${{ matrix.app }}/android/app/build/outputs/apk/debug/sidecamp.apk
