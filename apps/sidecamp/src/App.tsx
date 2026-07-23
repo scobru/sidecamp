@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import {
   Radio, Globe, Download, FolderSync, Settings,
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
@@ -12,10 +12,9 @@ import './index.css';
 import logo from './assets/logo.png';
 
 import platformAPI, { currentPlatform } from './services/platform';
-import { Capacitor } from '@capacitor/core';
 import pingSound from './audio/ping-bing_E_major.wav';
 
-const isCapacitor = Capacitor.isNativePlatform();
+const isCapacitor = currentPlatform.isCapacitor;
 
 // Shared collator: options are parsed once, not on every comparison.
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
@@ -235,6 +234,12 @@ function App() {
   });
   const [update, setUpdate] = useState<{ currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  const playNotification = useCallback(() => {
+    const audio = new Audio(pingSound);
+    audio.volume = 0.5;
+    audio.play().catch(e => console.log('Audio play blocked:', e));
+  }, []);
 
   useEffect(() => {
     // Listen to Peer Daemon logs
@@ -2352,15 +2357,17 @@ function App() {
               <div className="terminal-header" style={{ flexShrink: 0 }}>Peer Chat</div>
               <div className="terminal-body" style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
                 {chatMessages.map((m, i) => (
-                  <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
-                    <span style={{ opacity: 0.6 }}>[{new Date(m.ts).toLocaleTimeString()}]</span>{' '}
-                    {m.e2e && <span title="End-to-end encrypted">🔒 </span>}
+                  <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '0.5rem 0' }}>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.5, marginBottom: '2px' }}>
+                      {new Date(m.ts).toLocaleTimeString()}
+                      {m.e2e && <span title="End-to-end encrypted"> • 🔒</span>}
+                    </div>
                     <strong>{m.from}{m.lobby && !m.self ? ' (lobby)' : ''}:</strong> {m.text}
                   </div>
                 ))}
-                {chatMessages.length === 0 && <div className="log-line dim" style={{ marginTop: 'auto' }}>No messages. Send one to a peer or to the lobby.</div>}
+                {chatMessages.length === 0 && <div className="log-line dim" style={{ marginTop: 'auto', padding: '1rem' }}>No messages. Send one to a peer or to the lobby.</div>}
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexShrink: 0, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexShrink: 0, flexWrap: 'wrap', padding: '0 0.5rem 0.5rem' }}>
                 <select
                   value={chatTo}
                   onChange={e => setChatTo(e.target.value)}
