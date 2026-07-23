@@ -4,14 +4,16 @@ import {
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Palette,
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
-  Eye, EyeOff
+  Eye, EyeOff, MoreVertical, MessageCircle
 } from 'lucide-react';
 import { Button } from 'tunecamp-design-system';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
 
-import platformAPI from './services/platform';
+import platformAPI, { currentPlatform } from './services/platform';
+
+const isCapacitor = currentPlatform.isCapacitor;
 
 // Shared collator: options are parsed once, not on every comparison.
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
@@ -98,12 +100,12 @@ function App() {
   const [folder, setFolder] = useState('');
   const [peerStatus, setPeerStatus] = useState('offline');
   const [logs, setLogs] = useState<string[]>([]);
-  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean; lobby?: boolean; e2e?: boolean }[]>([]);
   const [chatTo, setChatTo] = useState('');
   const [chatText, setChatText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('download');
+  const [activeTab, setActiveTab] = useState(isCapacitor ? 'library' : 'download');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   // File browser (shared folders)
@@ -177,6 +179,7 @@ function App() {
   const [albumSeedModalOpen, setAlbumSeedModalOpen] = useState(false);
   const [albumSeedName, setAlbumSeedName] = useState('My Custom Album');
   const [uploadingFilePath, setUploadingFilePath] = useState<string | null>(null);
+  const [openCardMenuPath, setOpenCardMenuPath] = useState<string | null>(null);
 
   // Network Explorer States
   const [networkPeers, setNetworkPeers] = useState<any[]>([]);
@@ -244,7 +247,7 @@ function App() {
     // Native menu "Go" items / Ctrl+1..9 accelerators
     window.electronAPI.onNavGoto?.((tab: string) => setActiveTab(tab));
 
-    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number }) => {
+    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number; lobby?: boolean; e2e?: boolean }) => {
       setChatMessages(prev => [...prev, data].slice(-100));
     });
 
@@ -322,7 +325,7 @@ function App() {
       const savedSlskPass = storedPass ? await window.electronAPI.decryptString(storedPass) : '';
       setSlskPass(savedSlskPass);
 
-      if (savedSlskUser && savedSlskPass) {
+      if (!isCapacitor && savedSlskUser && savedSlskPass) {
         await window.electronAPI.slskConnect(savedSlskUser, savedSlskPass)
         .then((connected: boolean) => {
           if (connected) {
@@ -339,10 +342,10 @@ function App() {
     if (activeTab === 'download' || activeTab === 'library') {
       loadDownloadedFiles();
     }
-  }, [activeTab]);
+  }, [activeTab, folder]);
 
   useEffect(() => {
-    if (activeTab === 'network') {
+    if (activeTab === 'network' || activeTab === 'chat') {
       loadNetworkPeers();
     }
   }, [activeTab]);
@@ -460,18 +463,21 @@ function App() {
   };
 
   // Audio Player Controls
-  const startPlayback = (name: string, src: string, displayPath: string) => {
+  const startPlayback = async (name: string, src: string, displayPath: string) => {
     setCurrentPlayback({ name, path: displayPath });
     setIsPlaying(true);
     // Reset so the previous track's time/duration doesn't linger on the new one.
     setCurrentTime(0);
     setDuration(0);
     setIsSeeking(false);
-    if (audioRef.current) {
-      audioRef.current.src = src;
-      // AbortError fires whenever a newer load pre-empts this one (fast skip) — expected, not a real failure.
-      audioRef.current.play().catch(e => { if (e.name !== 'AbortError') console.error("Playback failed:", e); });
-    }
+    if (!audioRef.current) return;
+    // media:// and stream:// are custom Electron protocol schemes the mobile
+    // WebView can't resolve — the Capacitor adapter turns them into a real
+    // playable URL (native file src / blob URL); no-op on Electron.
+    const resolvedSrc = isCapacitor ? await window.electronAPI.resolvePlaybackSrc(src) : src;
+    audioRef.current.src = resolvedSrc;
+    // AbortError fires whenever a newer load pre-empts this one (fast skip) — expected, not a real failure.
+    audioRef.current.play().catch(e => { if (e.name !== 'AbortError') console.error("Playback failed:", e); });
   };
 
   const playAt = (tracks: { name: string; src: string; path: string }[], index: number) => {
@@ -993,9 +999,13 @@ function App() {
   const handleSendChat = async () => {
     const to = chatTo.trim();
     const text = chatText.trim();
-    if (!to || !text) return;
-    await window.electronAPI.sendPeerChat(to, text);
-    setChatMessages(prev => [...prev, { from: `→ ${to}`, text, ts: Date.now(), self: true }].slice(-100));
+    if (!text) return;
+    const result = await window.electronAPI.sendPeerChat(to, text);
+    if (!result?.success) {
+      alert("Failed to send message: " + (result?.error || "unknown error"));
+      return;
+    }
+    setChatMessages(prev => [...prev, { from: to ? `→ ${to}` : '→ Lobby', text, ts: Date.now(), self: true, e2e: !!to }].slice(-100));
     setChatText('');
   };
 
@@ -1057,9 +1067,11 @@ function App() {
       let res: any[] = [];
       if (searchSource === 'all') {
         const promises = [
-          window.electronAPI.slskSearch(searchQuery)
-            .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'soulseek' })))
-            .catch((e: any) => { console.error("Soulseek search failed:", e); return []; }),
+          ...(isCapacitor ? [] : [
+            window.electronAPI.slskSearch(searchQuery)
+              .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'soulseek' })))
+              .catch((e: any) => { console.error("Soulseek search failed:", e); return []; })
+          ]),
           window.electronAPI.searchWeb(searchQuery, 'soundcloud')
             .then((res: any[]) => res.map((r: any) => ({ ...r, source: 'soundcloud' })))
             .catch((e: any) => { console.error("SoundCloud search failed:", e); return []; }),
@@ -1359,6 +1371,13 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  const handleBrowseFolder = async () => {
+    const dir = await window.electronAPI.pickFolder();
+    if (dir) {
+      setFolder(prev => prev ? `${prev}, ${dir}` : dir);
+    }
+  };
+
   const handleOrganizePickFolder = async () => {
     const dir = await window.electronAPI.pickFolder();
     if (dir) {
@@ -1441,20 +1460,25 @@ function App() {
         </div>
 
         <nav className="nav-menu">
-          <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Search & Download">
-            <span className="icon"><Download size={16} /></span> {!sidebarCollapsed && 'Search'}
-          </button>
+          {!isCapacitor && (
+            <button className={`nav-item ${activeTab === 'download' ? 'active' : ''}`} onClick={() => setActiveTab('download')} title="Search & Download">
+              <span className="icon"><Download size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Search</span>}
+            </button>
+          )}
           <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')} title="Library">
-            <span className="icon"><Music size={16} /></span> {!sidebarCollapsed && 'Library'}
+            <span className="icon"><Music size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Library</span>}
           </button>
           <button className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')} title="Network">
-            <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && 'Network'}
+            <span className="icon"><Globe size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Network</span>}
           </button>
           <button className={`nav-item ${activeTab === 'peer' ? 'active' : ''}`} onClick={() => setActiveTab('peer')} title="Sharing — peer node & shared files">
-            <span className="icon"><Radio size={16} /></span> {!sidebarCollapsed && 'Sharing'}
+            <span className="icon"><Radio size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Sharing</span>}
+          </button>
+          <button className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')} title="Chat — peer messaging">
+            <span className="icon"><MessageCircle size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Chat</span>}
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Settings">
-            <span className="icon"><Settings size={16} /></span> {!sidebarCollapsed && 'Settings'}
+            <span className="icon"><Settings size={16} /></span> {!sidebarCollapsed && <span className="nav-label">Settings</span>}
           </button>
         </nav>
 
@@ -1841,26 +1865,32 @@ function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                 <h3 style={{ margin: 0, whiteSpace: 'nowrap' }}>Library <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '8px' }}>{librarySearch.trim() ? `${libraryFiltered.length} / ${downloadedFiles.length}` : downloadedFiles.length} tracks</span></h3>
                 <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Search tracks…" className="glass-input" style={{ flex: 1, minWidth: '160px', maxWidth: '360px', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} />
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {selectedFiles.length > 0 && (
                     <>
-                      <Button variant="accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Magnet size={14} /> Seed ({selectedFiles.length})</Button>
-                      <Button variant="accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Cloud size={14} /> Upload ({selectedFiles.length})</Button>
+                      {!isCapacitor && (
+                        <Button variant="accent" onClick={handleSeedSelectedClick} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Magnet size={14} /> Seed ({selectedFiles.length})</Button>
+                      )}
+                      {!isCapacitor && (
+                        <Button variant="accent" onClick={handleUploadSelected} disabled={uploadingFilePath !== null} title="Upload selection to TuneCamp" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Cloud size={14} /> Upload ({selectedFiles.length})</Button>
+                      )}
                       <Button variant="secondary" onClick={addSelectedToPlaylist} title="Add selection to the active playlist" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Plus size={14} /> Playlist</Button>
                       <Button variant="danger" onClick={handleDeleteSelected} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Trash2 size={14} /> Delete ({selectedFiles.length})</Button>
                       <Button variant="secondary" onClick={() => setSelectedFiles([])} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
                     </>
                   )}
-                  {analyzing ? (
+                  {!isCapacitor && (analyzing ? (
                     <Button variant="secondary" onClick={() => { analyzeCancelRef.current = true; }} title="Stop analysis" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>⏹ {analyzing.done}/{analyzing.total}</Button>
                   ) : (
                     <Button variant="secondary" onClick={analyzeTracks} title="Detect BPM + waveform for tracks missing them (writes mp3 TBPM tag)" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Headphones size={14} /> Analyze</Button>
-                  )}
+                  ))}
                   {libraryFiltered.length > 0 && (
                     <Button variant="primary" onClick={() => playAt(libraryQueue, 0)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>▶ Play All</Button>
                   )}
                   <Button variant={showPlaylists ? 'accent' : 'secondary'} onClick={() => togglePanel('playlists')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Disc3 size={14} /> Playlists</Button>
-                  <Button variant={showOrganize ? 'accent' : 'secondary'} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</Button>
+                  {!isCapacitor && (
+                    <Button variant={showOrganize ? 'accent' : 'secondary'} onClick={() => togglePanel('organize')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}><Folder size={14} /> Organize</Button>
+                  )}
                   <Button variant="secondary" onClick={loadDownloadedFiles} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Refresh</Button>
                   <Button variant={showLibraryTable ? 'secondary' : 'accent'} onClick={() => setShowLibraryTable(v => !v)}
                     title={showLibraryTable ? 'Hide library table' : 'Show library table'} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
@@ -1888,9 +1918,9 @@ function App() {
                       <th className="col-num">#</th>
                       <th className="col-wave">Wave</th>
                       {th('title', 'Title', 'col-title')}
-                      {th('artist', 'Artist')}
-                      {th('album', 'Album')}
-                      {th('genre', 'Genre')}
+                      {th('artist', 'Artist', 'col-artist')}
+                      {th('album', 'Album', 'col-album')}
+                      {th('genre', 'Genre', 'col-genre')}
                       {th('bpm', 'BPM', 'col-bpm col-right')}
                       {th('key', 'Key', 'col-key')}
                       {th('time', 'Time', 'col-time col-right')}
@@ -1939,11 +1969,11 @@ function App() {
                             <Waveform peaks={r.peaks} active={isCurrent} progress={isCurrent && duration > 0 ? Math.round((currentTime / duration) * 100) : 0} />
                           </td>
                           {editableCell(r, 'title', 'col-title')}
-                          {editableCell(r, 'artist', 'cell-ellipsis')}
-                          {editableCell(r, 'album', 'cell-ellipsis cell-muted')}
-                          {editableCell(r, 'genre', 'cell-ellipsis cell-muted')}
+                          {editableCell(r, 'artist', 'cell-ellipsis col-artist')}
+                          {editableCell(r, 'album', 'cell-ellipsis cell-muted col-album')}
+                          {editableCell(r, 'genre', 'cell-ellipsis cell-muted col-genre')}
                           <td className="col-right cell-mono">{r.bpm ?? ''}</td>
-                          <td className="cell-mono">{r.key}</td>
+                          <td className="col-key cell-mono">{r.key}</td>
                           <td className="col-right cell-mono">{r.duration ? formatTime(r.duration) : ''}</td>
                           <td className="col-right cell-mono cell-muted">{r.year ?? ''}</td>
                           <td className="col-right cell-mono cell-muted">{r.kbps || ''}</td>
@@ -1956,9 +1986,9 @@ function App() {
                             <button title={uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TuneCamp'} disabled={uploadingFilePath !== null} onClick={() => handleUploadFile(file.path)}><Cloud size={13} /></button>
                             {file.magnetUri ? (
                               <button title="Copy magnet link" className="act-ok" onClick={() => { navigator.clipboard.writeText(file.magnetUri); alert('Magnet URI copied to clipboard!'); }}><Magnet size={13} /></button>
-                            ) : (
+                            ) : !isCapacitor ? (
                               <button title="Seed as torrent" onClick={() => handleSeedFile(file.path)}><Magnet size={13} /></button>
-                            )}
+                            ) : null}
                             <button title="Delete" className="act-danger" disabled={uploadingFilePath === file.path} onClick={() => handleDeleteFile(file.path)}><Trash2 size={13} /></button>
                           </td>
                         </tr>
@@ -1966,6 +1996,60 @@ function App() {
                     })}
                   </tbody>
                 </table>
+                {libraryFiltered.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() || libFilter.type !== 'all' ? 'No tracks match your filter.' : 'No music files in library.'}</div>
+                )}
+              </div>
+              <div className="track-cards">
+                {libraryFiltered.map((r, i) => {
+                  const file = r.file;
+                  const isSeeding = !!file.magnetUri;
+                  const isCurrent = currentPlayback?.path === file.path;
+                  return (
+                    <div
+                      key={file.path}
+                      className={`track-card ${isCurrent ? 'playing' : ''}`}
+                      onDoubleClick={() => playAt(libraryQueue, i)}
+                    >
+                      <div className="track-card-check">
+                        {isSeeding ? (
+                          <span className="seed-check" title="Already seeding">✓</span>
+                        ) : (
+                          <input type="checkbox" checked={selectedSet.has(file.path)} onChange={() => {}} onClick={e => { e.stopPropagation(); rowCheck(i, e.shiftKey); }} />
+                        )}
+                      </div>
+                      <div className="track-card-main" onClick={() => playAt(libraryQueue, i)}>
+                        <div className="track-card-title">{r.title}</div>
+                        <div className="track-card-sub">{r.artist}{r.album ? ` — ${r.album}` : ''}</div>
+                        <div className="track-card-meta">
+                          {r.bpm ? <span>{r.bpm} BPM</span> : null}
+                          {r.duration ? <span>{formatTime(r.duration)}</span> : null}
+                          <span>{(file.size / 1024 / 1024).toFixed(1)}M</span>
+                        </div>
+                      </div>
+                      <div className="track-card-actions">
+                        <button title="More actions" onClick={e => { e.stopPropagation(); setOpenCardMenuPath(p => p === file.path ? null : file.path); }}><MoreVertical size={17} /></button>
+                        {openCardMenuPath === file.path && (
+                          <>
+                            <div className="card-menu-backdrop" onClick={() => setOpenCardMenuPath(null)} />
+                            <div className="card-menu" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => { setOpenCardMenuPath(null); playAt(libraryQueue, i); }}><Play size={14} /> Play</button>
+                              <button onClick={() => { setOpenCardMenuPath(null); handleEditTags(file); }}><Tag size={14} /> Edit tags</button>
+                              <button onClick={() => { setOpenCardMenuPath(null); revealInSharedFiles(file.path); }}><Folder size={14} /> Show in Shared Files</button>
+                              <button disabled={uploadingFilePath !== null} onClick={() => { setOpenCardMenuPath(null); handleUploadFile(file.path); }}><Cloud size={14} /> {uploadingFilePath === file.path ? 'Uploading…' : 'Upload to TuneCamp'}</button>
+                              {file.magnetUri ? (
+                                <button className="act-ok" onClick={() => { setOpenCardMenuPath(null); navigator.clipboard.writeText(file.magnetUri); alert('Magnet URI copied to clipboard!'); }}><Magnet size={14} /> Copy magnet link</button>
+                              ) : !isCapacitor ? (
+                                <button onClick={() => { setOpenCardMenuPath(null); handleSeedFile(file.path); }}><Magnet size={14} /> Seed as torrent</button>
+                              ) : null}
+                              <button className="act-danger" disabled={uploadingFilePath === file.path} onClick={() => { setOpenCardMenuPath(null); handleDeleteFile(file.path); }}><Trash2 size={14} /> Delete</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
                 {libraryFiltered.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{librarySearch.trim() || libFilter.type !== 'all' ? 'No tracks match your filter.' : 'No music files in library.'}</div>
                 )}
@@ -2008,6 +2092,7 @@ function App() {
                 </div>
               </div>
 
+              {!isCapacitor && (
               <div className="settings-section" style={{ marginBottom: '2rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Soulseek Credentials</h3>
                 <div className="form-group">
@@ -2031,18 +2116,25 @@ function App() {
                   />
                 </div>
               </div>
+              )}
 
               <div className="settings-section" style={{ marginBottom: '2rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Local Shared Folders (Peer Node)</h3>
                 <div className="form-group">
                   <label>Music Folders to Share (comma-separated)</label>
-                  <input 
-                    type="text" 
-                    value={folder} 
-                    onChange={e => setFolder(e.target.value)} 
-                    placeholder="Example: D:\Music, C:\Downloads" 
-                    className="glass-input"
-                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      value={folder}
+                      onChange={e => setFolder(e.target.value)}
+                      placeholder="Example: D:\Music, C:\Downloads"
+                      className="glass-input"
+                      style={{ flex: 1 }}
+                    />
+                    <Button variant="secondary" onClick={handleBrowseFolder} style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                      <Folder size={16} /> Browse
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -2068,7 +2160,7 @@ function App() {
                     <strong style={{ color: 'var(--text-main)' }}>Sidecamp</strong> is a desktop companion app for <strong style={{ color: 'var(--primary)' }}>TuneCamp</strong> — an independent music platform built for artists and listeners who believe in open, decentralized music distribution.
                   </p>
                   <p style={{ lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
-                    With Sidecamp you can discover and download music from the TuneCamp network and from peer-to-peer sources (Soulseek, BitTorrent, YouTube), manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
+                    With Sidecamp you can discover and download music from the TuneCamp network{!isCapacitor && " and from peer-to-peer sources (Soulseek, BitTorrent, YouTube)"}, manage your local library, edit track metadata, and share your collection back to the network as a peer node — all from one place.
                   </p>
                   {update?.updateAvailable ? (
                     <Button variant="primary" size="sm" onClick={() => window.electronAPI.openReleasesPage()}>
@@ -2084,7 +2176,7 @@ function App() {
                 <div className="glass-card">
                   <h3 style={{ fontFamily: 'var(--font-headings)', marginBottom: '1rem' }}>Tech stack</h3>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {['Electron', 'React 19', 'TypeScript', 'Vite', 'Soulseek', 'WebTorrent', 'yt-dlp', 'node-id3', 'TuneCamp API'].map(t => (
+                    {(isCapacitor ? ['React 19', 'TypeScript', 'Vite', 'Capacitor', 'TuneCamp API'] : ['Electron', 'React 19', 'TypeScript', 'Vite', 'Soulseek', 'WebTorrent', 'yt-dlp', 'node-id3', 'TuneCamp API']).map(t => (
                       <span key={t} style={{ padding: '4px 10px', background: 'rgba(179,102,255,0.12)', border: '1px solid rgba(179,102,255,0.25)', borderRadius: '20px', fontSize: '0.8rem', color: 'var(--primary)' }}>{t}</span>
                     ))}
                   </div>
@@ -2144,7 +2236,7 @@ function App() {
               {/* Right pane: Selected peer tracks */}
               <div className="network-tracks-pane" style={{ flex: '2' }}>
                 <h3 style={{ marginBottom: '1.5rem', fontSize: '1.15rem', fontFamily: 'var(--font-headings)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
-                  {selectedPeer ? `Tracks shared by ${selectedPeer.username}` : 'Browse Peer Tracks'}
+                  {selectedPeer ? `Tracks shared by ${selectedPeer.username || 'Unknown'}` : 'Browse Peer Tracks'}
                 </h3>
                 {isLoadingTracks ? (
                   <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
@@ -2170,15 +2262,15 @@ function App() {
                       className="glass-input"
                       style={{ marginBottom: '1rem' }}
                     />
-                  <div className="track-table-wrap" style={{ maxHeight: '420px' }}>
+                  <div className="track-table-wrap peer-tracks-wrap" style={{ maxHeight: '420px' }}>
                     <table className="track-table">
                       <thead>
                         <tr>
                           <th className="col-num">#</th>
-                          <th>Title</th>
-                          <th>Artist</th>
-                          <th>Album</th>
-                          <th className="col-key">Fmt</th>
+                          <th className="col-title">Title</th>
+                          <th className="col-artist">Artist</th>
+                          <th className="col-album">Album</th>
+                          <th className="col-key col-fmt">Fmt</th>
                           <th className="col-actions" style={{ width: '64px' }}></th>
                         </tr>
                       </thead>
@@ -2188,10 +2280,10 @@ function App() {
                           return (
                             <tr key={t.id} className={isCurrent ? 'playing' : ''} onDoubleClick={() => playNetworkTrack(selectedPeer, t)}>
                               <td className="col-num">{isCurrent ? '▶' : i + 1}</td>
-                              <td className="cell-ellipsis" style={{ fontWeight: 500 }} title={t.title}>{t.title || 'Unknown Title'}</td>
-                              <td className="cell-ellipsis">{t.artist || 'Unknown Artist'}</td>
-                              <td className="cell-ellipsis cell-muted">{t.album || ''}</td>
-                              <td className="cell-mono cell-muted">{t.format}</td>
+                              <td className="cell-ellipsis col-title" style={{ fontWeight: 500 }} title={t.title}>{t.title || 'Unknown Title'}</td>
+                              <td className="cell-ellipsis col-artist">{t.artist || 'Unknown Artist'}</td>
+                              <td className="cell-ellipsis cell-muted col-album">{t.album || ''}</td>
+                              <td className="cell-mono cell-muted col-fmt">{t.format}</td>
                               <td className="col-actions">
                                 <button title="Play" onClick={() => playNetworkTrack(selectedPeer, t)}><Play size={13} /></button>
                                 <button title={downloadingTrackId === t.id ? 'Downloading…' : 'Download'} disabled={downloadingTrackId === t.id} onClick={() => handleDownloadPeerTrack(t)}><Download size={13} /></button>
@@ -2249,27 +2341,36 @@ function App() {
                 </div>
               </div>
 
-              <div className="terminal-log" style={{ marginTop: '1rem' }}>
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <div className="glass-card peer-card">
+              <div className="terminal-log">
                 <div className="terminal-header">Peer Chat</div>
-                <div className="terminal-body" style={{ minHeight: '120px', maxHeight: '260px', overflowY: 'auto' }}>
+                <div className="terminal-body" style={{ minHeight: '120px', maxHeight: '400px', overflowY: 'auto' }}>
                   {chatMessages.map((m, i) => (
                     <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
                       <span style={{ opacity: 0.6 }}>[{new Date(m.ts).toLocaleTimeString()}]</span>{' '}
-                      <strong>{m.from}:</strong> {m.text}
+                      {m.e2e && <span title="End-to-end encrypted">🔒 </span>}
+                      <strong>{m.from}{m.lobby && !m.self ? ' (lobby)' : ''}:</strong> {m.text}
                     </div>
                   ))}
-                  {chatMessages.length === 0 && <div className="log-line dim">No messages. Send one to a peer by username.</div>}
+                  {chatMessages.length === 0 && <div className="log-line dim">No messages. Send one to a peer or to the lobby.</div>}
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-                  <input
-                    type="text"
+                  <select
                     value={chatTo}
                     onChange={e => setChatTo(e.target.value)}
-                    placeholder="Peer username"
                     className="glass-input"
                     style={{ flex: '0 0 160px' }}
                     disabled={peerStatus !== 'online'}
-                  />
+                  >
+                    <option value="">Lobby (everyone)</option>
+                    {networkPeers.filter(p => p.id !== 'server').map(p => (
+                      <option key={p.id} value={p.username}>{p.username}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     value={chatText}
@@ -2280,7 +2381,7 @@ function App() {
                     disabled={peerStatus !== 'online'}
                     onKeyDown={e => e.key === 'Enter' && handleSendChat()}
                   />
-                  <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatTo.trim() || !chatText.trim()}>
+                  <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatText.trim()}>
                     Send
                   </Button>
                 </div>
@@ -2319,16 +2420,18 @@ function App() {
                       />
                       All Platforms
                     </label>
+                    {!isCapacitor && (
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                      <input 
-                        type="radio" 
-                        name="searchSource" 
-                        value="soulseek" 
-                        checked={searchSource === 'soulseek'} 
-                        onChange={() => { setSearchSource('soulseek'); setSearchResults([]); }} 
+                      <input
+                        type="radio"
+                        name="searchSource"
+                        value="soulseek"
+                        checked={searchSource === 'soulseek'}
+                        onChange={() => { setSearchSource('soulseek'); setSearchResults([]); }}
                       />
                       Soulseek
                     </label>
+                    )}
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                       <input 
                         type="radio" 

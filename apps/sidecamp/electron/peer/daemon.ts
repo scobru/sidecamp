@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { WebSocket } from "ws";
 import { EventEmitter } from "events";
+import { generateKeyPair, encryptFor, decryptFrom, type KeyPair } from "../../src/services/e2eCrypto";
 
 export interface PeerConfig {
     server: string;
@@ -19,6 +20,10 @@ export class PeerDaemon extends EventEmitter {
     private isRunning: boolean = false;
     private reconnectTimer: NodeJS.Timeout | null = null;
     private getMagnetUriForFile?: (filePath: string) => string | undefined;
+    // E2E chat: fresh Curve25519 identity per app run, exchanged with peers over
+    // the existing peer WS ('pubkey' messages) — the relay server never sees plaintext.
+    private readonly myKeyPair: KeyPair = generateKeyPair();
+    private readonly peerPublicKeys = new Map<string, string>();
 
     constructor(config: PeerConfig, getMagnetUriForFile?: (filePath: string) => string | undefined) {
         super();
@@ -165,13 +170,21 @@ export class PeerDaemon extends EventEmitter {
                     if (msg.type === 'auth_ok') {
                         this.emit("status", "online");
                         this.emit("log", `Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`);
-                        
+                        this.ws?.send(JSON.stringify({ type: 'pubkey', pubkey: this.myKeyPair.publicKey }));
                         this.ws?.send(JSON.stringify({
                             type: 'manifest',
                             tracks: indexData
                         }));
+                    } else if (msg.type === 'pubkey') {
+                        this.peerPublicKeys.set(msg.from, msg.pubkey);
                     } else if (msg.type === 'chat') {
-                        this.emit("chat", { from: msg.from, text: msg.text, ts: msg.ts });
+                        if (msg.lobby) {
+                            this.emit("chat", { from: msg.from, text: msg.text, ts: msg.ts, lobby: true });
+                        } else {
+                            const senderKey = this.peerPublicKeys.get(msg.from);
+                            const plain = senderKey ? decryptFrom(msg.text, senderKey, this.myKeyPair.secretKey) : null;
+                            this.emit("chat", { from: msg.from, text: plain ?? '[Encrypted message — key exchange pending]', ts: msg.ts, e2e: true });
+                        }
                     } else if (msg.type === 'ping') {
                         this.ws?.send(JSON.stringify({ type: 'pong' }));
                     } else if (msg.type === 'stream_request' || msg.type === 'download_request') {
@@ -253,10 +266,20 @@ export class PeerDaemon extends EventEmitter {
         }
     }
 
-    public sendChat(to: string, text: string) {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'chat', to, text }));
+    public sendChat(to: string, text: string): { success: boolean; error?: string } {
+        if (this.ws?.readyState !== WebSocket.OPEN) return { success: false, error: 'Not connected' };
+        let payload = text;
+        let e2e = false;
+        if (to) {
+            const pubkey = this.peerPublicKeys.get(to);
+            if (pubkey) {
+                payload = encryptFor(text, pubkey, this.myKeyPair.secretKey);
+                e2e = true;
+            }
+            // no pubkey → send plaintext (peer on older version or key exchange pending)
         }
+        this.ws.send(JSON.stringify({ type: 'chat', to, text: payload }));
+        return { success: true, e2e };
     }
 
     public async rescanAndSendManifest() {

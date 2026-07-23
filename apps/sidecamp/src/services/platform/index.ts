@@ -30,7 +30,7 @@ export function detectPlatform(): PlatformInfo {
   };
 }
 
-const currentPlatform = detectPlatform();
+export const currentPlatform = detectPlatform();
 const capacitorAdapter = createCapacitorAdapter();
 
 export const platformAPI: any = currentPlatform.isElectron

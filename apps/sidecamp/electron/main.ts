@@ -491,8 +491,7 @@ ipcMain.handle('peer:stop', () => {
 });
 
 ipcMain.handle('peer:chat-send', (event, to: string, text: string) => {
-  daemon?.sendChat(to, text);
-  return true;
+  return daemon?.sendChat(to, text) ?? { success: false, error: 'Peer sharing not running' };
 });
 
 // --- Shared-folder file browser IPC ---

@@ -83,6 +83,9 @@
 
 .track-table .col-wave { width: 148px; padding: 2px 4px; }
 .track-table .wave-canvas { display: block; width: 140px; height: 22px; }
+.track-table .col-artist { width: 16%; }
+.track-table .col-album { width: 16%; }
+.track-table .col-genre { width: 12%; }
 .track-table .col-bpm { width: 54px; }
 .track-table .col-key { width: 48px; }
 .track-table .col-time { width: 52px; }
@@ -179,3 +182,143 @@
 .track-table .col-actions button:disabled { opacity: 0.3; cursor: default; }
 .track-table .col-actions button.act-ok { color: var(--success); }
 .track-table .col-actions button.act-danger:hover { color: var(--danger); }
+
+.track-cards { display: none; }
+
+/* Mobile: drop the table + collection side-pane for a scrollable card list */
+@media (max-width: 768px) {
+  .library-body {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .collection-pane {
+    display: none;
+  }
+
+  .library-body .track-table-wrap {
+    display: none;
+  }
+
+  .peer-tracks-wrap .col-album,
+  .peer-tracks-wrap .col-fmt {
+    display: none;
+  }
+
+  .peer-tracks-wrap .col-title,
+  .peer-tracks-wrap .col-artist {
+    width: auto;
+  }
+
+  /* Let the page itself scroll (.main-content already reserves space for
+     the bottom nav bar) instead of a nested max-height region that clips
+     the last rows behind the nav bar. */
+  .peer-tracks-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .track-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 2px;
+  }
+
+  .track-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: var(--tc-radius-md);
+    background: var(--glass-bg, rgba(255, 255, 255, 0.03));
+  }
+
+  .track-card.playing {
+    color: var(--tc-color-accent-magenta);
+    background: rgba(255, 0, 255, 0.05);
+  }
+
+  .track-card-check { flex-shrink: 0; }
+  .track-card-check .seed-check { color: var(--success); font-size: 0.85rem; }
+
+  .track-card-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .track-card-title {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-card-sub {
+    font-size: 0.78rem;
+    color: var(--text-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-card-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: var(--text-subtle);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 2px;
+  }
+
+  .track-card-actions {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .track-card-actions > button {
+    opacity: 1;
+    padding: 6px;
+  }
+
+  .card-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+  }
+
+  .card-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 21;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    padding: 6px;
+    border-radius: var(--tc-radius-md);
+    border: 1px solid var(--glass-border);
+    background: var(--tc-color-bg-elevated, #1a1a1f);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .card-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    background: transparent;
+  }
+
+  .card-menu button:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .card-menu button.act-danger { color: var(--danger); }
+  .card-menu button.act-ok { color: var(--success); }
+}

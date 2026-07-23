@@ -10,6 +10,9 @@ const config: CapacitorConfig = {
   plugins: {
     Filesystem: {
       persist: true
+    },
+    CapacitorHttp: {
+      enabled: true
     }
   }
 };
