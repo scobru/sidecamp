@@ -12,8 +12,10 @@ import './index.css';
 import logo from './assets/logo.png';
 
 import platformAPI, { currentPlatform } from './services/platform';
+import { Capacitor } from '@capacitor/core';
+import pingSound from './audio/ping-bing_E_major.wav';
 
-const isCapacitor = currentPlatform.isCapacitor;
+const isCapacitor = Capacitor.isNativePlatform();
 
 // Shared collator: options are parsed once, not on every comparison.
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
@@ -249,6 +251,7 @@ function App() {
 
     window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number; lobby?: boolean; e2e?: boolean }) => {
       setChatMessages(prev => [...prev, data].slice(-100));
+      playNotification();
     });
 
     window.electronAPI.getDownloadsDir().then((dir: string) => setDownloadsDir(dir || ''));
@@ -2345,46 +2348,44 @@ function App() {
           )}
 
           {activeTab === 'chat' && (
-            <div className="glass-card peer-card">
-              <div className="terminal-log">
-                <div className="terminal-header">Peer Chat</div>
-                <div className="terminal-body" style={{ minHeight: '120px', maxHeight: '400px', overflowY: 'auto' }}>
-                  {chatMessages.map((m, i) => (
-                    <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
-                      <span style={{ opacity: 0.6 }}>[{new Date(m.ts).toLocaleTimeString()}]</span>{' '}
-                      {m.e2e && <span title="End-to-end encrypted">🔒 </span>}
-                      <strong>{m.from}{m.lobby && !m.self ? ' (lobby)' : ''}:</strong> {m.text}
-                    </div>
+            <div className="glass-card peer-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, overflow: 'hidden' }}>
+              <div className="terminal-header" style={{ flexShrink: 0 }}>Peer Chat</div>
+              <div className="terminal-body" style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
+                {chatMessages.map((m, i) => (
+                  <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)' }}>
+                    <span style={{ opacity: 0.6 }}>[{new Date(m.ts).toLocaleTimeString()}]</span>{' '}
+                    {m.e2e && <span title="End-to-end encrypted">🔒 </span>}
+                    <strong>{m.from}{m.lobby && !m.self ? ' (lobby)' : ''}:</strong> {m.text}
+                  </div>
+                ))}
+                {chatMessages.length === 0 && <div className="log-line dim" style={{ marginTop: 'auto' }}>No messages. Send one to a peer or to the lobby.</div>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexShrink: 0, flexWrap: 'wrap' }}>
+                <select
+                  value={chatTo}
+                  onChange={e => setChatTo(e.target.value)}
+                  className="glass-input"
+                  style={{ flex: '0 0 160px' }}
+                  disabled={peerStatus !== 'online'}
+                >
+                  <option value="">Lobby (everyone)</option>
+                  {networkPeers.filter(p => p.id !== 'server').map(p => (
+                    <option key={p.id} value={p.username}>{p.username}</option>
                   ))}
-                  {chatMessages.length === 0 && <div className="log-line dim">No messages. Send one to a peer or to the lobby.</div>}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-                  <select
-                    value={chatTo}
-                    onChange={e => setChatTo(e.target.value)}
-                    className="glass-input"
-                    style={{ flex: '0 0 160px' }}
-                    disabled={peerStatus !== 'online'}
-                  >
-                    <option value="">Lobby (everyone)</option>
-                    {networkPeers.filter(p => p.id !== 'server').map(p => (
-                      <option key={p.id} value={p.username}>{p.username}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={chatText}
-                    onChange={e => setChatText(e.target.value)}
-                    placeholder={peerStatus === 'online' ? 'Message...' : 'Start Sharing to enable chat'}
-                    className="glass-input"
-                    style={{ flex: 1, minWidth: '160px' }}
-                    disabled={peerStatus !== 'online'}
-                    onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                  />
-                  <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatText.trim()}>
-                    Send
-                  </Button>
-                </div>
+                </select>
+                <input
+                  type="text"
+                  value={chatText}
+                  onChange={e => setChatText(e.target.value)}
+                  placeholder={peerStatus === 'online' ? 'Message...' : 'Start Sharing to enable chat'}
+                  className="glass-input"
+                  style={{ flex: 1, minWidth: '160px' }}
+                  disabled={peerStatus !== 'online'}
+                  onKeyDown={e => e.key === 'Enter' && handleSendChat()}
+                />
+                <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatText.trim()}>
+                  Send
+                </Button>
               </div>
             </div>
           )}
