@@ -34,7 +34,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel.
 - 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album) and rename files.
 - 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
-- 💬 **Peer Chat** — Send direct messages to other peers by username over the peer WebSocket, Soulseek-style.
+- 💬 **Peer Chat** — Send direct messages to other peers by username over the peer WebSocket, Soulseek-style. Direct messages are end-to-end encrypted (Curve25519/XSalsa20-Poly1305 via `tweetnacl`) — the relay server never sees plaintext.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
