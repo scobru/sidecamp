@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.3] - 2026-07-27
+
+### Fixed
+- **Electron window throttled in background.** `backgroundThrottling: false` added to the main window's `webPreferences` so playback/timers keep running at full rate when the app window is unfocused or minimized.
+- **`tweetnacl-util` import broke under CJS interop**, switched to default-import + destructure.
+
 ## [0.23.1] - 2026-07-24
 
 ### Fixed
