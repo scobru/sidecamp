@@ -69,6 +69,7 @@ function createWindow() {
       preload: join(import.meta.dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
     },
   })
 
