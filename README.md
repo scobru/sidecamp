@@ -9,8 +9,11 @@ This repository is an **npm-workspaces monorepo** hosting two apps and their sha
 ```
 apps/sidecamp        # the TuneCamp companion app (this README's main subject)
 apps/graphofone      # standalone live-performance app built on the same graph engine
+apps/sidecamp-cli    # headless CLI client for Sidecamp (no Electron): search/download/upload/peer daemon
 packages/audio-engine # pure Web Audio DSP: crossfade player, time-warp, worklets
 packages/graph-ui     # React graph view: track graph, transitions, waveforms, recording
+
+Shared dependency: `tunecamp-design-system` ([scobru/tunecamp-design-system](https://github.com/scobru/tunecamp-design-system)) — UI/design-token package with 5-theme picker (dark/light/grey/nordic/nordic-dark), consumed via npm `file:`/`github:`.
 ```
 
 ## Graphofone
@@ -38,7 +41,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
-- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with light/dark themes and a collapsible sidebar.
+- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with 5 themes (dark/light/grey/nordic/nordic-dark) via `tunecamp-design-system` and a collapsible sidebar.
 
 ## Prerequisites
 
@@ -138,7 +141,11 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 Sidecamp is part of the [TuneCamp ecosystem](https://github.com/scobru/tunecamp#tunecamp-ecosystem):
 
 - [**tunecamp**](https://github.com/scobru/tunecamp) — The core self-hosted music streaming server.
-- [**tunecamp-website**](https://github.com/scobru/tunecamp-website) — Landing page and community directory.
+- [**tunecamp-website**](https://github.com/scobru/tunecamp-website) — Landing page, community directory, and web-based community audio player.
+- [**tunecamp-4-track-recorder**](https://github.com/scobru/tunecamp-4-track-recorder) — Browser-based 4-track cassette recorder with overdub and mixer.
+- [**tunecamp-audiofabric**](https://github.com/scobru/tunecamp-audiofabric) — Real-time 3D WebGL music visualizer.
+- [**tunecamp-design-system**](https://github.com/scobru/tunecamp-design-system) — Shared UI/design-token package (5-theme picker: dark/light/grey/nordic/nordic-dark) consumed by Sidecamp via npm `file:`/`github:`.
+- [**sidecamp-cli**](https://github.com/scobru/sidecamp/tree/main/apps/sidecamp-cli) — Headless CLI client for Sidecamp functionality without Electron.
 
 ## License
 
