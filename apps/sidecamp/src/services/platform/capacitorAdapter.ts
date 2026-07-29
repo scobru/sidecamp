@@ -204,6 +204,17 @@ export function createCapacitorAdapter() {
 
   return {
     // Config & Auth
+    configGet: async () => {
+      const { value } = await Preferences.get({ key: 'app_config' });
+      return value ? JSON.parse(value) : {};
+    },
+    configSet: async (key: string, value: any) => {
+      const { value: raw } = await Preferences.get({ key: 'app_config' });
+      const cfg = raw ? JSON.parse(raw) : {};
+      cfg[key] = value;
+      await Preferences.set({ key: 'app_config', value: JSON.stringify(cfg) });
+      return true;
+    },
     setUploadConfig: async (server: string, token: string) => {
       await Preferences.set({ key: 'server_url', value: server });
       await Preferences.set({ key: 'server_token', value: token });

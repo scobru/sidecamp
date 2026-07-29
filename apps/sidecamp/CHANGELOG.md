@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.5] - 2026-07-29
+
+### Fixed
+- **Android grey/black screen right after login.** `capacitorAdapter.ts` had no `configGet`/`configSet`, so the post-login shell's `window.electronAPI.configGet()` call threw an uncaught `TypeError` and silently unmounted the app. Added a `Preferences`-backed implementation mirroring the Electron main-process `config:get`/`config:set` IPC contract.
+- Added a top-level `ErrorBoundary` so future uncaught render/mount errors show a crash screen instead of a blank one.
+
 ## [0.23.3] - 2026-07-27
 
 ### Fixed
