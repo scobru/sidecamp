@@ -178,6 +178,7 @@ function App() {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [slskUser, setSlskUser] = useState('');
   const [slskPass, setSlskPass] = useState('');
+  const [torrentPort, setTorrentPort] = useState<number>(0);
   const [activeDownloads, setActiveDownloads] = useState<any[]>([]);
   const [searchSource, setSearchSource] = useState('soulseek'); // 'soulseek' | 'soundcloud' | 'bandcamp' | 'torrent'
   const [downloadedFiles, setDownloadedFiles] = useState<any[]>([]);
@@ -245,6 +246,9 @@ function App() {
     audio.volume = 0.5;
     audio.play().catch(e => console.log('Audio play blocked:', e));
   }, []);
+
+  // Load torrent port from main-process config on startup.
+  useEffect(() => { window.electronAPI.configGet().then((cfg: any) => setTorrentPort(cfg.torrentPort || 0)); }, []);
 
   useEffect(() => {
     // Listen to Peer Daemon logs
@@ -576,6 +580,13 @@ function App() {
     const list = idx >= 0 ? peerTracks : [track];
     playAt(list.map(t => networkQueueItem(peer, t)), Math.max(idx, 0));
   };
+
+  // Only exempt the renderer from Chromium's background throttling while a track
+  // is actually playing, so uninterrupted audio in the background doesn't leave
+  // the window pegged (and Windows flagging it "Not Responding") while idle.
+  useEffect(() => {
+    window.electronAPI?.setBackgroundThrottling?.(!isPlaying);
+  }, [isPlaying]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -1326,6 +1337,7 @@ function App() {
     localStorage.setItem('slsk_user', slskUser);
     localStorage.setItem('slsk_pass', slskPass ? await window.electronAPI.encryptString(slskPass) : '');
     localStorage.setItem('shared_folders', folder);
+    await window.electronAPI.configSet('torrentPort', torrentPort);
 
     setDlLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Connecting to Soulseek...`]);
     const connected = await window.electronAPI.slskConnect(slskUser, slskPass);
@@ -2191,6 +2203,21 @@ function App() {
               )}
 
               <div className="settings-section" style={{ marginBottom: '2rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
+                <h3 style={{ marginBottom: '1rem' }}>Torrent Settings</h3>
+                <div className="form-group">
+                  <label>Custom Port (0 = random, useful with VPNs like ProtonVPN that pin a specific port)</label>
+                  <input
+                    type="number"
+                    value={torrentPort || ''}
+                    onChange={e => setTorrentPort(e.target.value ? parseInt(e.target.value) : 0)}
+                    placeholder="0"
+                    className="glass-input"
+                    style={{ width: '120px' }}
+                  />
+                </div>
+              </div>
+
+              <div className="settings-section" style={{ marginBottom: '2rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Local Shared Folders (Peer Node)</h3>
                 <div className="form-group">
                   <label>Music Folders to Share (comma-separated)</label>
@@ -2610,7 +2637,8 @@ function App() {
                         </thead>
                         <tbody>
                           {searchResults.map((res, i) => {
-                            const busy = activeDownloads.some(d => d.id === res.id && d.status === 'downloading');
+                            const dl = activeDownloads.find(d => d.id === res.id);
+                            const busy = dl && dl.status === 'downloading';
                             const name = res.title || (res.file && res.file.split(/[/\\]/).pop()) || 'Unknown Track';
                             return (
                               <tr key={i} onDoubleClick={() => !busy && handleDownload(res)}>
@@ -2619,8 +2647,17 @@ function App() {
                                 <td className="col-right cell-mono cell-muted">{res.size ? (res.size / 1024 / 1024).toFixed(1) + 'M' : ''}</td>
                                 <td className="col-right cell-mono cell-muted">{res.bitrate || ''}</td>
                                 <td className="cell-ellipsis cell-muted">{res.source === 'soulseek' || res.source === 'peer' ? `${res.source} • ${res.user}` : (res.user || res.source)}</td>
-                                <td className="col-actions">
-                                  <button title={busy ? 'Downloading…' : 'Download'} disabled={busy} onClick={() => handleDownload(res)}><Download size={13} /></button>
+                                <td className="col-actions" style={{ minWidth: '100px' }}>
+                                  {busy && dl ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                                        <div style={{ width: `${(dl.progress * 100).toFixed(0)}%`, height: '100%', background: 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                      </div>
+                                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', minWidth: '28px' }}>{(dl.progress * 100).toFixed(0)}%</span>
+                                    </div>
+                                  ) : (
+                                    <button title='Download' onClick={() => handleDownload(res)}><Download size={13} /></button>
+                                  )}
                                 </td>
                               </tr>
                             );

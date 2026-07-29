@@ -5,17 +5,19 @@ import path from 'path';
 export class TorrentService extends EventEmitter {
     private client: WebTorrent.Instance | null = null;
     private downloadDir: string;
+    private port: number;
     private seededFiles: Map<string, string> = new Map(); // filePath -> magnetURI
 
-    constructor(downloadDir: string) {
+    constructor(downloadDir: string, port?: number) {
         super();
         this.downloadDir = downloadDir;
+        this.port = port || 0;
     }
 
     private async ensureClient(): Promise<WebTorrent.Instance> {
         if (!this.client) {
             const WebTorrentClass = (await import('webtorrent')).default;
-            this.client = new WebTorrentClass({ utp: false });
+            this.client = new WebTorrentClass({ port: this.port, utp: false });
             this.client.on('error', (err: any) => {
                 console.error("WebTorrent error:", err);
                 this.emit('error', err);

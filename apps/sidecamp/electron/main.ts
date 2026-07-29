@@ -69,7 +69,9 @@ function createWindow() {
       preload: join(import.meta.dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      backgroundThrottling: false,
+      // Only disabled while a track is actually playing (see 'app:set-background-throttling'
+      // below) — leaving it permanently off pegs the renderer at full tilt even while idle
+      // and minimized, which is what caused Windows to mark the window "Not Responding".
     },
   })
 
@@ -133,8 +135,21 @@ const isUnderAllowedRoot = (p: string) => {
   return allowedRoots().some(base => abs === base || abs.startsWith(base + path.sep));
 };
 
+// Simple JSON config persisted in userData. Used for settings that the
+// main process needs at startup (e.g. torrent port) — values the renderer
+// also keeps in localStorage for quick access.
+const configPath = join(app.getPath('userData'), 'config.json');
+function readConfig(): Record<string, any> {
+  try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { return {}; }
+}
+function writeConfig(cfg: Record<string, any>) {
+  fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+const config = readConfig();
+
 const slsk = new SoulseekService(musicDir, downloadDir);
-const torrent = new TorrentService(downloadDir);
+const torrent = new TorrentService(downloadDir, config.torrentPort);
 const ytdlp = new YtdlpService(downloadDir, path.join(app.getPath('userData'), 'bin'));
 const network = new NetworkService(downloadDir);
 const uploader = new TuneCampUploader({ server: '', token: '' }); // Configured later via IPC
@@ -152,6 +167,10 @@ ipcMain.handle('upload:config', (event, server, token) => {
 
 ipcMain.handle('upload:track', async (event, filePath, metadata) => {
   return await uploader.uploadTrack(filePath, metadata);
+});
+
+ipcMain.handle('app:set-background-throttling', (_event, throttle: boolean) => {
+  win?.webContents.setBackgroundThrottling(throttle);
 });
 
 // --- Soulseek IPC ---
@@ -460,6 +479,15 @@ ipcMain.handle('torrent:remove', async (event, infoHash) => {
   if (daemon) {
     daemon.refreshAndSendManifest();
   }
+  return true;
+});
+
+// --- Config IPC (persists settings the main process needs at startup) ---
+ipcMain.handle('config:get', () => readConfig());
+ipcMain.handle('config:set', (_event, key: string, value: any) => {
+  const cfg = readConfig();
+  cfg[key] = value;
+  writeConfig(cfg);
   return true;
 });
 
