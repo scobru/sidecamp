@@ -109,6 +109,10 @@ function App() {
   const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean; lobby?: boolean; e2e?: boolean }[]>([]);
   const [chatTo, setChatTo] = useState('');
   const [chatText, setChatText] = useState('');
+  // Chat roster, kept apart from networkPeers: /api/peers lists only daemon
+  // sessions, so webapp users — who join the same lobby over /ws/chat — never
+  // show up there. /api/chat/peers is the registry both transports write to.
+  const [chatPeers, setChatPeers] = useState<{ username: string; pubkey: boolean }[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState(isCapacitor ? 'library' : 'download');
@@ -356,10 +360,29 @@ function App() {
   }, [activeTab, folder]);
 
   useEffect(() => {
-    if (activeTab === 'network' || activeTab === 'chat') {
+    if (activeTab === 'network') {
       loadNetworkPeers();
     }
   }, [activeTab]);
+
+  // Poll the chat roster while the Chat tab is open: peers join and leave the
+  // lobby without any message we'd otherwise see.
+  useEffect(() => {
+    if (activeTab !== 'chat' || !server || !token) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const clients = await window.electronAPI.getChatPeers(server, token);
+        if (!cancelled) setChatPeers(clients || []);
+      } catch (e) {
+        // Non-blocking: the lobby still works without a roster.
+        console.error('Failed to load chat peers:', e);
+      }
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTab, server, token]);
 
   const loadNetworkPeers = async () => {
     if (!server || !token) {
@@ -2482,8 +2505,8 @@ function App() {
                   disabled={peerStatus !== 'online'}
                 >
                   <option value="">Lobby (everyone)</option>
-                  {networkPeers.filter(p => p.id !== 'server').map(p => (
-                    <option key={p.id} value={p.username}>{p.username}</option>
+                  {chatPeers.map(p => (
+                    <option key={p.username} value={p.username}>{p.username}</option>
                   ))}
                 </select>
                 <input

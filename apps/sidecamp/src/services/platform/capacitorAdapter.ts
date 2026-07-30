@@ -509,6 +509,16 @@ export function createCapacitorAdapter() {
       return Array.isArray(res.data) ? res.data : [];
     },
 
+    // See NetworkProvider.getChatPeers: the chat roster is the /ws/chat registry,
+    // which includes webapp users that /api/peers never lists.
+    getChatPeers: async (server: string, token: string) => {
+      const res = await CapacitorHttp.get({
+        url: `${server.replace(/\/$/, '')}/api/chat/peers`,
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return Array.isArray(res.data?.clients) ? res.data.clients : [];
+    },
+
     getPeerTracks: async (server: string, token: string, sessionId: string, origin?: string) => {
       const cleanServer = server.replace(/\/$/, '');
       const url = origin

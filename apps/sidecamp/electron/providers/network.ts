@@ -79,6 +79,18 @@ export class NetworkService {
     return response.data;
   }
 
+  // Chat roster, not the sharing roster: /api/peers only lists daemon sessions
+  // on /ws/peer, so webapp users (who connect to /ws/chat) are invisible there.
+  // The lobby is shared by both transports, so the chat recipient list must come
+  // from the chat registry instead.
+  public async getChatPeers(server: string, token: string) {
+    const cleanServer = server.replace(/\/$/, '');
+    const response = await axios.get(`${cleanServer}/api/chat/peers`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return response.data?.clients ?? [];
+  }
+
   public async getPeerTracks(server: string, token: string, sessionId: string, origin?: string) {
     const cleanServer = server.replace(/\/$/, '');
     const url = origin
