@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.6] - 2026-07-31
+
+### Fixed
+- **Webapp users were missing from the chat contact list.** The Chat tab's recipient dropdown was built from `networkPeers` (`GET /api/peers`), which only lists peer-daemon sessions on `/ws/peer`. Users chatting from the TuneCamp webapp connect to `/ws/chat` and never appear there, so they were invisible from Sidecamp while Sidecamp users were visible to them. The dropdown now reads `GET /api/chat/peers` — the registry both transports write to — via a new `getChatPeers` on the Electron network provider and the Capacitor adapter, polled every 5s while the Chat tab is open.
+
 ## [0.23.5] - 2026-07-29
 
 ### Fixed

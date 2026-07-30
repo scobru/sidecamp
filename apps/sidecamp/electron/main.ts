@@ -741,6 +741,10 @@ ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);
 });
 
+ipcMain.handle('network:chat-peers', async (event, server, token) => {
+  return await network.getChatPeers(server, token);
+});
+
 ipcMain.handle('network:tracks', async (event, server, token, sessionId, origin) => {
   return await network.getPeerTracks(server, token, sessionId, origin);
 });
