@@ -1,6 +1,11 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
 
 :root {
+  /* Tunecamp Design System tokens */
+  --tc-font-family-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --tc-font-family-display: 'Outfit', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --tc-font-family-mono: 'JetBrains Mono', ui-monospace, monospace;
+
   /* Map Graphofone variables to Tunecamp Design System tokens */
   --bg-color: var(--tc-color-bg-base);
   --panel-bg: var(--tc-color-bg-surface);
@@ -62,10 +67,16 @@
   scroll-behavior: smooth;
 }
 
+button, input, select, textarea {
+  font-family: inherit;
+}
+
 body {
   background-color: var(--bg-color);
   color: var(--text-main);
   font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow: hidden; /* Electron app window */
   background-image: radial-gradient(circle at 12% 30%, rgba(255, 0, 255, 0.08), transparent 40%),
                     radial-gradient(circle at 88% 70%, rgba(0, 229, 255, 0.06), transparent 30%);
