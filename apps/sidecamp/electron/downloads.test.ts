@@ -30,6 +30,7 @@ const mockApp = {
   whenReady: vi.fn().mockResolvedValue(undefined),
   isPackaged: false,
   on: vi.fn(),
+  commandLine: { appendSwitch: vi.fn() },
 };
 
 class MockBrowserWindow {

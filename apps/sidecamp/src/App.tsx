@@ -1171,7 +1171,7 @@ function App() {
       alert("Failed to send message: " + (result?.error || "unknown error"));
       return;
     }
-    setChatMessages(prev => [...prev, { from: to ? `→ ${to}` : '→ Lobby', text, ts: Date.now(), self: true, e2e: !!to }].slice(-100));
+    setChatMessages(prev => [...prev, { from: to ? `→ ${to}` : '→ Lobby', text, ts: Date.now(), self: true, e2e: !!to, to: to || undefined }].slice(-100));
     setChatText('');
   };
 
