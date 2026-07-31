@@ -8,21 +8,24 @@
     "sidecamp": "./bin/sidecamp.js"
   },
   "scripts": {
-    "cli": "tsx src/index.ts"
+    "cli": "tsx src/index.ts",
+    "test": "vitest"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "andrade-soulseek-downloader": "^1.0.28",
     "axios": "^1.18.1",
     "commander": "^12.1.0",
     "form-data": "^4.0.6",
     "fs-extra": "^11.3.6",
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@ffprobe-installer/ffprobe": "^2.1.2",
-    "andrade-soulseek-downloader": "^1.0.28",
     "webtorrent": "^3.0.16"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
+    "@vitest/coverage-v8": "^2.0.0",
     "tsx": "^4.19.2",
-    "typescript": "~6.0.2"
+    "typescript": "~6.0.2",
+    "vitest": "^2.0.0"
   }
 }
