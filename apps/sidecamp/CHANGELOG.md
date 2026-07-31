@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.7] - 2026-07-31
+
+### Added
+- **Modern 2-Column Chat UI**: Redesigned Sidecamp's Chat tab to match TuneCamp instance style with message bubbles, connection status badge, E2E lock indicators 🔒, lobby indicators 🌐, smooth auto-scroll with a "Latest" floating button, and an interactive connected peers roster sidebar.
+- **Admin & Peer Identity Disambiguation**: Integrated backend identity disambiguation support so that multiple user or admin sessions connecting with identical usernames receive distinct session tags (e.g., `admin #a1b2`) in chat messages and roster views.
+
 ## [0.23.6] - 2026-07-31
 
 ### Fixed
