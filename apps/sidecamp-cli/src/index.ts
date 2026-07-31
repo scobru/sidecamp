@@ -111,10 +111,17 @@ program
         if (query) {
             const q = query.toLowerCase();
             tracks = tracks.filter((t: any) => {
-                const title = extractString(t.title || t.filename).toLowerCase();
-                const artist = extractString(t.artist || t.artistName).toLowerCase();
-                const album = extractString(t.album || t.albumTitle).toLowerCase();
-                return title.includes(q) || artist.includes(q) || album.includes(q);
+                const rawTitle = t.title || t.filename;
+                const title = typeof rawTitle === 'string' ? rawTitle : extractString(rawTitle);
+                if (title.toLowerCase().includes(q)) return true;
+
+                const rawArtist = t.artist || t.artistName;
+                const artist = typeof rawArtist === 'string' ? rawArtist : extractString(rawArtist);
+                if (artist.toLowerCase().includes(q)) return true;
+
+                const rawAlbum = t.album || t.albumTitle;
+                const album = typeof rawAlbum === 'string' ? rawAlbum : extractString(rawAlbum);
+                return album.toLowerCase().includes(q);
             });
         }
         if (!tracks || !tracks.length) {
@@ -177,10 +184,17 @@ program
             const tracks = await network.getCatalogTracks(server, token);
             const q = query.toLowerCase();
             const hit = tracks.find((t: any) => {
-                const title = extractString(t.title || t.filename).toLowerCase();
-                const artist = extractString(t.artist || t.artistName).toLowerCase();
-                const album = extractString(t.album || t.albumTitle).toLowerCase();
-                return title.includes(q) || artist.includes(q) || album.includes(q);
+                const rawTitle = t.title || t.filename;
+                const title = typeof rawTitle === 'string' ? rawTitle : extractString(rawTitle);
+                if (title.toLowerCase().includes(q)) return true;
+
+                const rawArtist = t.artist || t.artistName;
+                const artist = typeof rawArtist === 'string' ? rawArtist : extractString(rawArtist);
+                if (artist.toLowerCase().includes(q)) return true;
+
+                const rawAlbum = t.album || t.albumTitle;
+                const album = typeof rawAlbum === 'string' ? rawAlbum : extractString(rawAlbum);
+                return album.toLowerCase().includes(q);
             });
             if (!hit) throw new Error(`No instance library results matching '${query}'`);
             const artist = extractString(hit.artist || hit.artistName || 'Unknown Artist');
@@ -385,10 +399,17 @@ async function runSearch(source: string, query: string): Promise<any[]> {
             const q = query.toLowerCase();
             return (tracks || [])
                 .filter((t: any) => {
-                    const title = extractString(t.title || t.filename).toLowerCase();
-                    const artist = extractString(t.artist || t.artistName).toLowerCase();
-                    const album = extractString(t.album || t.albumTitle).toLowerCase();
-                    return title.includes(q) || artist.includes(q) || album.includes(q);
+                    const rawTitle = t.title || t.filename;
+                    const title = typeof rawTitle === 'string' ? rawTitle : extractString(rawTitle);
+                    if (title.toLowerCase().includes(q)) return true;
+
+                    const rawArtist = t.artist || t.artistName;
+                    const artist = typeof rawArtist === 'string' ? rawArtist : extractString(rawArtist);
+                    if (artist.toLowerCase().includes(q)) return true;
+
+                    const rawAlbum = t.album || t.albumTitle;
+                    const album = typeof rawAlbum === 'string' ? rawAlbum : extractString(rawAlbum);
+                    return album.toLowerCase().includes(q);
                 })
                 .map((t: any) => ({
                     id: t.id,
