@@ -314,7 +314,7 @@ ipcMain.handle('downloads:open', async (event, filePath) => {
     if (!isUnderAllowedRoot(resolvedPath)) {
       throw new Error("Access denied: Path is outside the download directory");
     }
-    await shell.openPath(resolvedPath);
+    shell.showItemInFolder(resolvedPath);
     return true;
   } catch (e) {
     console.error("Error opening file:", e);
