@@ -5,7 +5,7 @@ import path from 'path';
 let openHandler: (event: any, filePath: string) => Promise<boolean>;
 
 const mockShell = {
-  openPath: vi.fn(),
+  showItemInFolder: vi.fn(),
 };
 
 const mockIpcMain = {
@@ -74,25 +74,25 @@ describe('Downloads IPC Handlers', () => {
     const safePath = path.join('/test/downloads/Sidecamp', 'safe.txt');
     const result = await openHandler({}, safePath);
     expect(result).toBe(true);
-    expect(mockShell.openPath).toHaveBeenCalledWith(path.resolve(safePath));
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(path.resolve(safePath));
   });
 
   it('should block opening a file outside the download directory (directory traversal)', async () => {
     const maliciousPath = path.join('/test/downloads/Sidecamp', '../../etc/passwd');
     await expect(openHandler({}, maliciousPath)).rejects.toThrow('Access denied: Path is outside the download directory');
-    expect(mockShell.openPath).not.toHaveBeenCalled();
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
   });
 
   it('should block opening a file outside the download directory (absolute path)', async () => {
     const maliciousPath = '/etc/passwd';
     await expect(openHandler({}, maliciousPath)).rejects.toThrow('Access denied: Path is outside the download directory');
-    expect(mockShell.openPath).not.toHaveBeenCalled();
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
   });
 
   it('should block opening a file in a sibling directory (prefix attack)', async () => {
     // A path like /test/downloads/Sidecamp-Malicious/file.txt
     const siblingPath = '/test/downloads/Sidecamp-Malicious/file.txt';
     await expect(openHandler({}, siblingPath)).rejects.toThrow('Access denied: Path is outside the download directory');
-    expect(mockShell.openPath).not.toHaveBeenCalled();
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
   });
 });
