@@ -215,7 +215,22 @@ function App() {
   const [slskUser, setSlskUser] = useState('');
   const [slskPass, setSlskPass] = useState('');
   const [torrentPort, setTorrentPort] = useState<number>(0);
-  const [activeDownloads, setActiveDownloads] = useState<any[]>([]);
+  const [activeDownloads, setActiveDownloads] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('sidecamp_active_downloads');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidecamp_active_downloads', JSON.stringify(activeDownloads));
+    } catch (e) {
+      console.error('Failed to save active_downloads:', e);
+    }
+  }, [activeDownloads]);
   const [searchSource, setSearchSource] = useState('soulseek'); // 'soulseek' | 'soundcloud' | 'bandcamp' | 'torrent'
   const [downloadedFiles, setDownloadedFiles] = useState<any[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -386,6 +401,31 @@ function App() {
         });
       }
     })();
+
+    // Auto-resume pending or active torrents on startup
+    const pendingTorrents = activeDownloads.filter(
+      (dl) => (dl.source === 'torrent' || dl.source === 'torrent_search') && dl.magnetUri && (dl.status === 'downloading' || dl.status === 'seeding')
+    );
+
+    if (pendingTorrents.length > 0) {
+      setDlLogs((prev) => [...prev, `[Torrent] Auto-resuming ${pendingTorrents.length} active torrent download(s)...`]);
+      pendingTorrents.forEach((dl) => {
+        window.electronAPI
+          .torrentDownload(dl.magnetUri, dl.id)
+          .then((paths: string[]) => {
+            if (paths.length > 0) {
+              setActiveDownloads((prev) =>
+                prev.map((item) =>
+                  item.id === dl.id ? { ...item, status: 'completed', name: item.name.startsWith('Analyzing') ? paths[0].split(/[/\\]/).pop() || item.name : item.name } : item
+                )
+              );
+            }
+          })
+          .catch((e: any) => {
+            console.error(`Failed to resume torrent ${dl.name}:`, e);
+          });
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -1249,7 +1289,8 @@ function App() {
         id: downloadId,
         name: filename,
         source: source,
-        status: 'downloading'
+        status: 'downloading',
+        magnetUri: result.url || result.magnetUri
       }
     ]);
 
@@ -1296,7 +1337,8 @@ function App() {
         id: tempId,
         name: isTorrent ? 'Analyzing Torrent...' : directUrl,
         source: isTorrent ? 'torrent' : 'web',
-        status: 'downloading'
+        status: 'downloading',
+        magnetUri: isTorrent ? directUrl : undefined
       }
     ]);
 
@@ -1381,11 +1423,30 @@ function App() {
   const handleStopTorrent = async (infoHash: string) => {
     try {
       await window.electronAPI.removeTorrent(infoHash);
-      setActiveDownloads(prev => prev.filter(d => d.id !== infoHash));
-      setDlLogs(prev => [...prev, `[Library] Torrent removed: ${infoHash.substring(0, 8)}...`]);
+      setActiveDownloads(prev => prev.map(d => (d.infoHash === infoHash || d.id === infoHash) ? { ...d, status: 'failed' } : d));
+      setDlLogs(prev => [...prev, `[Library] Torrent stopped: ${infoHash.substring(0, 8)}...`]);
       loadDownloadedFiles();
     } catch (e: any) {
       console.error("Error removing torrent:", e);
+    }
+  };
+
+  const handleResumeTorrent = async (dl: any) => {
+    if (!dl.magnetUri) {
+      alert("No magnet link available to resume this transfer.");
+      return;
+    }
+    setDlLogs(prev => [...prev, `[Torrent] Resuming torrent: ${dl.name}...`]);
+    setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'downloading' } : d));
+    try {
+      const paths = await window.electronAPI.torrentDownload(dl.magnetUri, dl.id);
+      if (paths.length > 0) {
+        setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'completed', name: d.name.startsWith('Analyzing') ? paths[0].split(/[/\\]/).pop() || d.name : d.name } : d));
+        loadDownloadedFiles();
+      }
+    } catch (e: any) {
+      setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'failed' } : d));
+      setDlLogs(prev => [...prev, `[Torrent] Resume failed for ${dl.name}: ${e.message || e}`]);
     }
   };
 
@@ -3032,6 +3093,9 @@ function App() {
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {dl.status === 'seeding' && (
                         <Button variant="secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</Button>
+                      )}
+                      {(dl.status === 'failed' || dl.status === 'downloading') && dl.magnetUri && (
+                        <Button variant="primary" onClick={() => handleResumeTorrent(dl)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Resume</Button>
                       )}
                       {(dl.status === 'failed' || dl.status === 'completed') && (
                         <Button variant="secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
