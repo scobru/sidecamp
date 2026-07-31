@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
+import fs from 'fs';
 
-// Define a variable to store the captured handler
+// Define a variable to store the captured handlers
 let openHandler: (event: any, filePath: string) => Promise<boolean>;
+let listHandler: (event: any, root: string, subpath: string) => Promise<any>;
 
 const mockShell = {
   openPath: vi.fn(),
@@ -12,6 +14,9 @@ const mockIpcMain = {
   handle: vi.fn((event, handler) => {
     if (event === 'downloads:open') {
       openHandler = handler;
+    }
+    if (event === 'fs:list') {
+      listHandler = handler;
     }
   }),
 };
@@ -59,6 +64,8 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.spyOn(fs.promises, 'readdir').mockResolvedValue([] as any);
+
 describe('Downloads IPC Handlers', () => {
 
   beforeEach(async () => {
@@ -68,6 +75,7 @@ describe('Downloads IPC Handlers', () => {
     await import('./main');
 
     if (!openHandler) throw new Error("Handler not registered");
+    if (!listHandler) throw new Error("List Handler not registered");
   });
 
   it('should allow opening a file inside the download directory', async () => {
@@ -94,5 +102,17 @@ describe('Downloads IPC Handlers', () => {
     const siblingPath = '/test/downloads/Sidecamp-Malicious/file.txt';
     await expect(openHandler({}, siblingPath)).rejects.toThrow('Access denied: Path is outside the download directory');
     expect(mockShell.openPath).not.toHaveBeenCalled();
+  });
+
+  it('should allow listing files inside the download directory', async () => {
+    const safeRoot = path.join('/test/downloads/Sidecamp');
+    const result = await listHandler({}, safeRoot, '');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should block listing files outside the download directory', async () => {
+    const maliciousPath = '/etc/passwd';
+    const result = await listHandler({}, maliciousPath, '');
+    expect(result.error).toContain('Access denied');
   });
 });
