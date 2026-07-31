@@ -36,3 +36,9 @@ release
 # Rust build output
 target/
 Cargo.lock
+
+# Pix Agent
+.pi/
+.pi-lens/
+.cache/
+nul
