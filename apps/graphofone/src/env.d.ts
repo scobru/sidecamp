@@ -1,7 +1,5 @@
 /// <reference types="vite/client" />
 
-declare module 'tunecamp-design-system';
-
 interface Window {
   electronAPI: {
     importFolder: () => Promise<import('./components/LibraryPanel').LibTrack[]>;

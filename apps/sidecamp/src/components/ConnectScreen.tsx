@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Button } from 'tunecamp-design-system';
+import { Button } from './Button';
 import logo from '../assets/logo.png';
 
 type Mode = 'register' | 'login';

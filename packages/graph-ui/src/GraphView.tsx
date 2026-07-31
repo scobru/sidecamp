@@ -8,8 +8,7 @@ import {
   type EqPreset, type NodeEqPreset, type BandPeaks, type QueueItem, type LiveConfig,
   type StripState, type NowPlaying, type EqBands, type Clip,
 } from 'audio-engine';
-import { Button } from 'tunecamp-design-system';
-import 'tunecamp-design-system/style.css';
+import { Button } from './Button';
 import TransitionWave from './components/TransitionWave';
 import './styles/graph.css';
 // Re-export types that App.tsx imports from this module
