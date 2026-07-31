@@ -350,7 +350,7 @@ ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: {
   const cueOutPoint = data.cueOutPoint === null ? null : (typeof data.cueOutPoint === 'number' && Number.isFinite(data.cueOutPoint) && data.cueOutPoint >= 0 ? data.cueOutPoint : undefined);
   if (!bpm && !peaks && beatOffset === undefined && cuePoint === undefined && cueOutPoint === undefined) return false;
   if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
-    try { NodeID3.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
+    try { await NodeID3.Promise.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
   }
   await setCachedAnalysis(filePath, { bpm, peaks, beatOffset, cuePoint, cueOutPoint });
   return true;
@@ -360,8 +360,11 @@ ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
   // update (merge) instead of write (replace): keeps tags we don't edit, e.g. TBPM/genre.
-  const result = NodeID3.update(tags, filePath);
-  if (result !== true) throw new Error(`NodeID3.update failed: ${result}`);
+  try {
+    await NodeID3.Promise.update(tags, filePath);
+  } catch (err: any) {
+    throw new Error(`NodeID3.update failed: ${err.message || err}`);
+  }
   return true;
 });
 
@@ -718,7 +721,7 @@ ipcMain.handle('organize:fill-genres', async (event, root: string) => {
         // node-id3 only writes mp3; other formats keep the genre in the scan
         // cache so genre-mode organizing still works this session.
         if (t.ext === '.mp3') {
-          try { if (NodeID3.update({ genre }, t.path) === true) written++; } catch { /* tag write is best-effort */ }
+          try { await NodeID3.Promise.update({ genre }, t.path); written++; } catch { /* tag write is best-effort */ }
         }
       }
       win?.webContents.send('organize:genre-progress', { current: i + 1, total: missing.length, file: path.basename(t.path), genre: genre || null });
