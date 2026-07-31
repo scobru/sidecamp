@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button } from 'tunecamp-design-system';
+import { Button } from './Button';
 
 type Step = { selector: string; title: string; body: string };
 

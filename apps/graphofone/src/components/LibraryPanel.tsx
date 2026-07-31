@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FolderOpen, Plus, Trash2, Headphones, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { Button } from 'tunecamp-design-system';
+import { Button } from './Button';
 
 export type LibTrack = {
   path: string;

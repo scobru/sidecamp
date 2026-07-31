@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { GraphView, type LiveConfig, type GraphTrack, type GraphEdge, type GraphMeta } from 'graph-ui';
-import { Button } from 'tunecamp-design-system';
+import { Button } from './components/Button';
 import { HelpCircle, Info, ArrowUpCircle, X } from 'lucide-react';
 import LibraryPanel, { type LibTrack } from './components/LibraryPanel';
 import QuickTour from './components/QuickTour';

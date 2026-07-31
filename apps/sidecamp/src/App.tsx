@@ -6,7 +6,7 @@ import {
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
   Eye, EyeOff, MoreVertical, MessageCircle, Send, Lock, Users
 } from 'lucide-react';
-import { Button } from 'tunecamp-design-system';
+import { Button } from './components/Button';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
@@ -106,9 +106,18 @@ function App() {
   const [folder, setFolder] = useState('');
   const [peerStatus, setPeerStatus] = useState('offline');
   const [logs, setLogs] = useState<string[]>([]);
-  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean; lobby?: boolean; e2e?: boolean }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean; lobby?: boolean; e2e?: boolean; to?: string }[]>([]);
   const [chatTo, setChatTo] = useState('');
   const [chatText, setChatText] = useState('');
+  const [chatUnread, setChatUnread] = useState<Record<string, number>>({});
+  const chatToRef = useRef(chatTo);
+
+  useEffect(() => {
+    chatToRef.current = chatTo;
+    if (chatTo) {
+      setChatUnread(prev => ({ ...prev, [chatTo]: 0 }));
+    }
+  }, [chatTo]);
   // Chat roster, kept apart from networkPeers: /api/peers lists only daemon
   // sessions, so webapp users — who join the same lobby over /ws/chat — never
   // show up there. /api/chat/peers is the registry both transports write to.
@@ -206,7 +215,22 @@ function App() {
   const [slskUser, setSlskUser] = useState('');
   const [slskPass, setSlskPass] = useState('');
   const [torrentPort, setTorrentPort] = useState<number>(0);
-  const [activeDownloads, setActiveDownloads] = useState<any[]>([]);
+  const [activeDownloads, setActiveDownloads] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('sidecamp_active_downloads');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidecamp_active_downloads', JSON.stringify(activeDownloads));
+    } catch (e) {
+      console.error('Failed to save active_downloads:', e);
+    }
+  }, [activeDownloads]);
   const [searchSource, setSearchSource] = useState('soulseek'); // 'soulseek' | 'soundcloud' | 'bandcamp' | 'torrent'
   const [downloadedFiles, setDownloadedFiles] = useState<any[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -290,9 +314,12 @@ function App() {
     // Native menu "Go" items / Ctrl+1..9 accelerators
     window.electronAPI.onNavGoto?.((tab: string) => setActiveTab(tab));
 
-    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number; lobby?: boolean; e2e?: boolean }) => {
+    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number; lobby?: boolean; e2e?: boolean; to?: string }) => {
       setChatMessages(prev => [...prev, data].slice(-100));
       playNotification();
+      if (!data.lobby && data.from && data.from !== chatToRef.current) {
+        setChatUnread(prev => ({ ...prev, [data.from]: (prev[data.from] || 0) + 1 }));
+      }
     });
 
     window.electronAPI.getDownloadsDir().then((dir: string) => setDownloadsDir(dir || ''));
@@ -374,6 +401,31 @@ function App() {
         });
       }
     })();
+
+    // Auto-resume pending or active torrents on startup
+    const pendingTorrents = activeDownloads.filter(
+      (dl) => (dl.source === 'torrent' || dl.source === 'torrent_search') && dl.magnetUri && (dl.status === 'downloading' || dl.status === 'seeding')
+    );
+
+    if (pendingTorrents.length > 0) {
+      setDlLogs((prev) => [...prev, `[Torrent] Auto-resuming ${pendingTorrents.length} active torrent download(s)...`]);
+      pendingTorrents.forEach((dl) => {
+        window.electronAPI
+          .torrentDownload(dl.magnetUri, dl.id)
+          .then((paths: string[]) => {
+            if (paths.length > 0) {
+              setActiveDownloads((prev) =>
+                prev.map((item) =>
+                  item.id === dl.id ? { ...item, status: 'completed', name: item.name.startsWith('Analyzing') ? paths[0].split(/[/\\]/).pop() || item.name : item.name } : item
+                )
+              );
+            }
+          })
+          .catch((e: any) => {
+            console.error(`Failed to resume torrent ${dl.name}:`, e);
+          });
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -1237,7 +1289,8 @@ function App() {
         id: downloadId,
         name: filename,
         source: source,
-        status: 'downloading'
+        status: 'downloading',
+        magnetUri: result.url || result.magnetUri
       }
     ]);
 
@@ -1284,7 +1337,8 @@ function App() {
         id: tempId,
         name: isTorrent ? 'Analyzing Torrent...' : directUrl,
         source: isTorrent ? 'torrent' : 'web',
-        status: 'downloading'
+        status: 'downloading',
+        magnetUri: isTorrent ? directUrl : undefined
       }
     ]);
 
@@ -1369,11 +1423,30 @@ function App() {
   const handleStopTorrent = async (infoHash: string) => {
     try {
       await window.electronAPI.removeTorrent(infoHash);
-      setActiveDownloads(prev => prev.filter(d => d.id !== infoHash));
-      setDlLogs(prev => [...prev, `[Library] Torrent removed: ${infoHash.substring(0, 8)}...`]);
+      setActiveDownloads(prev => prev.map(d => (d.infoHash === infoHash || d.id === infoHash) ? { ...d, status: 'failed' } : d));
+      setDlLogs(prev => [...prev, `[Library] Torrent stopped: ${infoHash.substring(0, 8)}...`]);
       loadDownloadedFiles();
     } catch (e: any) {
       console.error("Error removing torrent:", e);
+    }
+  };
+
+  const handleResumeTorrent = async (dl: any) => {
+    if (!dl.magnetUri) {
+      alert("No magnet link available to resume this transfer.");
+      return;
+    }
+    setDlLogs(prev => [...prev, `[Torrent] Resuming torrent: ${dl.name}...`]);
+    setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'downloading' } : d));
+    try {
+      const paths = await window.electronAPI.torrentDownload(dl.magnetUri, dl.id);
+      if (paths.length > 0) {
+        setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'completed', name: d.name.startsWith('Analyzing') ? paths[0].split(/[/\\]/).pop() || d.name : d.name } : d));
+        loadDownloadedFiles();
+      }
+    } catch (e: any) {
+      setActiveDownloads(prev => prev.map(d => d.id === dl.id ? { ...d, status: 'failed' } : d));
+      setDlLogs(prev => [...prev, `[Torrent] Resume failed for ${dl.name}: ${e.message || e}`]);
     }
   };
 
@@ -2537,53 +2610,62 @@ function App() {
                     className="chat-scroll-feed"
                     style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
                   >
-                    {chatMessages.length === 0 && (
-                      <div style={{ margin: 'auto', textAlign: 'center', padding: '2rem', opacity: 0.5 }}>
-                        <MessageCircle size={36} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
-                        <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0 }}>Nothing here yet.</p>
-                        <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-                          {chatTo
-                            ? `Start an encrypted conversation with ${chatTo}.`
-                            : 'Say hello to the lobby, or select a peer for a direct message.'}
-                        </p>
-                      </div>
-                    )}
-                    {chatMessages.map((m, i) => {
-                      const isSelf = m.self;
-                      const label = isSelf ? 'You' : m.from;
-                      const align = isSelf ? 'flex-end' : 'flex-start';
-                      const bubbleBg = isSelf
-                        ? 'var(--primary, #b366ff)'
-                        : 'var(--card-bg, rgba(255,255,255,0.08))';
-                      const textColor = isSelf ? '#fff' : 'var(--text-main)';
+                    {(() => {
+                      const visible = chatTo
+                        ? chatMessages.filter(m => !m.lobby && (m.from === chatTo || (m.self && m.to === chatTo)))
+                        : chatMessages.filter(m => m.lobby !== false);
 
-                      return (
-                        <div key={`${m.ts}-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: align, maxWidth: '100%' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', opacity: 0.6, marginBottom: '2px', padding: '0 4px' }}>
-                            <span style={{ fontWeight: 600 }}>{label}</span>
-                            <span>•</span>
-                            <span>{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            {m.e2e ? (
-                              <span title="End-to-end encrypted"><Lock size={10} style={{ color: '#4ade80' }} /></span>
-                            ) : (
-                              <span title="Lobby broadcast"><Globe size={10} style={{ opacity: 0.5 }} /></span>
-                            )}
+                      if (visible.length === 0) {
+                        return (
+                          <div style={{ margin: 'auto', textAlign: 'center', padding: '2rem', opacity: 0.5 }}>
+                            <MessageCircle size={36} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
+                            <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0 }}>Nothing here yet.</p>
+                            <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                              {chatTo
+                                ? `Start an encrypted conversation with ${chatTo}.`
+                                : 'Say hello to the lobby, or select a peer for a direct message.'}
+                            </p>
                           </div>
-                          <div style={{
-                            maxWidth: '75%',
-                            padding: '0.6rem 0.9rem',
-                            borderRadius: isSelf ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                            background: bubbleBg,
-                            color: textColor,
-                            fontSize: '0.875rem',
-                            wordBreak: 'break-word',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                          }}>
-                            {m.text}
+                        );
+                      }
+
+                      return visible.map((m, i) => {
+                        const isSelf = m.self;
+                        const label = isSelf ? 'You' : m.from;
+                        const align = isSelf ? 'flex-end' : 'flex-start';
+                        const bubbleBg = isSelf
+                          ? 'var(--primary, #b366ff)'
+                          : 'var(--card-bg, rgba(255,255,255,0.08))';
+                        const textColor = isSelf ? '#fff' : 'var(--text-main)';
+
+                        return (
+                          <div key={`${m.ts}-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: align, maxWidth: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', opacity: 0.6, marginBottom: '2px', padding: '0 4px' }}>
+                              <span style={{ fontWeight: 600 }}>{label}</span>
+                              <span>•</span>
+                              <span>{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              {m.e2e ? (
+                                <span title="End-to-end encrypted"><Lock size={10} style={{ color: '#4ade80' }} /></span>
+                              ) : (
+                                <span title="Lobby broadcast"><Globe size={10} style={{ opacity: 0.5 }} /></span>
+                              )}
+                            </div>
+                            <div style={{
+                              maxWidth: '75%',
+                              padding: '0.6rem 0.9rem',
+                              borderRadius: isSelf ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                              background: bubbleBg,
+                              color: textColor,
+                              fontSize: '0.875rem',
+                              wordBreak: 'break-word',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                            }}>
+                              {m.text}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                     <div ref={chatBottomRef} />
                   </div>
 
@@ -2662,15 +2744,45 @@ function App() {
                     Connected ({chatPeers.length})
                   </div>
                   <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {/* Explicit Public Lobby item */}
+                    <button
+                      onClick={() => setChatTo('')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.4rem 0.6rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: chatTo === '' ? 'rgba(179,102,255,0.15)' : 'transparent',
+                        color: chatTo === '' ? 'var(--primary, #b366ff)' : 'var(--text-main)',
+                        fontWeight: chatTo === '' ? 700 : 500,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      <Globe size={14} style={{ color: chatTo === '' ? 'var(--primary)' : 'var(--text-muted)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        🌐 Public Lobby
+                      </span>
+                    </button>
+
                     {chatPeers.length === 0 && (
-                      <p style={{ fontSize: '0.75rem', opacity: 0.4, margin: 0, padding: '0 0.25rem' }}>No peers connected yet.</p>
+                      <p style={{ fontSize: '0.75rem', opacity: 0.4, margin: 0, padding: '0.25rem 0.25rem 0' }}>No other peers connected.</p>
                     )}
                     {chatPeers.map(peer => {
                       const isSelected = chatTo === peer.username;
+                      const unread = chatUnread[peer.username] || 0;
                       return (
                         <button
                           key={peer.username}
-                          onClick={() => setChatTo(isSelected ? '' : peer.username)}
+                          onClick={() => {
+                            setChatTo(isSelected ? '' : peer.username);
+                            setChatUnread(prev => ({ ...prev, [peer.username]: 0 }));
+                          }}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -2692,6 +2804,19 @@ function App() {
                             {peer.username}
                           </span>
                           {peer.pubkey && <span title="E2E ready"><Lock size={10} style={{ color: '#4ade80', flexShrink: 0 }} /></span>}
+                          {unread > 0 && !isSelected && (
+                            <span style={{
+                              background: '#ef4444',
+                              color: '#fff',
+                              borderRadius: '9999px',
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.4rem',
+                              lineHeight: 1
+                            }}>
+                              {unread}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -2968,6 +3093,9 @@ function App() {
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       {dl.status === 'seeding' && (
                         <Button variant="secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</Button>
+                      )}
+                      {(dl.status === 'failed' || dl.status === 'downloading') && dl.magnetUri && (
+                        <Button variant="primary" onClick={() => handleResumeTorrent(dl)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Resume</Button>
                       )}
                       {(dl.status === 'failed' || dl.status === 'completed') && (
                         <Button variant="secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
