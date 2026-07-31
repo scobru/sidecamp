@@ -536,6 +536,8 @@ function insideRoot(root: string, target: string): boolean {
 
 ipcMain.handle('fs:list', async (event, root: string, subpath: string) => {
   if (!root) return { error: 'No folder selected' };
+  const resolvedRoot = path.resolve(root);
+  if (!isUnderAllowedRoot(resolvedRoot)) return { error: 'Access denied: Path is outside allowed directories' };
   // Browsing a root also whitelists it for media:// playback, so clicking a
   // track in Shared Files works even if the Library scan never ran.
   addSharedRoot(root);
