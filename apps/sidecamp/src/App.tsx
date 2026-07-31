@@ -4,7 +4,7 @@ import {
   Play, Pause, X, Volume2, Music, Magnet, Cloud, SkipBack, SkipForward,
   Folder, FolderPlus, ChevronRight, PanelLeft, Trash2, Palette,
   Disc3, ChevronUp, ChevronDown, ArrowUpCircle, Tag, Plus, Headphones, User, Share2,
-  Eye, EyeOff, MoreVertical, MessageCircle
+  Eye, EyeOff, MoreVertical, MessageCircle, Send, Lock, Users
 } from 'lucide-react';
 import { Button } from 'tunecamp-design-system';
 import { guess } from 'web-audio-beat-detector';
@@ -126,6 +126,29 @@ function App() {
   const [browserError, setBrowserError] = useState('');
   const [downloadsDir, setDownloadsDir] = useState('');
   const [movingItem, setMovingItem] = useState<{ root: string; path: string; name: string; isDir: boolean } | null>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    chatBottomRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  useEffect(() => {
+    const el = chatScrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () =>
+      setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 150);
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (chatMessages.length > 0 && activeTab === 'chat') {
+      scrollToBottom();
+    }
+  }, [chatMessages.length, activeTab, scrollToBottom]);
+
   // Per-list search filters
   const [librarySearch, setLibrarySearch] = useState('');
   const [browserSearch, setBrowserSearch] = useState('');
@@ -2482,47 +2505,205 @@ function App() {
           )}
 
           {activeTab === 'chat' && (
-            <div className="glass-card peer-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, overflow: 'hidden' }}>
-              <div className="terminal-header" style={{ flexShrink: 0 }}>Peer Chat</div>
-              <div className="terminal-body" style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column' }}>
-                {chatMessages.map((m, i) => (
-                  <div key={i} className="log-line" style={{ color: m.self ? 'var(--accent, #6ee7ff)' : 'var(--text-main)', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '0.5rem 0' }}>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.5, marginBottom: '2px' }}>
-                      {new Date(m.ts).toLocaleTimeString()}
-                      {m.e2e && <span title="End-to-end encrypted"> • 🔒</span>}
-                    </div>
-                    <strong>{m.from}{m.lobby && !m.self ? ' (lobby)' : ''}:</strong> {m.text}
+            <div className="chat-page-container flex flex-col h-full space-y-4 animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem' }}>
+              <div className="chat-header-bar flex items-center justify-between" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <MessageCircle size={20} style={{ color: 'var(--primary)' }} /> Peer Chat
+                  </h2>
+                  <p style={{ fontSize: '0.8rem', opacity: 0.6, margin: '0.2rem 0 0 0' }}>
+                    {chatTo ? `Direct message to ${chatTo}` : 'Talk to everyone in the lobby'}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+                  <span className={`status-badge ${peerStatus}`} style={{
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '12px',
+                    fontWeight: 600,
+                    textTransform: 'capitalize',
+                    background: peerStatus === 'online' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                    color: peerStatus === 'online' ? '#4ade80' : '#f87171'
+                  }}>
+                    {peerStatus}
+                  </span>
+                </div>
+              </div>
+
+              <div className="chat-main-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: '1rem', flex: 1, minHeight: 0 }}>
+                {/* Chat Feed */}
+                <div className="glass-card chat-feed-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--elevated-bg, rgba(255,255,255,0.03))', border: '1px solid var(--glass-border)', borderRadius: '16px' }}>
+                  <div
+                    ref={chatScrollContainerRef}
+                    className="chat-scroll-feed"
+                    style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+                  >
+                    {chatMessages.length === 0 && (
+                      <div style={{ margin: 'auto', textAlign: 'center', padding: '2rem', opacity: 0.5 }}>
+                        <MessageCircle size={36} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
+                        <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0 }}>Nothing here yet.</p>
+                        <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                          {chatTo
+                            ? `Start an encrypted conversation with ${chatTo}.`
+                            : 'Say hello to the lobby, or select a peer for a direct message.'}
+                        </p>
+                      </div>
+                    )}
+                    {chatMessages.map((m, i) => {
+                      const isSelf = m.self;
+                      const label = isSelf ? 'You' : m.from;
+                      const align = isSelf ? 'flex-end' : 'flex-start';
+                      const bubbleBg = isSelf
+                        ? 'var(--primary, #b366ff)'
+                        : 'var(--card-bg, rgba(255,255,255,0.08))';
+                      const textColor = isSelf ? '#fff' : 'var(--text-main)';
+
+                      return (
+                        <div key={`${m.ts}-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: align, maxWidth: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', opacity: 0.6, marginBottom: '2px', padding: '0 4px' }}>
+                            <span style={{ fontWeight: 600 }}>{label}</span>
+                            <span>•</span>
+                            <span>{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {m.e2e ? (
+                              <span title="End-to-end encrypted"><Lock size={10} style={{ color: '#4ade80' }} /></span>
+                            ) : (
+                              <span title="Lobby broadcast"><Globe size={10} style={{ opacity: 0.5 }} /></span>
+                            )}
+                          </div>
+                          <div style={{
+                            maxWidth: '75%',
+                            padding: '0.6rem 0.9rem',
+                            borderRadius: isSelf ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                            background: bubbleBg,
+                            color: textColor,
+                            fontSize: '0.875rem',
+                            wordBreak: 'break-word',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}>
+                            {m.text}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatBottomRef} />
                   </div>
-                ))}
-                {chatMessages.length === 0 && <div className="log-line dim" style={{ marginTop: 'auto', padding: '1rem' }}>No messages. Send one to a peer or to the lobby.</div>}
+
+                  {showScrollBtn && (
+                    <div style={{ padding: '0.25rem 1rem', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                      <button
+                        onClick={() => scrollToBottom()}
+                        style={{
+                          background: 'var(--glass-border)',
+                          border: 'none',
+                          color: 'var(--text-main)',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}
+                      >
+                        <ChevronDown size={12} /> Latest
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ borderTop: '1px solid var(--glass-border)', padding: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+                    <select
+                      value={chatTo}
+                      onChange={e => setChatTo(e.target.value)}
+                      className="glass-input"
+                      style={{ width: '150px', flexShrink: 0, padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}
+                      disabled={peerStatus !== 'online'}
+                    >
+                      <option value="">Lobby (everyone)</option>
+                      {chatPeers.map(p => (
+                        <option key={p.username} value={p.username}>{p.username}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={chatText}
+                      onChange={e => setChatText(e.target.value)}
+                      placeholder={
+                        peerStatus === 'online'
+                          ? chatTo
+                            ? 'Encrypted message...'
+                            : 'Message...'
+                          : 'Connecting...'
+                      }
+                      className="glass-input"
+                      style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                      disabled={peerStatus !== 'online'}
+                      maxLength={2000}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendChat();
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="primary"
+                      onClick={handleSendChat}
+                      disabled={peerStatus !== 'online' || !chatText.trim()}
+                      style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    >
+                      <Send size={14} /> Send
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Connected Peers Sidebar */}
+                <div className="glass-card chat-peers-sidebar" style={{ background: 'var(--elevated-bg, rgba(255,255,255,0.03))', border: '1px solid var(--glass-border)', borderRadius: '16px', padding: '0.75rem', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', fontWeight: 600, opacity: 0.7, marginBottom: '0.75rem', padding: '0 0.25rem', flexShrink: 0 }}>
+                    <Users size={14} />
+                    Connected ({chatPeers.length})
+                  </div>
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {chatPeers.length === 0 && (
+                      <p style={{ fontSize: '0.75rem', opacity: 0.4, margin: 0, padding: '0 0.25rem' }}>No peers connected yet.</p>
+                    )}
+                    {chatPeers.map(peer => {
+                      const isSelected = chatTo === peer.username;
+                      return (
+                        <button
+                          key={peer.username}
+                          onClick={() => setChatTo(isSelected ? '' : peer.username)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.4rem 0.6rem',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: isSelected ? 'rgba(179,102,255,0.15)' : 'transparent',
+                            color: isSelected ? 'var(--primary, #b366ff)' : 'var(--text-main)',
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            width: '100%',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {peer.username}
+                          </span>
+                          {peer.pubkey && <span title="E2E ready"><Lock size={10} style={{ color: '#4ade80', flexShrink: 0 }} /></span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexShrink: 0, flexWrap: 'wrap', padding: '0 0.5rem 0.5rem' }}>
-                <select
-                  value={chatTo}
-                  onChange={e => setChatTo(e.target.value)}
-                  className="glass-input"
-                  style={{ flex: '0 0 160px' }}
-                  disabled={peerStatus !== 'online'}
-                >
-                  <option value="">Lobby (everyone)</option>
-                  {chatPeers.map(p => (
-                    <option key={p.username} value={p.username}>{p.username}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={chatText}
-                  onChange={e => setChatText(e.target.value)}
-                  placeholder={peerStatus === 'online' ? 'Message...' : 'Start Sharing to enable chat'}
-                  className="glass-input"
-                  style={{ flex: 1, minWidth: '160px' }}
-                  disabled={peerStatus !== 'online'}
-                  onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                />
-                <Button variant="primary" onClick={handleSendChat} disabled={peerStatus !== 'online' || !chatText.trim()}>
-                  Send
-                </Button>
-              </div>
+
+              <p style={{ fontSize: '0.7rem', opacity: 0.5, margin: 0, textAlign: 'center', flexShrink: 0 }}>
+                {chatTo
+                  ? 'Direct messages are end-to-end encrypted and never stored on the server.'
+                  : 'Lobby messages are visible to everyone connected. Direct messages are end-to-end encrypted.'}
+              </p>
             </div>
           )}
 
