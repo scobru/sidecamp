@@ -3,9 +3,13 @@ import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react';
 type Variant = 'primary' | 'secondary' | 'accent' | 'danger' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
+  icon?: ReactNode;
+  glowColor?: string;
   children?: ReactNode;
   style?: CSSProperties;
 }
@@ -27,11 +31,20 @@ const SIZE_STYLES: Record<Size, CSSProperties> = {
 export function Button({
   variant = 'secondary',
   size = 'md',
+  leftIcon,
+  rightIcon,
+  icon,
+  glowColor,
   children,
   style,
   disabled,
   ...rest
 }: ButtonProps) {
+  const leadingIcon = leftIcon || icon;
+  const glowStyle: CSSProperties = glowColor
+    ? { boxShadow: `0 0 12px ${glowColor}` }
+    : {};
+
   return (
     <button
       disabled={disabled}
@@ -42,17 +55,20 @@ export function Button({
         gap: '0.4rem',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
-        transition: 'opacity 0.15s, filter 0.15s',
+        transition: 'opacity 0.15s, filter 0.15s, box-shadow 0.15s',
         fontFamily: 'inherit',
         fontWeight: 600,
         lineHeight: 1,
         ...VARIANT_STYLES[variant],
         ...SIZE_STYLES[size],
+        ...glowStyle,
         ...style,
       }}
       {...rest}
     >
+      {leadingIcon}
       {children}
+      {rightIcon}
     </button>
   );
 }
