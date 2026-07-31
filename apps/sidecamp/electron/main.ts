@@ -1,6 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, protocol, net, dialog, Menu, safeStorage } from 'electron'
 import { join } from 'path'
-import { pathToFileURL } from 'url'
 
 // Windows-only bug: Chromium's native window-occlusion tracking can leave a minimized
 // window unable to restore after switching away and back. Disable it.
