@@ -7,6 +7,8 @@ import {
   Eye, EyeOff, MoreVertical, MessageCircle, Send, Lock, Users
 } from 'lucide-react';
 import { Button } from './components/Button';
+import { ProgressBar } from './components/ProgressBar';
+import { useTuneCampChat } from '@tunecamp/chat';
 import { guess } from 'web-audio-beat-detector';
 import './index.css';
 import logo from './assets/logo.png';
@@ -97,6 +99,12 @@ const Waveform = memo(function Waveform({ peaks, progress, active }: { peaks?: n
 });
 
 function App() {
+  const playNotification = useCallback(() => {
+    const audio = new Audio(pingSound);
+    audio.volume = 0.5;
+    audio.play().catch(e => console.log('Audio play blocked:', e));
+  }, []);
+
   const [server, setServer] = useState(() => localStorage.getItem('tc_server') || '');
   const [token, setToken] = useState(() => localStorage.getItem('tc_token') || '');
   // Gates ConnectScreen vs. the app shell. Deliberately separate from `token` above:
@@ -106,25 +114,24 @@ function App() {
   const [folder, setFolder] = useState('');
   const [peerStatus, setPeerStatus] = useState('offline');
   const [logs, setLogs] = useState<string[]>([]);
-  const [chatMessages, setChatMessages] = useState<{ from: string; text: string; ts: number; self?: boolean; lobby?: boolean; e2e?: boolean; to?: string }[]>([]);
+  const [activeTab, setActiveTab] = useState(isCapacitor ? 'library' : 'download');
   const [chatTo, setChatTo] = useState('');
   const [chatText, setChatText] = useState('');
-  const [chatUnread, setChatUnread] = useState<Record<string, number>>({});
-  const chatToRef = useRef(chatTo);
 
-  useEffect(() => {
-    chatToRef.current = chatTo;
-    if (chatTo) {
-      setChatUnread(prev => ({ ...prev, [chatTo]: 0 }));
-    }
-  }, [chatTo]);
-  // Chat roster, kept apart from networkPeers: /api/peers lists only daemon
-  // sessions, so webapp users — who join the same lobby over /ws/chat — never
-  // show up there. /api/chat/peers is the registry both transports write to.
-  const [chatPeers, setChatPeers] = useState<{ username: string; pubkey: boolean }[]>([]);
+  const {
+    messages: chatMessages,
+    peers: chatPeers,
+    unreadCounts: chatUnread,
+    sendMessage: sendChatMessage,
+    clearUnread,
+    formatUser
+  } = useTuneCampChat({
+    serverUrl: server,
+    token: token,
+    autoConnect: activeTab === 'chat'
+  }, chatTo);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState(isCapacitor ? 'library' : 'download');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   // File browser (shared folders)
@@ -157,6 +164,17 @@ function App() {
       scrollToBottom();
     }
   }, [chatMessages.length, activeTab, scrollToBottom]);
+
+  const prevMsgCountRef = useRef(chatMessages.length);
+  useEffect(() => {
+    if (chatMessages.length > prevMsgCountRef.current) {
+      const last = chatMessages[chatMessages.length - 1];
+      if (last && !last.self) {
+        playNotification();
+      }
+    }
+    prevMsgCountRef.current = chatMessages.length;
+  }, [chatMessages, playNotification]);
 
   // Per-list search filters
   const [librarySearch, setLibrarySearch] = useState('');
@@ -292,11 +310,7 @@ function App() {
   const [update, setUpdate] = useState<{ currentVersion: string; latestVersion: string | null; updateAvailable: boolean } | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
-  const playNotification = useCallback(() => {
-    const audio = new Audio(pingSound);
-    audio.volume = 0.5;
-    audio.play().catch(e => console.log('Audio play blocked:', e));
-  }, []);
+
 
   // Load torrent port from main-process config on startup.
   useEffect(() => { window.electronAPI.configGet().then((cfg: any) => setTorrentPort(cfg.torrentPort || 0)); }, []);
@@ -313,14 +327,6 @@ function App() {
 
     // Native menu "Go" items / Ctrl+1..9 accelerators
     window.electronAPI.onNavGoto?.((tab: string) => setActiveTab(tab));
-
-    window.electronAPI.onPeerChat((data: { from: string; text: string; ts: number; lobby?: boolean; e2e?: boolean; to?: string }) => {
-      setChatMessages(prev => [...prev, data].slice(-100));
-      playNotification();
-      if (!data.lobby && data.from && data.from !== chatToRef.current) {
-        setChatUnread(prev => ({ ...prev, [data.from]: (prev[data.from] || 0) + 1 }));
-      }
-    });
 
     window.electronAPI.getDownloadsDir().then((dir: string) => setDownloadsDir(dir || ''));
 
@@ -440,24 +446,7 @@ function App() {
     }
   }, [activeTab]);
 
-  // Poll the chat roster while the Chat tab is open: peers join and leave the
-  // lobby without any message we'd otherwise see.
-  useEffect(() => {
-    if (activeTab !== 'chat' || !server || !token) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const clients = await window.electronAPI.getChatPeers(server, token);
-        if (!cancelled) setChatPeers(clients || []);
-      } catch (e) {
-        // Non-blocking: the lobby still works without a roster.
-        console.error('Failed to load chat peers:', e);
-      }
-    };
-    load();
-    const id = setInterval(load, 5000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [activeTab, server, token]);
+
 
   const loadNetworkPeers = async () => {
     if (!server || !token) {
@@ -1162,16 +1151,10 @@ function App() {
     await window.electronAPI.stopPeer();
   };
 
-  const handleSendChat = async () => {
-    const to = chatTo.trim();
+  const handleSendChat = () => {
     const text = chatText.trim();
     if (!text) return;
-    const result = await window.electronAPI.sendPeerChat(to, text);
-    if (!result?.success) {
-      alert("Failed to send message: " + (result?.error || "unknown error"));
-      return;
-    }
-    setChatMessages(prev => [...prev, { from: to ? `→ ${to}` : '→ Lobby', text, ts: Date.now(), self: true, e2e: !!to, to: to || undefined }].slice(-100));
+    sendChatMessage(chatTo, text);
     setChatText('');
   };
 
@@ -1471,7 +1454,7 @@ function App() {
   };
 
   const validFolders = folder.split(/[,;]/).map(f => f.trim()).filter(Boolean);
-  const libraryLogs = dlLogs.filter(log => log.includes('[Library]'));
+  const libraryLogs = useMemo(() => dlLogs.filter(log => log.includes('[Library]')), [dlLogs]);
 
   // Library table derivations, memoized: without this the whole block re-ran on
   // every App render — including the ~4Hz timeupdate ticks during playback.
@@ -2631,7 +2614,7 @@ function App() {
 
                       return visible.map((m, i) => {
                         const isSelf = m.self;
-                        const label = isSelf ? 'You' : m.from;
+                        const label = isSelf ? 'You' : formatUser(m.from, m.instance);
                         const align = isSelf ? 'flex-end' : 'flex-start';
                         const bubbleBg = isSelf
                           ? 'var(--primary, #b366ff)'
@@ -2701,7 +2684,7 @@ function App() {
                     >
                       <option value="">Lobby (everyone)</option>
                       {chatPeers.map(p => (
-                        <option key={p.username} value={p.username}>{p.username}</option>
+                        <option key={p.username} value={p.username}>{formatUser(p.username, p.instance)}</option>
                       ))}
                     </select>
                     <input
@@ -2781,7 +2764,7 @@ function App() {
                           key={peer.username}
                           onClick={() => {
                             setChatTo(isSelected ? '' : peer.username);
-                            setChatUnread(prev => ({ ...prev, [peer.username]: 0 }));
+                            clearUnread(peer.username);
                           }}
                           style={{
                             display: 'flex',
@@ -2801,7 +2784,7 @@ function App() {
                         >
                           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
                           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {peer.username}
+                            {formatUser(peer.username, peer.instance)}
                           </span>
                           {peer.pubkey && <span title="E2E ready"><Lock size={10} style={{ color: '#4ade80', flexShrink: 0 }} /></span>}
                           {unread > 0 && !isSelected && (
@@ -3070,39 +3053,56 @@ function App() {
               </div>
 
               <div className="files-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '5px', marginBottom: '2rem' }}>
-                {activeDownloads.map((dl) => (
-                  <div key={dl.id} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <div className="result-info" style={{ flex: 1 }}>
-                      <div className="result-filename" style={{ fontWeight: 600, color: dl.status === 'failed' ? '#e74c3c' : 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {dl.source === 'soulseek' ? <Music size={16} /> : dl.source === 'torrent' ? <Magnet size={16} /> : dl.source === 'server' ? <Cloud size={16} /> : <Globe size={16} />}
-                        {dl.name}
-                        {dl.status === 'failed' && <span style={{ fontSize: '0.75rem', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 6px', borderRadius: '4px' }}>FAILED</span>}
-                        {dl.status === 'completed' && <span style={{ fontSize: '0.75rem', background: 'rgba(46, 204, 113, 0.2)', color: '#2ecc71', padding: '2px 6px', borderRadius: '4px' }}>COMPLETED</span>}
-                      </div>
-                      <div className="result-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span>Status: {dl.status === 'seeding' ? 'Seeding' : dl.status === 'completed' ? 'Completed' : dl.status === 'failed' ? 'Failed' : 'Downloading'}</span>
-                        {dl.speed && <span>• {(dl.speed / 1024 / 1024).toFixed(1)} MB/s</span>}
-                        {dl.progress !== undefined && <span>• {(dl.progress * 100).toFixed(1)}%</span>}
-                      </div>
-                      {dl.progress !== undefined && dl.status === 'downloading' && (
-                        <div className="progress-bar-bg" style={{ height: '4px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
-                          <div className="progress-bar-fill" style={{ width: `${(dl.progress * 100).toFixed(0)}%`, height: '100%', background: 'var(--accent)', borderRadius: '2px' }}></div>
+                {activeDownloads.map((dl) => {
+                  const isDownloading = dl.status === 'downloading';
+                  const isSeeding = dl.status === 'seeding';
+                  const isCompleted = dl.status === 'completed';
+                  const isFailed = dl.status === 'failed';
+                  const progressVal = dl.progress ?? (isCompleted || isSeeding ? 1 : 0);
+                  const speedText = isSeeding && dl.uploadSpeed
+                    ? `UL: ${(dl.uploadSpeed / 1024 / 1024).toFixed(1)} MB/s`
+                    : dl.speed
+                      ? `DL: ${(dl.speed / 1024 / 1024).toFixed(1)} MB/s`
+                      : undefined;
+
+                  return (
+                    <div key={dl.id} className="result-item" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                        <div className="result-filename" style={{ fontWeight: 600, color: isFailed ? '#e74c3c' : 'var(--text-main)', fontSize: '0.95rem', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {dl.source === 'soulseek' ? <Music size={16} /> : (dl.source === 'torrent' || dl.source === 'torrent_search') ? <Magnet size={16} /> : dl.source === 'server' ? <Cloud size={16} /> : <Globe size={16} />}
+                          {dl.name}
+                          {isFailed && <span style={{ fontSize: '0.75rem', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>FAILED</span>}
+                          {isDownloading && <span style={{ fontSize: '0.75rem', background: 'rgba(0, 194, 255, 0.2)', color: '#00c2ff', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>DOWNLOADING</span>}
+                          {isSeeding && <span style={{ fontSize: '0.75rem', background: 'rgba(155, 89, 182, 0.2)', color: '#9b59b6', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>SEEDING</span>}
+                          {isCompleted && <span style={{ fontSize: '0.75rem', background: 'rgba(46, 204, 113, 0.2)', color: '#2ecc71', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>COMPLETED</span>}
                         </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {isSeeding && (
+                            <Button variant="secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }}>Stop Seeding</Button>
+                          )}
+                          {(isFailed || isDownloading) && dl.magnetUri && (
+                            <Button variant="primary" onClick={() => handleResumeTorrent(dl)} style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }}>Resume</Button>
+                          )}
+                          {(isFailed || isCompleted) && (
+                            <Button variant="secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }}>Clear</Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Torrent & Transfer Progress Bar */}
+                      {(isDownloading || isSeeding || dl.progress !== undefined) && (
+                        <ProgressBar
+                          progress={progressVal}
+                          speed={speedText}
+                          downloaded={dl.downloaded}
+                          total={dl.total}
+                          animated={isDownloading}
+                          showPercent={true}
+                        />
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      {dl.status === 'seeding' && (
-                        <Button variant="secondary" onClick={() => handleStopTorrent(dl.infoHash || dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Stop Seeding</Button>
-                      )}
-                      {(dl.status === 'failed' || dl.status === 'downloading') && dl.magnetUri && (
-                        <Button variant="primary" onClick={() => handleResumeTorrent(dl)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Resume</Button>
-                      )}
-                      {(dl.status === 'failed' || dl.status === 'completed') && (
-                        <Button variant="secondary" onClick={() => clearDownloadItem(dl.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Clear</Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {activeDownloads.length === 0 && (
                   <div className="no-results" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>

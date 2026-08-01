@@ -1,7 +1,7 @@
 {
   "name": "sidecamp",
   "private": true,
-  "version": "0.23.10",
+  "version": "0.23.11",
   "description": "Desktop companion app for TuneCamp — P2P content acquisition and peer file sharing.",
   "author": {
     "name": "scobru",
@@ -31,6 +31,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@tunecamp/chat": "file:../../../tunecamp-chat",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/device": "^7.0.0",

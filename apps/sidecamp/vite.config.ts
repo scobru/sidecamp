@@ -2,10 +2,17 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
 
+import path from 'path'
+
 const isMobile = process.env.BUILD_TARGET === 'mobile';
 
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@tunecamp/chat': path.resolve(__dirname, '../../../tunecamp-chat/src/index.ts')
+    }
+  },
   plugins: [
     react(),
     ...(!isMobile ? [
