@@ -201,6 +201,8 @@ function App() {
 		sendMessage: sendChatMessage,
 		clearUnread,
 		formatUser,
+		connect: connectChat,
+		disconnect: disconnectChat,
 		client,
 	} = useTuneCampChat(
 		{
@@ -1578,13 +1580,12 @@ function App() {
 				.filter(Boolean),
 			allowDownloads: true,
 		});
-		if (client) {
-			client.connect();
-		}
+		connectChat();
 	};
 
 	const handleStopPeer = async () => {
 		await window.electronAPI.stopPeer();
+		disconnectChat();
 	};
 
 	const handleSendChat = () => {
@@ -4549,6 +4550,7 @@ function App() {
 								<Button
 									variant="secondary"
 									onClick={() => {
+										disconnectChat();
 										localStorage.removeItem("tc_server");
 										localStorage.removeItem("tc_token");
 										setServer("");
@@ -5248,6 +5250,23 @@ function App() {
 									>
 										{chatStatus}
 									</span>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => {
+											if (chatStatus === "online") {
+												disconnectChat();
+											} else {
+												connectChat();
+											}
+										}}
+										style={{
+											padding: "0.2rem 0.6rem",
+											fontSize: "0.75rem",
+										}}
+									>
+										{chatStatus === "online" ? "Disconnect Chat" : "Connect Chat"}
+									</Button>
 								</div>
 							</div>
 

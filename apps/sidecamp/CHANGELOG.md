@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.1] - 2026-08-01
+
+### Fixed
+- **Synchronized Chat & P2P Sharing Lifecycle**: Stopping the P2P sharing daemon (`handleStopPeer`) or disconnecting from an instance now automatically disconnects the WebSocket Chat connection, eliminating background chat connection drift when sharing is stopped.
+- **Manual Chat Connection Controls**: Added explicit "Connect Chat" / "Disconnect Chat" toggle controls in the Chat header bar for direct status management.
+
 ## [0.23.7] - 2026-07-31
 
 ### Added
