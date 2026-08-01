@@ -192,10 +192,9 @@ function App() {
 	);
 	const [chatTo, setChatTo] = useState("");
 	const [chatText, setChatText] = useState("");
-
 	const {
 		messages: chatMessages,
-		peers: chatPeers,
+		peers: rawChatPeers,
 		unreadCounts: chatUnread,
 		status: chatStatus,
 		sendMessage: sendChatMessage,
@@ -203,6 +202,7 @@ function App() {
 		formatUser,
 		connect: connectChat,
 		disconnect: disconnectChat,
+		username: chatUsername,
 	} = useTuneCampChat(
 		{
 			serverUrl: server,
@@ -211,6 +211,10 @@ function App() {
 		},
 		chatTo,
 	);
+	
+	const chatPeers = useMemo(() => {
+		return rawChatPeers.filter(p => p.username !== chatUsername);
+	}, [rawChatPeers, chatUsername]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<any[]>([]);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1833,6 +1837,14 @@ function App() {
 					result.artist,
 					result.title,
 					result.origin,
+				);
+			} else if (source === "catalog") {
+				filePath = await window.electronAPI.downloadCatalogTrack(
+					server,
+					token,
+					result.trackId,
+					result.artist,
+					result.title,
 				);
 			} else {
 				filePath = await window.electronAPI.slskDownload(result);
