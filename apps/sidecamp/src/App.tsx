@@ -203,7 +203,6 @@ function App() {
 		formatUser,
 		connect: connectChat,
 		disconnect: disconnectChat,
-		client,
 	} = useTuneCampChat(
 		{
 			serverUrl: server,
