@@ -10,10 +10,6 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
-    "paths": {
-      "@tunecamp/chat": ["../../../tunecamp-chat/src/index.ts"]
-    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",
