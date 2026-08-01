@@ -118,20 +118,23 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 ## Architecture
 
 ```
-┌─────────────┐         WebSocket          ┌──────────────────┐
-│  Sidecamp   │ ──── outbound tunnel ────▶ │  TuneCamp Server │
-│  (Desktop)  │                            │  (Cloud/VPS)     │
-│             │  ◀── stream/download ────  │                  │
-│  Soulseek   │       requests relayed     │  Listeners       │
-│  Torrent    │                            │                  │
-│  yt-dlp     │                            │                  │
-│  File Share │                            │                  │
-└─────────────┘                            └──────────────────┘
+┌─────────────┐         WebSocket Signaling         ┌──────────────────┐
+│  Sidecamp   │ ◄─────── offer/answer/ICE ────────► │  TuneCamp Server │
+│  (Desktop)  │                                     │  (Signaling Hub) │
+└──────┬──────┘                                     └─────────┬────────┘
+       │                                                      │
+       │              Direct P2P DataChannel (WebRTC)         │ WebSocket
+       │ ◄────────────────────────────────────────────────────┘ Signaling
+       │
+       ▼
+ ┌───────────┐
+ │ Listeners │
+ └───────────┘
 ```
 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
 - **Uploader** (`apps/sidecamp/electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
-- **Peer** (`apps/sidecamp/electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
+- **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
 - **Frontends** (`apps/*/src/`): React + Vite UIs rendered inside each Electron window.
 - **Graph View** (`packages/graph-ui/`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, and set recording — shared by both apps.
 - **Audio Engine** (`packages/audio-engine/`): Crossfade playback engine, time-warp source, and audio worklets — pure Web Audio, no app logic.

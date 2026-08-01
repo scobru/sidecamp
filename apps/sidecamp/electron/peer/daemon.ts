@@ -191,6 +191,8 @@ export class PeerDaemon extends EventEmitter {
                         this.handleRequest(msg.requestId, msg.trackId);
                     } else if (msg.type === 'cancel_request') {
                         this.handleCancel(msg.requestId);
+                    } else if (msg.type === 'rtc_signal') {
+                        this.handleRtcSignal(msg.fromSessionId || msg.from, msg.from, msg.signal);
                     }
                 } catch (err) {
                     console.error("Parse error", err);
@@ -314,10 +316,125 @@ export class PeerDaemon extends EventEmitter {
         this.emit("log", "Indice libreria aggiornato inviato al server.");
     }
 
+    private rtcPeerConnections: Map<string, any> = new Map();
+
+    private async handleRtcSignal(fromSessionId: string, fromUsername: string, signal: any) {
+        if (!signal) return;
+        const PeerConnection = (globalThis as any).RTCPeerConnection || (global as any).RTCPeerConnection;
+        if (!PeerConnection) {
+            this.emit("log", "WebRTC non supportato nel processo corrente, impossibile accettare signaling P2P.");
+            return;
+        }
+
+        let pc = this.rtcPeerConnections.get(fromSessionId);
+
+        if (signal.type === 'offer') {
+            if (pc) {
+                try { pc.close(); } catch {}
+            }
+            pc = new PeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            });
+            this.rtcPeerConnections.set(fromSessionId, pc);
+
+            pc.onicecandidate = (event: any) => {
+                if (event.candidate && this.ws?.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: 'rtc_signal',
+                        toSessionId: fromSessionId,
+                        to: fromUsername,
+                        signal: { type: 'candidate', candidate: event.candidate }
+                    }));
+                }
+            };
+
+            pc.ondatachannel = (event: any) => {
+                const channel = event.channel;
+                this.emit("log", `Connessione DataChannel WebRTC aperta con ${fromUsername} (${fromSessionId})`);
+                channel.onmessage = (e: any) => {
+                    try {
+                        const req = JSON.parse(e.data);
+                        if (req.type === 'request_track' && req.trackId) {
+                            this.streamTrackOverDataChannel(channel, req.requestId || req.trackId, req.trackId);
+                        }
+                    } catch (err) {
+                        console.error("DataChannel parse error:", err);
+                    }
+                };
+            };
+
+            const RTCSessionDescriptionClass = (globalThis as any).RTCSessionDescription || (global as any).RTCSessionDescription;
+            await pc.setRemoteDescription(new RTCSessionDescriptionClass(signal.sdp || signal));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            if (this.ws?.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({
+                    type: 'rtc_signal',
+                    toSessionId: fromSessionId,
+                    to: fromUsername,
+                    signal: { type: 'answer', sdp: answer }
+                }));
+            }
+        } else if (signal.type === 'candidate' && pc) {
+            try {
+                const RTCIceCandidateClass = (globalThis as any).RTCIceCandidate || (global as any).RTCIceCandidate;
+                await pc.addIceCandidate(new RTCIceCandidateClass(signal.candidate));
+            } catch (err) {
+                console.error("Error adding ICE candidate:", err);
+            }
+        }
+    }
+
+    private streamTrackOverDataChannel(channel: any, requestId: string, trackId: string) {
+        const track = this.fileIndex.get(trackId);
+        if (!track || !fs.existsSync(track.path)) {
+            channel.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
+            return;
+        }
+
+        this.emit("log", `[WebRTC P2P] Streaming avviato: ${track.title}`);
+        const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024 });
+        let seq = 0;
+
+        stream.on('data', (chunk: Buffer) => {
+            if (channel.readyState === 'open') {
+                channel.send(JSON.stringify({
+                    type: 'chunk',
+                    requestId,
+                    seq: seq++,
+                    data: chunk.toString('base64')
+                }));
+            } else {
+                stream.destroy();
+            }
+        });
+
+        stream.on('end', () => {
+            if (channel.readyState === 'open') {
+                channel.send(JSON.stringify({ type: 'chunk_end', requestId }));
+            }
+            this.emit("log", `[WebRTC P2P] Streaming completato: ${track.title}`);
+        });
+
+        stream.on('error', (err: any) => {
+            if (channel.readyState === 'open') {
+                channel.send(JSON.stringify({ type: 'chunk_error', requestId, message: err.message }));
+            }
+        });
+    }
+
     private cleanupStreams() {
         for (const [id, stream] of this.activeStreams.entries()) {
             stream.destroy();
         }
         this.activeStreams.clear();
+        for (const [id, pc] of this.rtcPeerConnections.entries()) {
+            try { pc.close(); } catch {}
+        }
+        this.rtcPeerConnections.clear();
     }
 }
