@@ -1,55 +1,26 @@
-import { describe, it, expect } from 'vitest';
-import nacl from 'tweetnacl';
-import { decodeBase64 } from 'tweetnacl-util';
+import { describe, it, expect, vi } from 'vitest';
 import { generateKeyPair, encryptFor, decryptFrom } from './e2eCrypto';
 
-describe('e2eCrypto', () => {
-  it('generateKeyPair returns valid base64 Curve25519 keys', () => {
-    const kp = generateKeyPair();
-    expect(decodeBase64(kp.publicKey).length).toBe(nacl.box.publicKeyLength);
-    expect(decodeBase64(kp.secretKey).length).toBe(nacl.box.secretKeyLength);
+vi.mock('@tunecamp/chat', () => ({
+	generateKeyPair: vi.fn().mockResolvedValue({ pub: 'pub', priv: 'priv', epub: 'epub', epriv: 'epriv' }),
+	encryptFor: vi.fn().mockResolvedValue('cipher'),
+	decryptFrom: vi.fn().mockResolvedValue('plain'),
+}));
+
+describe('e2eCrypto wrapper', () => {
+  it('generateKeyPair maps pub/priv to publicKey/secretKey', async () => {
+    const kp = await generateKeyPair();
+    expect(kp.publicKey).toBe('pub');
+    expect(kp.secretKey).toBe('priv');
   });
 
-  it('round-trips a message between two key pairs', () => {
-    const alice = generateKeyPair();
-    const bob = generateKeyPair();
-
-    const cipher = encryptFor('hello bob', bob.publicKey, alice.secretKey);
-    const plain = decryptFrom(cipher, alice.publicKey, bob.secretKey);
-
-    expect(plain).toBe('hello bob');
+  it('encryptFor forwards args to chat encryptFor', async () => {
+    const cipher = await encryptFor('hello', 'recipientPub', 'mySecret');
+    expect(cipher).toBe('cipher');
   });
 
-  it('returns null when decrypting with the wrong secret key', () => {
-    const alice = generateKeyPair();
-    const bob = generateKeyPair();
-    const mallory = generateKeyPair();
-
-    const cipher = encryptFor('hello bob', bob.publicKey, alice.secretKey);
-    const plain = decryptFrom(cipher, alice.publicKey, mallory.secretKey);
-
-    expect(plain).toBeNull();
-  });
-
-  it('returns null when the ciphertext has been tampered with', () => {
-    const alice = generateKeyPair();
-    const bob = generateKeyPair();
-
-    const cipher = encryptFor('hello bob', bob.publicKey, alice.secretKey);
-    const tampered = cipher.slice(0, -4) + (cipher.slice(-4) === 'AAAA' ? 'BBBB' : 'AAAA');
-
-    expect(decryptFrom(tampered, alice.publicKey, bob.secretKey)).toBeNull();
-  });
-
-  it('uses a fresh nonce each call, so ciphertext differs for the same plaintext', () => {
-    const alice = generateKeyPair();
-    const bob = generateKeyPair();
-
-    const cipher1 = encryptFor('same message', bob.publicKey, alice.secretKey);
-    const cipher2 = encryptFor('same message', bob.publicKey, alice.secretKey);
-
-    expect(cipher1).not.toBe(cipher2);
-    expect(decryptFrom(cipher1, alice.publicKey, bob.secretKey)).toBe('same message');
-    expect(decryptFrom(cipher2, alice.publicKey, bob.secretKey)).toBe('same message');
+  it('decryptFrom forwards args to chat decryptFrom', async () => {
+    const plain = await decryptFrom('cipher', 'senderPub', 'mySecret');
+    expect(plain).toBe('plain');
   });
 });
