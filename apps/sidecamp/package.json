@@ -56,7 +56,8 @@
     "soundtouch-ts": "^1.1.1",
     "web-audio-beat-detector": "^8.2.37",
     "webtorrent": "^3.0.16",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "@akaoio/zen": "https://github.com/scobru/zen"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
