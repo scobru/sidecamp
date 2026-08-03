@@ -1,4 +1,4 @@
 declare module "zen" {
-	const Zen: any;
-	export default Zen;
+    const zen: any;
+    export default zen;
 }

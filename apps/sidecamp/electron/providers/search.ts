@@ -214,7 +214,7 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
     if (!server || !token) return [];
     try {
         const cleanServer = server.replace(/\/$/, '');
-        const url = `${cleanServer}/api/peers/search?q=${encodeURIComponent(query)}`;
+        const url = `${cleanServer}/api/search/global?q=${encodeURIComponent(query)}`;
         const res = await fetch(url, {
             headers: {
                 "User-Agent": USER_AGENT,
@@ -225,21 +225,47 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
             console.error(`Peer network search returned error: ${res.status}`);
             return [];
         }
-        const peerTracks = await res.json() as any[];
-        if (!Array.isArray(peerTracks)) return [];
-        return peerTracks.map(track => ({
-            id: 'peer_' + track.session_id + '_' + track.id,
-            title: track.title,
-            artist: track.artist || 'Unknown Artist',
-            album: track.album || `Network: ${track.username || 'Unknown'}`,
-            url: '',
-            source: 'peer',
-            sessionId: track.session_id,
-            trackId: track.id,
-            size: track.file_size || 0,
-            bitrate: 0,
-            user: `Network (${track.username || 'Unknown'})`
-        }));
+        
+        const data = await res.json() as any;
+        const results: any[] = [];
+
+        // 1. Map local catalog results (TuneCamp instance files, filtered by permissions)
+        if (Array.isArray(data.local)) {
+            const localTracks = data.local.map((track: any) => ({
+                id: 'catalog_' + track.id,
+                title: track.title,
+                artist: track.artist || 'Unknown Artist',
+                album: track.album || `Catalog: ${cleanServer}`,
+                url: '',
+                source: 'catalog',
+                trackId: track.id,
+                size: track.file_size || 0,
+                bitrate: track.bitrate || 0,
+                user: `Catalog (${track.visibility || 'Public'})`
+            }));
+            results.push(...localTracks);
+        }
+
+        // 2. Map P2P peer results (from connected sidecamp clients & federated peers)
+        if (Array.isArray(data.peers)) {
+            const peerTracks = data.peers.map((track: any) => ({
+                id: 'peer_' + track.session_id + '_' + track.id,
+                title: track.title,
+                artist: track.artist || 'Unknown Artist',
+                album: track.album || `Network: ${track.username || 'Unknown'}`,
+                url: '',
+                source: 'peer',
+                sessionId: track.session_id,
+                trackId: track.id,
+                origin: track.origin, // passed for federated peer streams
+                size: track.file_size || 0,
+                bitrate: track.bitrate || 0,
+                user: track.origin ? `Federated Peer` : `Network (${track.username || 'Unknown'})`
+            }));
+            results.push(...peerTracks);
+        }
+
+        return results;
     } catch (e) {
         console.error("Peer network search error:", e);
         return [];

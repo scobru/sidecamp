@@ -13,7 +13,7 @@ apps/sidecamp-cli    # headless CLI client for Sidecamp (no Electron): search/do
 packages/audio-engine # pure Web Audio DSP: crossfade player, time-warp, worklets
 packages/graph-ui     # React graph view: track graph, transitions, waveforms, recording
 
-Shared dependency: `tunecamp-design-system` ([scobru/tunecamp-design-system](https://github.com/scobru/tunecamp-design-system)) — UI/design-token package with 5-theme picker (dark/light/grey/nordic/nordic-dark), consumed via npm `file:`/`github:`.
+*Note: `tunecamp-design-system` has been deprecated. Design tokens are now inlined directly in each app's styles.*
 ```
 
 ## Graphofone
@@ -37,11 +37,11 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel.
 - 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album) and rename files.
 - 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
-- 💬 **Peer Chat** — Send direct messages to other peers by username over the peer WebSocket, Soulseek-style. Direct messages are end-to-end encrypted (Curve25519/XSalsa20-Poly1305 via `tweetnacl`) — the relay server never sees plaintext.
+- 💬 **Peer Chat** — Send direct messages to other peers by username over the peer WebSocket, Soulseek-style, powered by the shared `@tunecamp/chat` package ([scobru/tunecamp-chat](https://github.com/scobru/tunecamp-chat)). Direct messages are end-to-end encrypted (Curve25519/XSalsa20-Poly1305 via `tweetnacl`) — the relay server never sees plaintext. Nicknames automatically display instance domain badges (e.g. `admin (sudorecords)`).
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
 - 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
-- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with 5 themes (dark/light/grey/nordic/nordic-dark) via `tunecamp-design-system` and a collapsible sidebar.
+- 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with 5 themes (dark/light/grey/nordic/nordic-dark) and a collapsible sidebar.
 
 ## Prerequisites
 
@@ -118,20 +118,23 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 ## Architecture
 
 ```
-┌─────────────┐         WebSocket          ┌──────────────────┐
-│  Sidecamp   │ ──── outbound tunnel ────▶ │  TuneCamp Server │
-│  (Desktop)  │                            │  (Cloud/VPS)     │
-│             │  ◀── stream/download ────  │                  │
-│  Soulseek   │       requests relayed     │  Listeners       │
-│  Torrent    │                            │                  │
-│  yt-dlp     │                            │                  │
-│  File Share │                            │                  │
-└─────────────┘                            └──────────────────┘
+┌─────────────┐         WebSocket Signaling         ┌──────────────────┐
+│  Sidecamp   │ ◄─────── offer/answer/ICE ────────► │  TuneCamp Server │
+│  (Desktop)  │                                     │  (Signaling Hub) │
+└──────┬──────┘                                     └─────────┬────────┘
+       │                                                      │
+       │              Direct P2P DataChannel (WebRTC)         │ WebSocket
+       │ ◄────────────────────────────────────────────────────┘ Signaling
+       │
+       ▼
+ ┌───────────┐
+ │ Listeners │
+ └───────────┘
 ```
 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
 - **Uploader** (`apps/sidecamp/electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
-- **Peer** (`apps/sidecamp/electron/peer/`): WebSocket-based reverse tunnel for peer file sharing.
+- **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
 - **Frontends** (`apps/*/src/`): React + Vite UIs rendered inside each Electron window.
 - **Graph View** (`packages/graph-ui/`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, and set recording — shared by both apps.
 - **Audio Engine** (`packages/audio-engine/`): Crossfade playback engine, time-warp source, and audio worklets — pure Web Audio, no app logic.
@@ -144,7 +147,7 @@ Sidecamp is part of the [TuneCamp ecosystem](https://github.com/scobru/tunecamp#
 - [**tunecamp-website**](https://github.com/scobru/tunecamp-website) — Landing page, community directory, and web-based community audio player.
 - [**tunecamp-4-track-recorder**](https://github.com/scobru/tunecamp-4-track-recorder) — Browser-based 4-track cassette recorder with overdub and mixer.
 - [**tunecamp-audiofabric**](https://github.com/scobru/tunecamp-audiofabric) — Real-time 3D WebGL music visualizer.
-- [**tunecamp-design-system**](https://github.com/scobru/tunecamp-design-system) — Shared UI/design-token package (5-theme picker: dark/light/grey/nordic/nordic-dark) consumed by Sidecamp via npm `file:`/`github:`.
+- **Design System** — UI/design-token package has been deprecated; tokens are now inlined in app styles.
 - [**sidecamp-cli**](https://github.com/scobru/sidecamp/tree/main/apps/sidecamp-cli) — Headless CLI client for Sidecamp functionality without Electron.
 
 ## License

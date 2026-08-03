@@ -3,12 +3,7 @@ import { Preferences } from "@capacitor/preferences";
 import { CapacitorHttp, Capacitor } from "@capacitor/core";
 import { FolderPicker } from "./folderPickerPlugin";
 import { PeerSharing } from "./peerSharingPlugin";
-import {
-	generateKeyPair,
-	encryptFor,
-	decryptFrom,
-	type KeyPair,
-} from "../e2eCrypto";
+import { generateKeyPair, encryptFor, decryptFrom } from "../e2eCrypto";
 
 function base64ToBlob(base64: string, mime: string): Blob {
 	const bytes = atob(base64);
@@ -44,12 +39,9 @@ export function createCapacitorAdapter() {
 		e2e?: boolean;
 	}) => chatListeners.forEach((fn) => fn(data));
 
-	// E2E chat: fresh Curve25519 identity per app run, exchanged with peers over
+	// E2E chat: fresh identity per app run, exchanged with peers over
 	// the existing peer WS ('pubkey' messages) — the relay server never sees plaintext.
-	let myKeyPair: KeyPair = { pub: "", priv: "" };
-	const myKeyPairReady = generateKeyPair().then((kp) => {
-		myKeyPair = kp;
-	});
+	let myKeyPair: Awaited<ReturnType<typeof generateKeyPair>> | null = null;
 	const peerPublicKeys = new Map<string, string>();
 
 	// --- Peer Daemon (WS client to the TuneCamp server — same protocol as the
@@ -238,7 +230,6 @@ export function createCapacitorAdapter() {
 		allowDownloads: boolean;
 	}) => {
 		if (!peerRunning) return;
-		await myKeyPairReady;
 		try {
 			const wsUrl = new URL(config.server);
 			wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
@@ -249,6 +240,7 @@ export function createCapacitorAdapter() {
 			emitStatus("connecting");
 			ws = new WebSocket(wsUrl.toString());
 
+			myKeyPair = await generateKeyPair();
 			ws.onopen = () =>
 				emitLog("[Mobile] WebSocket connesso. In attesa di autorizzazione...");
 
@@ -260,7 +252,9 @@ export function createCapacitorAdapter() {
 						emitLog(
 							`[Mobile] Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`,
 						);
-						ws?.send(JSON.stringify({ type: "pubkey", pubkey: myKeyPair.pub }));
+						ws?.send(
+							JSON.stringify({ type: "pubkey", pubkey: myKeyPair!.publicKey }),
+						);
 						const tracks = await scanFolders(
 							config.folders,
 							config.allowDownloads,
@@ -279,7 +273,7 @@ export function createCapacitorAdapter() {
 						} else {
 							const senderKey = peerPublicKeys.get(msg.from);
 							const plain = senderKey
-								? await decryptFrom(msg.text, senderKey, myKeyPair)
+								? await decryptFrom(msg.text, senderKey, myKeyPair!.secretKey)
 								: null;
 							emitChat({
 								from: msg.from,
@@ -298,8 +292,8 @@ export function createCapacitorAdapter() {
 					} else if (msg.type === "cancel_request") {
 						cancelledRequests.add(msg.requestId);
 					}
-				} catch (_e) {
-					/* ignore ws/message errors */
+				} catch {
+					/* ignore parse/message errors */
 				}
 			};
 
@@ -333,7 +327,7 @@ export function createCapacitorAdapter() {
 		},
 		configSet: async (key: string, value: any) => {
 			const { value: raw } = await Preferences.get({ key: "app_config" });
-			let cfg: any;
+			let cfg: any = {};
 			try {
 				cfg = raw ? JSON.parse(raw) : {};
 			} catch {
@@ -451,7 +445,7 @@ export function createCapacitorAdapter() {
 						let size = 0;
 						try {
 							size = (await Filesystem.stat({ path: f.uri })).size;
-						} catch (_e) {
+						} catch {
 							/* ignore */
 						}
 						out.push({ name: f.name, path: f.uri, size, isDir: false });
@@ -483,7 +477,7 @@ export function createCapacitorAdapter() {
 			if (ws) {
 				try {
 					ws.close();
-				} catch (_e) {
+				} catch {
 					/* ignore */
 				}
 			}
@@ -509,7 +503,7 @@ export function createCapacitorAdapter() {
 			cancelledRequests.clear();
 			try {
 				await PeerSharing.stop();
-			} catch (_e) {
+			} catch {
 				/* ignore */
 			}
 			emitLog("[Mobile] Peer sharing arrestato.");
@@ -525,7 +519,7 @@ export function createCapacitorAdapter() {
 			if (to) {
 				const pubkey = peerPublicKeys.get(to);
 				if (pubkey) {
-					payload = await encryptFor(text, pubkey, myKeyPair);
+					payload = await encryptFor(text, pubkey, myKeyPair!.secretKey);
 					e2e = true;
 				}
 				// no pubkey → send plaintext (peer on older version or key exchange pending)

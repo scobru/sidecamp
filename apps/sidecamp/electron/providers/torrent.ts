@@ -53,7 +53,11 @@ export class TorrentService extends EventEmitter {
                     this.seededFiles.set(input, torrent.magnetURI);
                 }
 
-                const emitProgress = () => {
+                let lastEmit = 0;
+                const emitProgress = (force = false) => {
+                    const now = Date.now();
+                    if (!force && now - lastEmit < 200) return;
+                    lastEmit = now;
                     this.emit('progress', {
                         id: torrent.infoHash,
                         name: torrent.name,
@@ -66,10 +70,10 @@ export class TorrentService extends EventEmitter {
                     });
                 };
 
-                torrent.on('upload', emitProgress);
-                torrent.on('download', emitProgress);
+                torrent.on('upload', () => emitProgress());
+                torrent.on('download', () => emitProgress());
 
-                emitProgress();
+                emitProgress(true);
                 resolve(torrent.magnetURI);
             });
         });
@@ -88,7 +92,12 @@ export class TorrentService extends EventEmitter {
             client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
 
-                const emitProgress = () => {
+                let lastEmit = 0;
+                const emitProgress = (force = false) => {
+                    const now = Date.now();
+                    const isDone = torrent.done || torrent.progress >= 1;
+                    if (!force && !isDone && now - lastEmit < 200) return;
+                    lastEmit = now;
                     this.emit('progress', {
                         // downloadId correlates with the UI's active-download entry;
                         // infoHash is kept so the stop/seed control can target the torrent.
@@ -104,10 +113,11 @@ export class TorrentService extends EventEmitter {
                     });
                 };
 
-                torrent.on('download', emitProgress);
-                torrent.on('upload', emitProgress);
+                torrent.on('download', () => emitProgress());
+                torrent.on('upload', () => emitProgress());
 
                 torrent.on('done', () => {
+                    emitProgress(true);
                     this.emit('log', `Download completato e in seeding: ${torrent.name}`);
                     const files = torrent.files.map(f => path.join(this.downloadDir, f.path));
                     resolve(files);
