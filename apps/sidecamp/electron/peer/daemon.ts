@@ -4,357 +4,461 @@ import crypto from "crypto";
 import { app } from "electron";
 import { WebSocket } from "ws";
 import { EventEmitter } from "events";
-import { generateKeyPair, encryptFor, decryptFrom, type KeyPair } from "../../src/services/e2eCrypto";
+import {
+	generateKeyPair,
+	encryptFor,
+	decryptFrom,
+	type KeyPair,
+} from "../../src/services/e2eCrypto";
 
 export interface PeerConfig {
-    server: string;
-    token: string;
-    folders: string[];
-    allowDownloads: boolean;
+	server: string;
+	token: string;
+	folders: string[];
+	allowDownloads: boolean;
 }
 
 export class PeerDaemon extends EventEmitter {
-    private config: PeerConfig;
-    private ws: WebSocket | null = null;
-    private fileIndex: Map<string, any> = new Map();
-    private activeStreams: Map<string, fs.ReadStream> = new Map();
-    private isRunning: boolean = false;
-    private reconnectTimer: NodeJS.Timeout | null = null;
-    private getMagnetUriForFile?: (filePath: string) => string | undefined;
-    // E2E chat identity, persisted to disk so it's stable across app restarts
-    // (otherwise every launch orphans ciphertext peers sent to the old key).
-    // Exchanged with peers over the existing peer WS ('pubkey' messages) —
-    // the relay server never sees plaintext.
-    private myKeyPair: KeyPair | null = null;
-    private keyPairPromise: Promise<KeyPair> | null = null;
-    private readonly peerPublicKeys = new Map<string, string>();
+	private config: PeerConfig;
+	private ws: WebSocket | null = null;
+	private fileIndex: Map<string, any> = new Map();
+	private activeStreams: Map<string, fs.ReadStream> = new Map();
+	private isRunning: boolean = false;
+	private reconnectTimer: NodeJS.Timeout | null = null;
+	private getMagnetUriForFile?: (filePath: string) => string | undefined;
+	// E2E chat identity, persisted to disk so it's stable across app restarts
+	// (otherwise every launch orphans ciphertext peers sent to the old key).
+	// Exchanged with peers over the existing peer WS ('pubkey' messages) —
+	// the relay server never sees plaintext.
+	private myKeyPair: KeyPair | null = null;
+	private keyPairPromise: Promise<KeyPair> | null = null;
+	private readonly peerPublicKeys = new Map<string, string>();
 
-    constructor(config: PeerConfig, getMagnetUriForFile?: (filePath: string) => string | undefined) {
-        super();
-        this.config = config;
-        this.getMagnetUriForFile = getMagnetUriForFile;
-    }
+	constructor(
+		config: PeerConfig,
+		getMagnetUriForFile?: (filePath: string) => string | undefined,
+	) {
+		super();
+		this.config = config;
+		this.getMagnetUriForFile = getMagnetUriForFile;
+	}
 
-    public setConfig(config: PeerConfig) {
-        this.config = config;
-    }
+	public setConfig(config: PeerConfig) {
+		this.config = config;
+	}
 
-    private keyPairFilePath(): string {
-        return path.join(app.getPath('userData'), 'peer-chat-identity.json');
-    }
+	private keyPairFilePath(): string {
+		return path.join(app.getPath("userData"), "peer-chat-identity.json");
+	}
 
-    private async ensureKeyPair(): Promise<KeyPair> {
-        if (this.myKeyPair) return this.myKeyPair;
-        if (!this.keyPairPromise) {
-            this.keyPairPromise = (async () => {
-                const filePath = this.keyPairFilePath();
-                try {
-                    const raw = await fs.promises.readFile(filePath, 'utf-8');
-                    const pair = JSON.parse(raw) as KeyPair;
-                    this.myKeyPair = pair;
-                    return pair;
-                } catch {
-                    const pair = await generateKeyPair();
-                    try {
-                        await fs.promises.writeFile(filePath, JSON.stringify(pair));
-                    } catch (err: any) {
-                        this.emit("log", `Impossibile salvare l'identità chat su disco: ${err.message}`);
-                    }
-                    this.myKeyPair = pair;
-                    return pair;
-                }
-            })();
-        }
-        return this.keyPairPromise;
-    }
+	private async ensureKeyPair(): Promise<KeyPair> {
+		if (this.myKeyPair) return this.myKeyPair;
+		if (!this.keyPairPromise) {
+			this.keyPairPromise = (async () => {
+				const filePath = this.keyPairFilePath();
+				try {
+					const raw = await fs.promises.readFile(filePath, "utf-8");
+					const pair = JSON.parse(raw) as KeyPair;
+					if (!pair.pub || !pair.priv) throw new Error("stale key pair format");
+					this.myKeyPair = pair;
+					return pair;
+				} catch {
+					const pair = await generateKeyPair();
+					try {
+						await fs.promises.writeFile(filePath, JSON.stringify(pair));
+					} catch (err: any) {
+						this.emit(
+							"log",
+							`Impossibile salvare l'identità chat su disco: ${err.message}`,
+						);
+					}
+					this.myKeyPair = pair;
+					return pair;
+				}
+			})();
+		}
+		return this.keyPairPromise;
+	}
 
-    public async scanFolders(): Promise<any[]> {
-        this.emit("log", "Avvio scansione cartelle locali...");
-        this.fileIndex.clear();
-        
-        const validExtensions = new Set(['.mp3', '.flac', '.ogg', '.m4a', '.wav']);
-        let files: string[] = [];
+	public async scanFolders(): Promise<any[]> {
+		this.emit("log", "Avvio scansione cartelle locali...");
+		this.fileIndex.clear();
 
-        const allFolders = (Array.isArray(this.config.folders) 
-            ? this.config.folders 
-            : [this.config.folders as any])
-            .flatMap(f => f.split(/[,;]/))
-            .map(f => f.trim())
-            .filter(f => f.length > 0);
+		const validExtensions = new Set([".mp3", ".flac", ".ogg", ".m4a", ".wav"]);
+		let files: string[] = [];
 
-        for (const folder of allFolders) {
-            try {
-                const stat = await fs.promises.stat(folder);
-                if (stat.isDirectory()) {
-                    await this.walkDir(folder, files);
-                }
-            } catch (e) {}
-        }
+		const allFolders = (
+			Array.isArray(this.config.folders)
+				? this.config.folders
+				: [this.config.folders as any]
+		)
+			.flatMap((f) => f.split(/[,;]/))
+			.map((f) => f.trim())
+			.filter((f) => f.length > 0);
 
-        files = files.filter(f => validExtensions.has(path.extname(f).toLowerCase()));
-        this.emit("log", `Trovati ${files.length} file audio. Estrazione metadati...`);
+		for (const folder of allFolders) {
+			try {
+				const stat = await fs.promises.stat(folder);
+				if (stat.isDirectory()) {
+					await this.walkDir(folder, files);
+				}
+			} catch (e) {
+				/* ignore individual file */
+			}
+		}
 
-        const indexData: any[] = [];
-        let processed = 0;
+		files = files.filter((f) =>
+			validExtensions.has(path.extname(f).toLowerCase()),
+		);
+		this.emit(
+			"log",
+			`Trovati ${files.length} file audio. Estrazione metadati...`,
+		);
 
-        const musicMetadata = await import("music-metadata");
-        const CONCURRENCY = 8;
-        for (let i = 0; i < files.length; i += CONCURRENCY) {
-            const batch = files.slice(i, i + CONCURRENCY);
-            await Promise.all(batch.map(async (file) => {
-                try {
-                    const [metadata, stat] = await Promise.all([
-                        musicMetadata.parseFile(file),
-                        fs.promises.stat(file)
-                    ]);
+		const indexData: any[] = [];
+		let processed = 0;
 
-                    const trackData = {
-                        id: crypto.createHash('md5').update(file).digest('hex'),
-                        path: file,
-                        title: metadata.common.title || path.basename(file, path.extname(file)),
-                        artist: metadata.common.artist || 'Unknown Artist',
-                        album: metadata.common.album || 'Unknown Album',
-                        duration: metadata.format.duration || 0,
-                        sizeBytes: stat.size,
-                        fileSizeBytes: stat.size,
-                        format: path.extname(file).substring(1).toLowerCase(),
-                        mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
-                        bitrate: metadata.format.bitrate || 0,
-                        allowDownload: this.config.allowDownloads,
-                        magnetUri: this.getMagnetUriForFile ? this.getMagnetUriForFile(file) : undefined
-                    };
+		const musicMetadata = await import("music-metadata");
+		const CONCURRENCY = 8;
+		for (let i = 0; i < files.length; i += CONCURRENCY) {
+			const batch = files.slice(i, i + CONCURRENCY);
+			await Promise.all(
+				batch.map(async (file) => {
+					try {
+						const [metadata, stat] = await Promise.all([
+							musicMetadata.parseFile(file),
+							fs.promises.stat(file),
+						]);
 
-                    this.fileIndex.set(trackData.id, trackData);
-                    indexData.push({ ...trackData, path: undefined }); // Don't leak local paths
-                } catch (err: any) {
-                    this.emit("log", `Errore lettura metadati per ${file}: ${err.message}`);
-                } finally {
-                    processed++;
-                }
-            }));
-            this.emit("progress", processed, files.length);
-        }
+						const trackData = {
+							id: crypto.createHash("md5").update(file).digest("hex"),
+							path: file,
+							title:
+								metadata.common.title ||
+								path.basename(file, path.extname(file)),
+							artist: metadata.common.artist || "Unknown Artist",
+							album: metadata.common.album || "Unknown Album",
+							duration: metadata.format.duration || 0,
+							sizeBytes: stat.size,
+							fileSizeBytes: stat.size,
+							format: path.extname(file).substring(1).toLowerCase(),
+							mimeType:
+								metadata.format.container ||
+								path.extname(file).substring(1).toLowerCase(),
+							bitrate: metadata.format.bitrate || 0,
+							allowDownload: this.config.allowDownloads,
+							magnetUri: this.getMagnetUriForFile
+								? this.getMagnetUriForFile(file)
+								: undefined,
+						};
 
-        this.emit("log", `Scansione completata. ${indexData.length} tracce indicizzate.`);
-        return indexData;
-    }
+						this.fileIndex.set(trackData.id, trackData);
+						indexData.push({ ...trackData, path: undefined }); // Don't leak local paths
+					} catch (err: any) {
+						this.emit(
+							"log",
+							`Errore lettura metadati per ${file}: ${err.message}`,
+						);
+					} finally {
+						processed++;
+					}
+					return undefined;
+				}),
+			);
+			this.emit("progress", processed, files.length);
+		}
 
-    private async walkDir(dir: string, files: string[] = []) {
-        try {
-            const list = await fs.promises.readdir(dir, { withFileTypes: true });
-            for (const item of list) {
-                const itemPath = path.join(dir, item.name);
-                if (item.isDirectory()) {
-                    await this.walkDir(itemPath, files);
-                } else {
-                    files.push(itemPath);
-                }
-            }
-        } catch (e) {}
-    }
+		this.emit(
+			"log",
+			`Scansione completata. ${indexData.length} tracce indicizzate.`,
+		);
+		return indexData;
+	}
 
-    public async start() {
-        if (this.isRunning) return;
-        this.isRunning = true;
-        await this.ensureKeyPair();
-        await this.connect();
-    }
+	private async walkDir(dir: string, files: string[] = []) {
+		try {
+			const list = await fs.promises.readdir(dir, { withFileTypes: true });
+			for (const item of list) {
+				const itemPath = path.join(dir, item.name);
+				if (item.isDirectory()) {
+					await this.walkDir(itemPath, files);
+				} else {
+					files.push(itemPath);
+				}
+			}
+		} catch (e) {
+			/* ignore walk errors */
+		}
+	}
 
-    public stop() {
-        this.isRunning = false;
-        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-        this.cleanupStreams();
-        this.emit("status", "offline");
-    }
+	public async start() {
+		if (this.isRunning) return;
+		this.isRunning = true;
+		await this.ensureKeyPair();
+		await this.connect();
+	}
 
-    private async connect() {
-        if (!this.isRunning) return;
-        
-        try {
-            const keyPair = await this.ensureKeyPair();
+	public stop() {
+		this.isRunning = false;
+		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		if (this.ws) {
+			this.ws.close();
+			this.ws = null;
+		}
+		this.cleanupStreams();
+		this.emit("status", "offline");
+	}
 
-            // Only walk the filesystem + re-parse metadata on the first connect.
-            // Reconnects (WS drops, server restarts) reuse the cached index —
-            // rescanning every 5s on a flaky connection pegs the main process
-            // and freezes the whole window (Electron's message pump shares its
-            // thread with the Node event loop).
-            const indexData = this.fileIndex.size > 0
-                ? Array.from(this.fileIndex.values()).map(t => ({ ...t, path: undefined }))
-                : await this.scanFolders();
+	private async connect() {
+		if (!this.isRunning) return;
 
-            const wsUrl = new URL(this.config.server);
-            wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-            wsUrl.pathname = '/ws/peer';
-            wsUrl.searchParams.set('token', this.config.token);
-            wsUrl.searchParams.set('allowDownloads', String(this.config.allowDownloads));
-            
-            this.emit("status", "connecting");
-            
-            this.ws = new WebSocket(wsUrl.toString());
+		try {
+			const keyPair = await this.ensureKeyPair();
 
-            this.ws.on('open', () => {
-                this.emit("log", "WebSocket connesso. In attesa di autorizzazione...");
-            });
+			// Only walk the filesystem + re-parse metadata on the first connect.
+			// Reconnects (WS drops, server restarts) reuse the cached index —
+			// rescanning every 5s on a flaky connection pegs the main process
+			// and freezes the whole window (Electron's message pump shares its
+			// thread with the Node event loop).
+			const indexData =
+				this.fileIndex.size > 0
+					? Array.from(this.fileIndex.values()).map((t) => ({
+							...t,
+							path: undefined,
+						}))
+					: await this.scanFolders();
 
-            this.ws.on('message', async (data: any) => {
-                try {
-                    const msg = JSON.parse(data.toString());
-                    if (msg.type === 'auth_ok') {
-                        this.emit("status", "online");
-                        this.emit("log", `Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`);
-                        this.ws?.send(JSON.stringify({ type: 'pubkey', pubkey: keyPair.publicKey }));
-                        this.ws?.send(JSON.stringify({
-                            type: 'manifest',
-                            tracks: indexData
-                        }));
-                    } else if (msg.type === 'pubkey') {
-                        this.peerPublicKeys.set(msg.from, msg.pubkey);
-                    } else if (msg.type === 'chat') {
-                        if (msg.lobby) {
-                            this.emit("chat", { from: msg.from, text: msg.text, ts: msg.ts, lobby: true });
-                        } else {
-                            const senderKey = this.peerPublicKeys.get(msg.from);
-                            const plain = senderKey ? await decryptFrom(msg.text, senderKey, keyPair.secretKey) : null;
-                            this.emit("chat", { from: msg.from, text: plain ?? '[Encrypted message — key exchange pending]', ts: msg.ts, e2e: true });
-                        }
-                    } else if (msg.type === 'ping') {
-                        this.ws?.send(JSON.stringify({ type: 'pong' }));
-                    } else if (msg.type === 'stream_request' || msg.type === 'download_request') {
-                        this.handleRequest(msg.requestId, msg.trackId);
-                    } else if (msg.type === 'cancel_request') {
-                        this.handleCancel(msg.requestId);
-                    }
-                } catch (err) {
-                    console.error("Parse error", err);
-                }
-            });
+			const wsUrl = new URL(this.config.server);
+			wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+			wsUrl.pathname = "/ws/peer";
+			wsUrl.searchParams.set("token", this.config.token);
+			wsUrl.searchParams.set(
+				"allowDownloads",
+				String(this.config.allowDownloads),
+			);
 
-            this.ws.on('close', () => {
-                this.emit("status", "disconnected");
-                this.cleanupStreams();
-                if (this.isRunning) {
-                    this.emit("log", "Connessione persa. Riconnessione tra 5s...");
-                    this.reconnectTimer = setTimeout(() => this.connect(), 5000);
-                }
-            });
+			this.emit("status", "connecting");
 
-            this.ws.on('error', (err: any) => {
-                this.emit("log", `Errore WebSocket: ${err.message}`);
-                this.ws?.close();
-            });
-            
-        } catch (err: any) {
-            this.emit("log", `Errore di avvio: ${err.message}`);
-            if (this.isRunning) {
-                this.reconnectTimer = setTimeout(() => this.connect(), 5000);
-            }
-        }
-    }
+			this.ws = new WebSocket(wsUrl.toString());
 
-    private handleRequest(requestId: string, trackId: string) {
-        const track = this.fileIndex.get(trackId);
-        if (!track || !fs.existsSync(track.path)) {
-            this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
-            return;
-        }
+			this.ws.on("open", () => {
+				this.emit("log", "WebSocket connesso. In attesa di autorizzazione...");
+			});
 
-        this.emit("log", `Streaming/Download richiesto: ${track.title} [Req: ${requestId}]`);
+			this.ws.on("message", async (data: any) => {
+				try {
+					const msg = JSON.parse(data.toString());
+					if (msg.type === "auth_ok") {
+						this.emit("status", "online");
+						this.emit(
+							"log",
+							`Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`,
+						);
+						this.ws?.send(
+							JSON.stringify({ type: "pubkey", pubkey: keyPair.pub }),
+						);
+						this.ws?.send(
+							JSON.stringify({
+								type: "manifest",
+								tracks: indexData,
+							}),
+						);
+					} else if (msg.type === "pubkey") {
+						this.peerPublicKeys.set(msg.from, msg.pubkey);
+					} else if (msg.type === "chat") {
+						if (msg.lobby) {
+							this.emit("chat", {
+								from: msg.from,
+								text: msg.text,
+								ts: msg.ts,
+								lobby: true,
+							});
+						} else {
+							const senderKey = this.peerPublicKeys.get(msg.from);
+							const plain = senderKey
+								? await decryptFrom(msg.text, senderKey, keyPair)
+								: null;
+							this.emit("chat", {
+								from: msg.from,
+								text: plain ?? "[Encrypted message — key exchange pending]",
+								ts: msg.ts,
+								e2e: true,
+							});
+						}
+					} else if (msg.type === "ping") {
+						this.ws?.send(JSON.stringify({ type: "pong" }));
+					} else if (
+						msg.type === "stream_request" ||
+						msg.type === "download_request"
+					) {
+						this.handleRequest(msg.requestId, msg.trackId);
+					} else if (msg.type === "cancel_request") {
+						this.handleCancel(msg.requestId);
+					}
+				} catch (err) {
+					console.error("Parse error", err);
+				}
+			});
 
-        const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024 });
-        this.activeStreams.set(requestId, stream);
-        let seq = 0;
+			this.ws.on("close", () => {
+				this.emit("status", "disconnected");
+				this.cleanupStreams();
+				if (this.isRunning) {
+					this.emit("log", "Connessione persa. Riconnessione tra 5s...");
+					this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+				}
+			});
 
-        stream.on('data', (chunk: Buffer) => {
-            if (this.ws?.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ 
-                    type: 'chunk', 
-                    requestId, 
-                    seq: seq++, 
-                    data: chunk.toString('base64') 
-                }));
-            } else {
-                stream.destroy();
-            }
-        });
+			this.ws.on("error", (err: any) => {
+				this.emit("log", `Errore WebSocket: ${err.message}`);
+				this.ws?.close();
+			});
+		} catch (err: any) {
+			this.emit("log", `Errore di avvio: ${err.message}`);
+			if (this.isRunning) {
+				this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+			}
+		}
+	}
 
-        stream.on('end', () => {
-            this.ws?.send(JSON.stringify({ type: 'chunk_end', requestId }));
-            this.activeStreams.delete(requestId);
-            this.emit("log", `Streaming/Download completato: ${track.title} [Req: ${requestId}]`);
-        });
+	private handleRequest(requestId: string, trackId: string) {
+		const track = this.fileIndex.get(trackId);
+		if (!track || !fs.existsSync(track.path)) {
+			this.ws?.send(
+				JSON.stringify({
+					type: "chunk_error",
+					requestId,
+					message: "File non trovato",
+				}),
+			);
+			return;
+		}
 
-        stream.on('error', (err) => {
-            this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: err.message }));
-            this.activeStreams.delete(requestId);
-        });
-    }
+		this.emit(
+			"log",
+			`Streaming/Download richiesto: ${track.title} [Req: ${requestId}]`,
+		);
 
-    private handleCancel(requestId: string) {
-        const stream = this.activeStreams.get(requestId);
-        if (stream) {
-            stream.destroy();
-            this.activeStreams.delete(requestId);
-            this.emit("log", `Streaming/Download cancellato [Req: ${requestId}]`);
-        }
-    }
+		const stream = fs.createReadStream(track.path, {
+			highWaterMark: 64 * 1024,
+		});
+		this.activeStreams.set(requestId, stream);
+		let seq = 0;
 
-    public async sendChat(to: string, text: string): Promise<{ success: boolean; error?: string; e2e?: boolean }> {
-        if (this.ws?.readyState !== WebSocket.OPEN) return { success: false, error: 'Not connected' };
-        const keyPair = await this.ensureKeyPair();
-        let payload = text;
-        let e2e = false;
-        if (to) {
-            const pubkey = this.peerPublicKeys.get(to);
-            if (pubkey) {
-                payload = await encryptFor(text, pubkey, keyPair.secretKey);
-                e2e = true;
-            }
-            // no pubkey → send plaintext (peer on older version or key exchange pending)
-        }
-        this.ws.send(JSON.stringify({ type: 'chat', to, text: payload }));
-        return { success: true, e2e };
-    }
+		stream.on("data", (chunk) => {
+			if (this.ws?.readyState === WebSocket.OPEN) {
+				this.ws.send(
+					JSON.stringify({
+						type: "chunk",
+						requestId,
+						seq: seq++,
+						data: chunk.toString("base64"),
+					}),
+				);
+			} else {
+				stream.destroy();
+			}
+		});
 
-    public async rescanAndSendManifest() {
-        if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        try {
-            const indexData = await this.scanFolders();
-            this.ws.send(JSON.stringify({
-                type: 'manifest',
-                tracks: indexData
-            }));
-            this.emit("log", "Indice libreria aggiornato inviato al server.");
-        } catch (err: any) {
-            this.emit("log", `Errore durante l'aggiornamento dell'indice libreria: ${err.message}`);
-        }
-    }
+		stream.on("end", () => {
+			this.ws?.send(JSON.stringify({ type: "chunk_end", requestId }));
+			this.activeStreams.delete(requestId);
+			this.emit(
+				"log",
+				`Streaming/Download completato: ${track.title} [Req: ${requestId}]`,
+			);
+		});
 
-    // Torrent seed/remove only change a track's magnetUri — refresh that field
-    // from the in-memory index and resend, instead of re-walking + re-parsing
-    // the whole library (rescanAndSendManifest).
-    public refreshAndSendManifest() {
-        if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        if (this.getMagnetUriForFile) {
-            for (const track of this.fileIndex.values()) {
-                track.magnetUri = this.getMagnetUriForFile(track.path);
-            }
-        }
-        const indexData = Array.from(this.fileIndex.values()).map(t => ({ ...t, path: undefined }));
-        this.ws.send(JSON.stringify({
-            type: 'manifest',
-            tracks: indexData
-        }));
-        this.emit("log", "Indice libreria aggiornato inviato al server.");
-    }
+		stream.on("error", (err) => {
+			this.ws?.send(
+				JSON.stringify({
+					type: "chunk_error",
+					requestId,
+					message: err.message,
+				}),
+			);
+			this.activeStreams.delete(requestId);
+		});
+	}
 
-    private cleanupStreams() {
-        for (const [id, stream] of this.activeStreams.entries()) {
-            stream.destroy();
-        }
-        this.activeStreams.clear();
-    }
+	private handleCancel(requestId: string) {
+		const stream = this.activeStreams.get(requestId);
+		if (stream) {
+			stream.destroy();
+			this.activeStreams.delete(requestId);
+			this.emit("log", `Streaming/Download cancellato [Req: ${requestId}]`);
+		}
+	}
+
+	public async sendChat(
+		to: string,
+		text: string,
+	): Promise<{ success: boolean; error?: string; e2e?: boolean }> {
+		if (this.ws?.readyState !== WebSocket.OPEN)
+			return { success: false, error: "Not connected" };
+		const keyPair = await this.ensureKeyPair();
+		let payload = text;
+		let e2e = false;
+		if (to) {
+			const pubkey = this.peerPublicKeys.get(to);
+			if (pubkey) {
+				payload = await encryptFor(text, pubkey, keyPair);
+				e2e = true;
+			}
+			// no pubkey → send plaintext (peer on older version or key exchange pending)
+		}
+		this.ws.send(JSON.stringify({ type: "chat", to, text: payload }));
+		return { success: true, e2e };
+	}
+
+	public async rescanAndSendManifest() {
+		if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN)
+			return;
+		try {
+			const indexData = await this.scanFolders();
+			this.ws.send(
+				JSON.stringify({
+					type: "manifest",
+					tracks: indexData,
+				}),
+			);
+			this.emit("log", "Indice libreria aggiornato inviato al server.");
+		} catch (err: any) {
+			this.emit(
+				"log",
+				`Errore durante l'aggiornamento dell'indice libreria: ${err.message}`,
+			);
+		}
+	}
+
+	// Torrent seed/remove only change a track's magnetUri — refresh that field
+	// from the in-memory index and resend, instead of re-walking + re-parsing
+	// the whole library (rescanAndSendManifest).
+	public refreshAndSendManifest() {
+		if (!this.isRunning || !this.ws || this.ws.readyState !== WebSocket.OPEN)
+			return;
+		if (this.getMagnetUriForFile) {
+			for (const track of this.fileIndex.values()) {
+				track.magnetUri = this.getMagnetUriForFile(track.path);
+			}
+		}
+		const indexData = Array.from(this.fileIndex.values()).map((t) => ({
+			...t,
+			path: undefined,
+		}));
+		this.ws.send(
+			JSON.stringify({
+				type: "manifest",
+				tracks: indexData,
+			}),
+		);
+		this.emit("log", "Indice libreria aggiornato inviato al server.");
+	}
+
+	private cleanupStreams() {
+		for (const [_id, stream] of this.activeStreams.entries()) {
+			stream.destroy();
+		}
+		this.activeStreams.clear();
+	}
 }
