@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.5] - 2026-08-03
+
+### Fixed
+- **"Start Sharing" crash**: `peer:start` threw `Cannot read properties of undefined (reading 'pair')` on click. Root cause was two-fold: the `zen` npm package was being bundled into the Electron main process by Vite/Rollup, breaking its static-method reflection, and the installed `@tunecamp/chat` dependency was pinned to a stale commit still calling the removed `Zen.SEA.pair()` API. Fixed by externalizing `zen` in `vite.config.ts` and updating `@tunecamp/chat` to the current commit (`Zen.pair()` directly).
+- **Chat history/peers not loading**: Fixed by a corresponding CORS fix on the `tunecamp-instance` server (`GET /api/chat/history`, `/peers`, `/pubkey` now allow cross-origin requests) — see `tunecamp-instance` v4.4.3.
+
 ## [0.24.1] - 2026-08-01
 
 ### Fixed

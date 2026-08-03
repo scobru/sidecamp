@@ -1,7 +1,7 @@
 {
   "name": "sidecamp",
   "private": true,
-  "version": "0.25.4",
+  "version": "0.25.5",
   "description": "Desktop companion app for TuneCamp — P2P content acquisition and peer file sharing.",
   "author": {
     "name": "scobru",
@@ -55,7 +55,6 @@
     "socket.io-client": "^4.8.3",
     "soundtouch-ts": "^1.1.1",
     "web-audio-beat-detector": "^8.2.37",
-    "zen": "github:scobru/zen",
     "webtorrent": "^3.0.16",
     "ws": "^8.21.0",
     "zen": "github:scobru/zen"

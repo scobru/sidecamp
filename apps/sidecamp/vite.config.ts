@@ -30,6 +30,7 @@ export default defineConfig({
                   'electron',
                   'node-id3',
                   '@ffmpeg-installer/ffmpeg',
+                  'zen',
                 ],
               },
               rolldownOptions: {
@@ -48,6 +49,7 @@ export default defineConfig({
                   'electron',
                   'node-id3',
                   '@ffmpeg-installer/ffmpeg',
+                  'zen',
                 ],
               },
             },
