@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.6] - 2026-08-04
+
+### Fixed
+- **P2P sharing could hang the app ("Not Responding") and balloon main-process memory with slow peers.** `handleRequest` (WS) and `streamTrackOverDataChannel` (WebRTC) piped `fs.createReadStream` straight into `ws.send`/`channel.send` with no backpressure — a peer downloading slower than local disk read speed let chunks queue up unbounded in the socket send buffer. Added `applyBackpressure`: pauses the read stream once buffered data exceeds 4MB, resumes once drained.
+- **`tsconfig.app.json` build failure**: `ignoreDeprecations: "6.0"` isn't a value TypeScript 6.0.3 recognizes yet; reverted to `"5.0"`.
+- **Transfer progress bars rendered narrow and centered instead of full-width.** The `.result-item` CSS class sets `align-items: center` with no `flex-direction`; the row's inline style overrode `flex-direction` to `column` but not `align-items`, so children (including the progress bar) shrank to content width in the column's cross axis instead of stretching. Added `alignItems: "stretch"` to the inline style.
+
 ## [0.25.5] - 2026-08-03
 
 ### Fixed

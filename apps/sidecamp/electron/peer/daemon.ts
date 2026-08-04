@@ -272,12 +272,13 @@ export class PeerDaemon extends EventEmitter {
 
         stream.on('data', (chunk: Buffer) => {
             if (this.ws?.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ 
-                    type: 'chunk', 
-                    requestId, 
-                    seq: seq++, 
-                    data: chunk.toString('base64') 
+                this.ws.send(JSON.stringify({
+                    type: 'chunk',
+                    requestId,
+                    seq: seq++,
+                    data: chunk.toString('base64')
                 }));
+                this.applyBackpressure(stream, () => this.ws?.bufferedAmount ?? 0);
             } else {
                 stream.destroy();
             }
@@ -445,6 +446,7 @@ export class PeerDaemon extends EventEmitter {
                     seq: seq++,
                     data: chunk.toString('base64')
                 }));
+                this.applyBackpressure(stream, () => channel.bufferedAmount ?? 0);
             } else {
                 stream.destroy();
             }
@@ -462,6 +464,26 @@ export class PeerDaemon extends EventEmitter {
                 channel.send(JSON.stringify({ type: 'chunk_error', requestId, message: err.message }));
             }
         });
+    }
+
+    // No backpressure between fs.ReadStream and ws/datachannel send means a slow
+    // peer lets chunks pile up in the socket's send buffer unbounded, ballooning
+    // main-process heap and blocking Electron's message pump (app "not responding").
+    // Pause the read side once buffered data crosses the threshold, resume once drained.
+    private static readonly BACKPRESSURE_THRESHOLD = 4 * 1024 * 1024;
+
+    private applyBackpressure(stream: fs.ReadStream, getBufferedAmount: () => number) {
+        if (getBufferedAmount() <= PeerDaemon.BACKPRESSURE_THRESHOLD) return;
+        stream.pause();
+        const check = () => {
+            if (stream.destroyed) return;
+            if (getBufferedAmount() <= PeerDaemon.BACKPRESSURE_THRESHOLD) {
+                stream.resume();
+            } else {
+                setTimeout(check, 50);
+            }
+        };
+        setTimeout(check, 50);
     }
 
     private cleanupStreams() {

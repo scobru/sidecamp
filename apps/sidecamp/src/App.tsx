@@ -6223,6 +6223,7 @@ function App() {
 												display: "flex",
 												flexDirection: "column",
 												gap: "6px",
+												alignItems: "stretch",
 											}}
 										>
 											<div
