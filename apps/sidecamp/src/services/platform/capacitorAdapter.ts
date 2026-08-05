@@ -228,6 +228,8 @@ export function createCapacitorAdapter() {
 		token: string;
 		folders: string[];
 		allowDownloads: boolean;
+		// The account's Zen identity, opened from its vault at login.
+		zenPair?: { publicKey: string; secretKey: string } | null;
 	}) => {
 		if (!peerRunning) return;
 		try {
@@ -240,7 +242,13 @@ export function createCapacitorAdapter() {
 			emitStatus("connecting");
 			ws = new WebSocket(wsUrl.toString());
 
-			myKeyPair = await generateKeyPair();
+			// Prefer the account's Zen identity: it is what `GET /api/chat/pubkey`
+			// serves for this user, and peers that resolved it will not accept a
+			// session key announced over the socket instead.
+			myKeyPair =
+				config.zenPair?.publicKey && config.zenPair?.secretKey
+					? config.zenPair
+					: await generateKeyPair();
 			ws.onopen = () =>
 				emitLog("[Mobile] WebSocket connesso. In attesa di autorizzazione...");
 

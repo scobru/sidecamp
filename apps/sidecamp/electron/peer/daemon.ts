@@ -11,6 +11,9 @@ export interface PeerConfig {
     token: string;
     folders: string[];
     allowDownloads: boolean;
+    // The account's Zen identity, opened from its vault at login. Absent when
+    // the account has no vault or the user connected with a bare token.
+    zenPair?: KeyPair | null;
 }
 
 export class PeerDaemon extends EventEmitter {
@@ -44,6 +47,17 @@ export class PeerDaemon extends EventEmitter {
     }
 
     private async ensureKeyPair(): Promise<KeyPair> {
+        // The account's Zen identity wins over the locally generated pair: it is
+        // what `GET /api/chat/pubkey` serves for this user, and peers that have
+        // resolved it will not accept a session key announced over the socket.
+        const zenPair = this.config.zenPair;
+        if (zenPair?.publicKey && zenPair?.secretKey) {
+            if (this.myKeyPair?.publicKey !== zenPair.publicKey) {
+                this.myKeyPair = zenPair;
+                this.keyPairPromise = Promise.resolve(zenPair);
+            }
+            return zenPair;
+        }
         if (this.myKeyPair) return this.myKeyPair;
         if (!this.keyPairPromise) {
             this.keyPairPromise = (async () => {

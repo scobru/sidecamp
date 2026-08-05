@@ -1,11 +1,16 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from './Button';
 import logo from '../assets/logo.png';
+import { openIdentityVault, type KeyPair } from '../services/e2eCrypto';
 
 type Mode = 'register' | 'login';
 
 interface ConnectScreenProps {
-  onConnected: (server: string, token: string) => void;
+  // `chatIdentity` is the account's Zen pair, opened from the vault the login
+  // response carries. This is the only moment the password is in hand, so it
+  // has to be resolved here — null means the account has no vault and chat
+  // falls back to a locally generated pair.
+  onConnected: (server: string, token: string, chatIdentity: KeyPair | null) => void;
 }
 
 function normalizeServer(url: string): string {
@@ -41,7 +46,8 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
       // request) rather than a plain fetch(), so it isn't blocked by the
       // Android webview's CORS restrictions.
       const data = await window.electronAPI.authConnect(server, mode, username, password);
-      onConnected(server, data.token);
+      const chatIdentity = await openIdentityVault(data.zenPriv, password);
+      onConnected(server, data.token, chatIdentity);
     } catch (err: any) {
       setError(err?.message || 'Could not reach that server.');
     } finally {
@@ -55,7 +61,8 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
       setError('Server URL and JWT token both required.');
       return;
     }
-    onConnected(server, manualToken.trim());
+    // Manual token path: no password, so the vault can't be opened.
+    onConnected(server, manualToken.trim(), null);
   };
 
   return (

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0] - 2026-08-05
+
+### Fixed
+- **DMs from the TuneCamp webapp could not be read.** As of instance 4.7.0 chat encrypts to the account's Zen identity (`admin.zen_pub`) rather than to whatever key a socket announces, and the webapp refuses to downgrade to a socket-announced key once it has resolved the identity one. Sidecamp was still using its own locally generated pair, so anything addressed to the account was undecryptable here. Login now opens the account's vault with the password (`openIdentityVault`, `@tunecamp/chat`'s `decryptPairVault`) and both the Electron daemon and the Capacitor adapter encrypt with that pair.
+- The opened pair is kept in `localStorage` next to the token, because the password is not stored and the vault cannot be reopened without a fresh login. Accounts with no vault, and connections made with a bare JWT instead of a login, keep the previous locally generated pair.
+
 ## [0.25.7] - 2026-08-05
 
 ### Fixed

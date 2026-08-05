@@ -46,6 +46,7 @@ import logo from "./assets/logo.png";
 
 import platformAPI, { currentPlatform } from "./services/platform";
 import ConnectScreen from "./components/ConnectScreen";
+import type { KeyPair } from "./services/e2eCrypto";
 import pingSound from "./audio/ping-bing_E_major.wav";
 
 const isCapacitor = currentPlatform.isCapacitor;
@@ -164,6 +165,20 @@ const Waveform = memo(function Waveform({
 	}, [peaks, progress, active]);
 	return <canvas ref={ref} width={140} height={22} className="wave-canvas" />;
 });
+
+// The account's Zen chat identity, opened from the vault at login. Persisted
+// because the password isn't: without this the pair would be lost on restart
+// and the daemon would fall back to a key peers no longer accept.
+const CHAT_IDENTITY_KEY = "tc_chat_identity";
+
+function loadChatIdentity(): KeyPair | null {
+	try {
+		const raw = localStorage.getItem(CHAT_IDENTITY_KEY);
+		return raw ? (JSON.parse(raw) as KeyPair) : null;
+	} catch {
+		return null;
+	}
+}
 
 function App() {
 	const playNotification = useCallback(() => {
@@ -1601,6 +1616,10 @@ function App() {
 				.map((f) => f.trim())
 				.filter(Boolean),
 			allowDownloads: true,
+			// Encrypt DMs to the account's Zen identity when we have it. Without
+			// it the daemon falls back to its own local pair, which peers that
+			// already resolved the identity key will not accept.
+			zenPair: loadChatIdentity(),
 		});
 		connectChat();
 	};
@@ -2360,11 +2379,22 @@ function App() {
 	if (!hasConnected) {
 		return (
 			<ConnectScreen
-				onConnected={(connectedServer, connectedToken) => {
+				onConnected={(connectedServer, connectedToken, chatIdentity) => {
 					setServer(connectedServer);
 					setToken(connectedToken);
 					localStorage.setItem("tc_server", connectedServer);
 					localStorage.setItem("tc_token", connectedToken);
+					// Kept alongside the token, same trust model: the password isn't
+					// stored, so the vault can't be reopened after this without a
+					// fresh login.
+					if (chatIdentity) {
+						localStorage.setItem(
+							CHAT_IDENTITY_KEY,
+							JSON.stringify(chatIdentity),
+						);
+					} else {
+						localStorage.removeItem(CHAT_IDENTITY_KEY);
+					}
 					setHasConnected(true);
 				}}
 			/>
