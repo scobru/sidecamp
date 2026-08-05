@@ -72,10 +72,28 @@ patch('dist/slsk-client/slsk-client.js', 'peer cap + distributed skip', [
   // no limit -> the Electron main event loop starves and the app freezes. Cap the
   // number of concurrent result-peer sockets. Downloads use the type 'F' path,
   // which bypasses the peers map, so they are unaffected.
-  // ponytail: fixed cap of 75; if broad searches still return too few results, raise it.
+  // The cap must EVICT, not reject. `peers` is module-level, is never cleared on
+  // disconnect/reconnect, and peer sockets are held open with no idle timeout — so a
+  // hard `return` at the cap left the map permanently full of the first search's
+  // sockets and every search after it returned 0 results. Drop the oldest entries
+  // (insertion-ordered keys) instead, skipping any peer with an in-flight download,
+  // since download() needs peers[user] to send the transfer request.
   [
     /(default: \{\s*)(peers\[peer\.user\] = new default_peer_1\.DefaultPeer\(net\.createConnection\(\{)/,
-    '$1if (Object.keys(peers).length >= 75) return; // cap result-peer sockets to avoid event-loop starvation on broad searches\n                $2'
+    `$1{
+                    const CAP = 75; // concurrent result-peer sockets
+                    const users = Object.keys(peers);
+                    let live = users.length;
+                    for (let i = 0; i < users.length && live >= CAP; i++) {
+                        const u = users[i];
+                        if (u === peer.user) continue;
+                        if (Object.keys(stack_1.default.download).some(k => k.startsWith(u + '_'))) continue;
+                        try { peers[u].conn.destroy(); } catch (e) { }
+                        delete peers[u];
+                        live--;
+                    }
+                }
+                $2`
   ],
   // Don't join the distributed search network. As a downloader we don't need to
   // relay other users' searches; each DistributedPeer forwards the WHOLE

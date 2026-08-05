@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.1] - 2026-08-05
+
+### Fixed
+- **Soulseek search returned 0 results after the first search.** 0.25.7 made the postinstall patches actually apply, which switched on the 75-socket result-peer cap for the first time. The cap rejected new peers instead of evicting old ones, and `peers` in slsk-client is module-level, never cleared on reconnect, and holds sockets open with no idle timeout — so once the first search filled it, every later search had nowhere to put its result peers. The cap now drops the oldest entries (skipping peers with an in-flight download, which `download()` looks up by user).
+
 ## [0.26.0] - 2026-08-05
 
 ### Fixed
