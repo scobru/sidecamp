@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.7] - 2026-08-05
+
+### Fixed
+- **App stopped responding after sitting idle for a few minutes, with no user action.** `patch_script.cjs` (postinstall) located `andrade-soulseek-downloader` via `path.join(process.cwd(), 'node_modules/…')`, but in this npm-workspaces monorepo the package is hoisted to the root `node_modules` while npm runs the script with cwd `apps/sidecamp`. Every `fs.existsSync` guard failed, so all four patches were skipped without a word. The decisive one is the distributed-search skip: without it, login sends `haveNoParents(1)`, the server keeps pushing `NetInfo`, and each resulting `DistributedPeer` relays the whole Soulseek network's search queries to us. Every query is appended to an unbounded `stack.peerSearchRequests` array deduped with a linear `indexOf`, so cost grows quadratically on the Electron main thread until the window's message pump starves. The app auto-connects to Soulseek at startup when credentials are saved, so this needed no user action to trigger. Resolution now goes through `require.resolve`, and a patch whose regex stops matching logs `NO MATCH … patch not applied` instead of failing silently.
+- **Peer daemon could stack parallel reconnect chains.** `connect()` assigned `reconnectTimer` without clearing the pending one, and its `close`/`error` handlers acted on the `this.ws` field rather than the socket they were bound to — a late event from a superseded socket closed the live one and started a second connect loop, doubling sockets each cycle. Handlers now bind to their own socket, stale ones bail out, and `scheduleReconnect()` keeps at most one timer pending.
+- **Renderer stutter while seeding.** `activeDownloads` was written to `localStorage` on every change and torrent progress lands at ~4Hz per download, making `setItem` (synchronous) run that often. Persisted on a 1s trailing debounce instead.
+- **`dlLogs` grew unbounded**: only 2 of ~45 append sites capped the array. The cap now lives in the setter (200 lines), so no call site can bypass it.
+
+### Removed
+- `apps/graphofone/patch_script.cjs` — dead code. graphofone has no `postinstall` hook and no `andrade-soulseek-downloader` dependency, so it never ran.
+
 ## [0.25.6] - 2026-08-04
 
 ### Fixed

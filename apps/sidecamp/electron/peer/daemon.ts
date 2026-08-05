@@ -163,6 +163,7 @@ export class PeerDaemon extends EventEmitter {
     public stop() {
         this.isRunning = false;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
         if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -194,13 +195,17 @@ export class PeerDaemon extends EventEmitter {
             
             this.emit("status", "connecting");
             
-            this.ws = new WebSocket(wsUrl.toString());
+            // Handlers bind to this local socket, not to the field: a late event from
+            // a socket we already replaced must not close the current one nor stack a
+            // second reconnect chain on top of the live one.
+            const ws = new WebSocket(wsUrl.toString());
+            this.ws = ws;
 
-            this.ws.on('open', () => {
+            ws.on('open', () => {
                 this.emit("log", "WebSocket connesso. In attesa di autorizzazione...");
             });
 
-            this.ws.on('message', async (data: any) => {
+            ws.on('message', async (data: any) => {
                 try {
                     const msg = JSON.parse(data.toString());
                     if (msg.type === 'auth_ok') {
@@ -235,26 +240,38 @@ export class PeerDaemon extends EventEmitter {
                 }
             });
 
-            this.ws.on('close', () => {
+            ws.on('close', () => {
+                if (this.ws !== ws) return; // superseded socket, its replacement owns the state
+                this.ws = null;
                 this.emit("status", "disconnected");
                 this.cleanupStreams();
                 if (this.isRunning) {
                     this.emit("log", "Connessione persa. Riconnessione tra 5s...");
-                    this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+                    this.scheduleReconnect();
                 }
             });
 
-            this.ws.on('error', (err: any) => {
+            ws.on('error', (err: any) => {
                 this.emit("log", `Errore WebSocket: ${err.message}`);
-                this.ws?.close();
+                ws.close();
             });
-            
+
         } catch (err: any) {
             this.emit("log", `Errore di avvio: ${err.message}`);
             if (this.isRunning) {
-                this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+                this.scheduleReconnect();
             }
         }
+    }
+
+    // At most one pending reconnect: without clearing first, two timers race and
+    // each starts its own connect chain, doubling sockets on every cycle.
+    private scheduleReconnect() {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect();
+        }, 5000);
     }
 
     private handleRequest(requestId: string, trackId: string) {

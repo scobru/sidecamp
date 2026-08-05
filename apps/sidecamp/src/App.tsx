@@ -361,7 +361,18 @@ function App() {
 	// Direct Download & Torrent States
 	const [downloadSource, setDownloadSource] = useState("soulseek"); // 'soulseek' | 'direct'
 	const [directUrl, setDirectUrl] = useState("");
-	const [dlLogs, setDlLogs] = useState<string[]>([]);
+	const [dlLogs, _setDlLogs] = useState<string[]>([]);
+	// ~45 call sites append to this; capping here instead of at each one is the
+	// only way the array can't grow unbounded over a long session.
+	const DL_LOG_CAP = 200;
+	const setDlLogs: typeof _setDlLogs = (action) =>
+		_setDlLogs((prev) => {
+			const next =
+				typeof action === "function"
+					? (action as (p: string[]) => string[])(prev)
+					: action;
+			return next.length > DL_LOG_CAP ? next.slice(-DL_LOG_CAP) : next;
+		});
 	const [dlProgress, setDlProgress] = useState<any>(null);
 	const [isDownloading, setIsDownloading] = useState(false);
 	const [settingsSaved, setSettingsSaved] = useState(false);
@@ -377,15 +388,22 @@ function App() {
 		}
 	});
 
+	// Torrent progress rewrites this at ~4Hz per active download and
+	// localStorage.setItem is synchronous — persist on a trailing debounce so
+	// seeding doesn't block the renderer on every tick. Only the entries matter
+	// across restarts (auto-resume), not the last second of progress.
 	useEffect(() => {
-		try {
-			localStorage.setItem(
-				"sidecamp_active_downloads",
-				JSON.stringify(activeDownloads),
-			);
-		} catch (e) {
-			console.error("Failed to save active_downloads:", e);
-		}
+		const t = setTimeout(() => {
+			try {
+				localStorage.setItem(
+					"sidecamp_active_downloads",
+					JSON.stringify(activeDownloads),
+				);
+			} catch (e) {
+				console.error("Failed to save active_downloads:", e);
+			}
+		}, 1000);
+		return () => clearTimeout(t);
 	}, [activeDownloads]);
 	const [searchSource, setSearchSource] = useState("soulseek"); // 'soulseek' | 'soundcloud' | 'bandcamp' | 'torrent'
 	const [downloadedFiles, setDownloadedFiles] = useState<any[]>([]);
@@ -527,9 +545,10 @@ function App() {
 
 		// Listen to download logs and progress
 		window.electronAPI.onDownloadLog((msg: string) => {
-			setDlLogs((prev) =>
-				[...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-50),
-			);
+			setDlLogs((prev) => [
+				...prev,
+				`[${new Date().toLocaleTimeString()}] ${msg}`,
+			]);
 		});
 
 		// Torrent progress can fire many times per second and each event re-renders the
