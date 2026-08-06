@@ -1902,6 +1902,8 @@ function App() {
 				handleUploadFileAuto(filePath);
 			}
 		} catch (err: any) {
+			// The user cancelled; handleCancelTorrent already dropped the row.
+			if (isCancelledTorrent(err)) return;
 			setDlLogs((prev) => [
 				...prev,
 				`[${source.toUpperCase()}] Error during download: ${err.message || err}`,
@@ -1990,6 +1992,8 @@ function App() {
 				}
 			}
 		} catch (err: any) {
+			// The user cancelled; handleCancelTorrent already dropped the row.
+			if (isCancelledTorrent(err)) return;
 			setDlLogs((prev) => [
 				...prev,
 				`Error during process: ${err.message || err}`,
@@ -2095,6 +2099,43 @@ function App() {
 		}
 	};
 
+	/**
+	 * A cancelled download rejects its pending `torrentDownload` call. Electron
+	 * wraps the reason in its own message, so match on the substring rather
+	 * than comparing. Callers use this to stay quiet instead of reporting a
+	 * transfer the user stopped on purpose as a failure.
+	 */
+	const isCancelledTorrent = (e: any) =>
+		String(e?.message || e).includes("TORRENT_CANCELLED");
+
+	/**
+	 * Cancel a transfer that is still downloading. Unlike "Stop Seeding" this
+	 * drops the row outright — a half-finished torrent the user cancelled is
+	 * not a failure to retry, and leaving it listed as one invites a Resume
+	 * that restarts exactly what was just stopped.
+	 *
+	 * Targets `id` before `infoHash`: a torrent cancelled before its metadata
+	 * arrived has no infoHash yet, and the main process indexes in-flight
+	 * downloads under both.
+	 */
+	const handleCancelTorrent = async (dl: any) => {
+		const label = dl.name || dl.id;
+		if (!confirm(`Cancel the download of "${label}"?`)) return;
+		try {
+			await window.electronAPI.removeTorrent(dl.id || dl.infoHash);
+			setDlLogs((prev) => [...prev, `[Torrent] Download cancelled: ${label}`]);
+		} catch (e: any) {
+			console.error("Error cancelling torrent:", e);
+			setDlLogs((prev) => [
+				...prev,
+				`[Torrent] Cancel failed for ${label}: ${e.message || e}`,
+			]);
+		}
+		// Off the list either way: if remove() failed the torrent is in a state
+		// the row can no longer act on, and the partial file stays on disk.
+		setActiveDownloads((prev) => prev.filter((d) => d.id !== dl.id));
+	};
+
 	const handleResumeTorrent = async (dl: any) => {
 		if (!dl.magnetUri) {
 			alert("No magnet link available to resume this transfer.");
@@ -2126,6 +2167,9 @@ function App() {
 				loadDownloadedFiles();
 			}
 		} catch (e: any) {
+			// Cancelling is handled by handleCancelTorrent, which already
+			// dropped the row; marking it failed here would resurrect it.
+			if (isCancelledTorrent(e)) return;
 			setActiveDownloads((prev) =>
 				prev.map((d) => (d.id === dl.id ? { ...d, status: "failed" } : d)),
 			);
@@ -6382,6 +6426,18 @@ function App() {
 															}}
 														>
 															Stop Seeding
+														</Button>
+													)}
+													{isDownloading && (
+														<Button
+															variant="secondary"
+															onClick={() => handleCancelTorrent(dl)}
+															style={{
+																padding: "0.3rem 0.7rem",
+																fontSize: "0.8rem",
+															}}
+														>
+															Cancel
 														</Button>
 													)}
 													{(isFailed || isDownloading) && dl.magnetUri && (

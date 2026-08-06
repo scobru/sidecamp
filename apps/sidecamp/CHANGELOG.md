@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.3] - 2026-08-06
+
+### Added
+- **Cancel a torrent that is still downloading.** The transfer row only offered `Stop Seeding` (once finished) and `Clear` (once failed or completed), so an in-flight download could be resumed but never stopped — the only way out was to let it fail or restart the app. Downloading rows now carry a `Cancel` button, which confirms, removes the torrent, and drops the row rather than marking it failed: a transfer the user stopped on purpose is not something to retry, and listing it as failed invited a `Resume` that restarted exactly what was just stopped.
+
+### Fixed
+- **A removed torrent left its `torrent:download` IPC call pending forever.** WebTorrent's `remove()` fires neither `done` nor `error`, so the promise `TorrentService.download()` returns never settled and the renderer's `await` never returned. In-flight downloads are now tracked under both their downloadId and their infoHash — the latter only exists once metadata arrives, so cancelling early can only be addressed by id — and `remove()` settles the pending promise after the torrent is gone. `stop()` settles anything still in flight for the same reason.
+
 ## [0.26.2] - 2026-08-06
 
 ### Fixed

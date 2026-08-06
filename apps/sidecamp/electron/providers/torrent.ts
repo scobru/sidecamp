@@ -2,11 +2,30 @@ import type WebTorrent from 'webtorrent';
 import { EventEmitter } from 'events';
 import path from 'path';
 
+/**
+ * Rejection reason for a download the user stopped on purpose. The renderer
+ * checks for it so a cancellation isn't reported as a failed transfer.
+ */
+export const CANCELLED = 'TORRENT_CANCELLED';
+
+interface PendingDownload {
+    /** Only known once metadata arrives, which is after `add()` returns. */
+    infoHash?: string;
+    /** Settles the in-flight `download()` promise. */
+    cancel: () => void;
+}
+
 export class TorrentService extends EventEmitter {
     private client: WebTorrent.Instance | null = null;
     private downloadDir: string;
     private port: number;
     private seededFiles: Map<string, string> = new Map(); // filePath -> magnetURI
+    /**
+     * In-flight downloads, keyed by downloadId *and* by infoHash once known —
+     * both entries point at the same object, so `remove()` can be called with
+     * whichever identifier the caller happens to hold.
+     */
+    private pending: Map<string, PendingDownload> = new Map();
 
     constructor(downloadDir: string, port?: number) {
         super();
@@ -89,8 +108,28 @@ export class TorrentService extends EventEmitter {
             }
             this.emit('log', `Inizio download magnet...`);
 
+            // WebTorrent's remove() fires neither 'done' nor 'error', so a
+            // cancelled download would leave this promise — and the IPC call
+            // awaiting it — pending forever. Registering a settle handle here
+            // is what lets remove() end it.
+            const keys: string[] = [];
+            const forget = () => { for (const k of keys) this.pending.delete(k); };
+            const entry: PendingDownload = {
+                cancel: () => { forget(); reject(new Error(CANCELLED)); },
+            };
+            if (downloadId) {
+                keys.push(downloadId);
+                this.pending.set(downloadId, entry);
+            }
+
             client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
+
+                // Metadata is the first point the infoHash exists; a cancel
+                // before now can only arrive by downloadId.
+                entry.infoHash = torrent.infoHash;
+                keys.push(torrent.infoHash);
+                this.pending.set(torrent.infoHash, entry);
 
                 let lastEmit = 0;
                 const emitProgress = (force = false) => {
@@ -120,20 +159,29 @@ export class TorrentService extends EventEmitter {
                     emitProgress(true);
                     this.emit('log', `Download completato e in seeding: ${torrent.name}`);
                     const files = torrent.files.map(f => path.join(this.downloadDir, f.path));
+                    forget();
                     resolve(files);
                 });
 
                 torrent.on('error', (err) => {
+                    forget();
                     reject(err);
                 });
             });
         });
     }
 
-    public async remove(infoHash: string) {
-        if (!infoHash || infoHash === 'undefined') {
+    /**
+     * Stop a torrent, whether it is seeding or still downloading. Accepts an
+     * infoHash or the downloadId the transfer was started with — a download
+     * cancelled before its metadata arrived has no infoHash yet.
+     */
+    public async remove(idOrInfoHash: string) {
+        if (!idOrInfoHash || idOrInfoHash === 'undefined') {
             return;
         }
+        const pending = this.pending.get(idOrInfoHash);
+        const infoHash = pending?.infoHash ?? idOrInfoHash;
         if (this.client) {
             try {
                 const torrent = await this.client.get(infoHash);
@@ -150,6 +198,9 @@ export class TorrentService extends EventEmitter {
                 console.error("Error removing torrent:", err);
             }
         }
+        // Last, so the torrent is already gone by the time the caller's await
+        // returns. No-op for a torrent that finished and is only seeding.
+        pending?.cancel();
     }
 
     public stop() {
@@ -158,5 +209,8 @@ export class TorrentService extends EventEmitter {
             this.client = null;
             this.seededFiles.clear();
         }
+        // Settle anything still in flight; destroy() fires no per-torrent events.
+        for (const entry of new Set(this.pending.values())) entry.cancel();
+        this.pending.clear();
     }
 }
