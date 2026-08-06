@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.2] - 2026-08-06
+
+### Fixed
+- **DMs would have become unreadable again once the instance re-sealed the account vault.** The lockfile still pinned `@tunecamp/chat` at `1289624`, whose `decryptPairVault` only understands the old blob format. Instance 5.0.0 re-seals every vault at login as `tcv1:<iterations>:<salt>:<blob>` (PBKDF2 at 600 000 iterations instead of a single SHA-256), and the old reader returns `null` on that — which `openIdentityVault` treats as "no vault" and silently falls back to a locally generated pair, exactly the failure 0.26.0 fixed. Bumped to 2.0.0.
+- Comes with the rest of 2.0.0: peer keys are pinned trust-on-first-use and a key that changes fingerprint is refused rather than adopted silently, and a DM whose recipient key cannot be resolved is refused instead of being sent in the clear.
+
 ## [0.26.1] - 2026-08-05
 
 ### Fixed
