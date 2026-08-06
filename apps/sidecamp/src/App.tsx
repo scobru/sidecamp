@@ -489,7 +489,7 @@ function App() {
 	const showOrganize = libraryPanel === "organize";
 	const [organizeRoot, setOrganizeRoot] = useState("");
 	const [organizeMode, setOrganizeMode] = useState<
-		"artist" | "artist-album" | "genre"
+		"artist" | "artist-album" | "genre" | "genre-artist"
 	>("artist");
 	const [organizePlan, setOrganizePlan] = useState<{
 		actions: { type: string; from: string; to: string }[];
@@ -843,6 +843,7 @@ function App() {
 					track.id,
 					track.artist,
 					track.title,
+					downloadId,
 				);
 			} else if (selectedPeer.isCatalog) {
 				filePath = await window.electronAPI.downloadFederatedCatalogTrack(
@@ -850,6 +851,7 @@ function App() {
 					track.id,
 					track.artist,
 					track.title,
+					downloadId,
 				);
 			} else {
 				filePath = await window.electronAPI.downloadPeerTrack(
@@ -860,6 +862,7 @@ function App() {
 					track.artist,
 					track.title,
 					selectedPeer.origin,
+					downloadId,
 				);
 			}
 			setDlLogs((prev) => [
@@ -1859,7 +1862,10 @@ function App() {
 				source === "archive" ||
 				source === "youtube"
 			) {
-				filePath = await window.electronAPI.ytdlpDownload(result.url);
+				filePath = await window.electronAPI.ytdlpDownload(
+					result.url,
+					downloadId,
+				);
 			} else if (source === "torrent_search") {
 				const paths = await window.electronAPI.torrentDownload(
 					result.url,
@@ -1875,6 +1881,7 @@ function App() {
 					result.artist,
 					result.title,
 					result.origin,
+					downloadId,
 				);
 			} else if (source === "catalog") {
 				filePath = await window.electronAPI.downloadCatalogTrack(
@@ -1883,6 +1890,7 @@ function App() {
 					result.trackId,
 					result.artist,
 					result.title,
+					downloadId,
 				);
 			} else {
 				filePath = await window.electronAPI.slskDownload(result);
@@ -1961,7 +1969,10 @@ function App() {
 					...prev,
 					`Web URL detected (SoundCloud/Bandcamp/YouTube/etc.). Starting extraction with YT-DLP...`,
 				]);
-				const singlePath = await window.electronAPI.ytdlpDownload(directUrl);
+				const singlePath = await window.electronAPI.ytdlpDownload(
+					directUrl,
+					tempId,
+				);
 				resultPaths = [singlePath];
 				setDlLogs((prev) => [
 					...prev,
@@ -3561,6 +3572,7 @@ function App() {
 										<option value="artist">By Artist</option>
 										<option value="artist-album">By Artist / Album</option>
 										<option value="genre">By Genre</option>
+										<option value="genre-artist">By Genre / Artist</option>
 									</select>
 									<Button
 										variant="primary"
@@ -6486,6 +6498,9 @@ function App() {
 												dl.progress !== undefined) && (
 												<ProgressBar
 													progress={progressVal}
+													indeterminate={
+														isDownloading && dl.progress === undefined
+													}
 													speed={speedText}
 													downloaded={dl.downloaded}
 													total={dl.total}

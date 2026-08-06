@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   torrentSeed: (input: string | string[], torrentName?: string) => ipcRenderer.invoke('torrent:seed', input, torrentName),
   
   // Ytdlp
-  ytdlpDownload: (url: string) => ipcRenderer.invoke('ytdlp:download', url),
+  ytdlpDownload: (url: string, downloadId?: string) => ipcRenderer.invoke('ytdlp:download', url, downloadId),
   
   // Local downloads library
   listDownloads: (extraRoots?: string[]) => ipcRenderer.invoke('downloads:list', extraRoots),
@@ -91,11 +91,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
   getChatPeers: (server: string, token: string) => ipcRenderer.invoke('network:chat-peers', server, token),
   getPeerTracks: (server: string, token: string, sessionId: string, origin?: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId, origin),
-  downloadPeerTrack: (server: string, token: string, sessionId: string, trackId: string, artist: string, title: string, origin?: string) => ipcRenderer.invoke('network:download', server, token, sessionId, trackId, artist, title, origin),
+  downloadPeerTrack: (server: string, token: string, sessionId: string, trackId: string, artist: string, title: string, origin?: string, downloadId?: string) => ipcRenderer.invoke('network:download', server, token, sessionId, trackId, artist, title, origin, downloadId),
   getCatalogTracks: (server: string, token: string) => ipcRenderer.invoke('network:catalog-tracks', server, token),
-  downloadCatalogTrack: (server: string, token: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:catalog-download', server, token, trackId, artist, title),
+  downloadCatalogTrack: (server: string, token: string, trackId: string, artist: string, title: string, downloadId?: string) => ipcRenderer.invoke('network:catalog-download', server, token, trackId, artist, title, downloadId),
   getCommunitySites: (server: string) => ipcRenderer.invoke('network:community-sites', server),
   getFederatedCatalog: (origin: string) => ipcRenderer.invoke('network:federated-catalog', origin),
-  downloadFederatedCatalogTrack: (origin: string, trackId: string, artist: string, title: string) => ipcRenderer.invoke('network:federated-catalog-download', origin, trackId, artist, title),
+  downloadFederatedCatalogTrack: (origin: string, trackId: string, artist: string, title: string, downloadId?: string) => ipcRenderer.invoke('network:federated-catalog-download', origin, trackId, artist, title, downloadId),
 })
 // End of file

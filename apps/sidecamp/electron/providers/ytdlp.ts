@@ -103,7 +103,7 @@ export class YtdlpService extends EventEmitter {
         });
     }
 
-    public async download(url: string): Promise<string> {
+    public async download(url: string, downloadId?: string): Promise<string> {
         try {
             new URL(url);
         } catch (e) {
@@ -144,8 +144,20 @@ export class YtdlpService extends EventEmitter {
                 resolve(downloadedFile);
             });
 
-            child.stdout?.on('data', (data) => this.emit('log', data.toString().trim()));
-            child.stderr?.on('data', (data) => this.emit('log', data.toString().trim()));
+            // yt-dlp non ha un canale di progresso machine-readable: le righe stdout
+            // "[download]  42.3%" sono l'unico segnale. ponytail: solo percentuale — byte/velocita'
+            // richiederebbero --newline e un parser piu' completo, e alla barra basta muoversi.
+            const onChunk = (data: Buffer | string) => {
+                const text = data.toString();
+                this.emit('log', text.trim());
+                if (!downloadId) return;
+                const pct = [...text.matchAll(/\[download\]\s+(\d{1,3}(?:\.\d+)?)%/g)].pop();
+                // sotto 1: dopo il download parte l'estrazione ffmpeg, e il renderer marca
+                // la riga come "completed" a progress >= 1
+                if (pct) this.emit('progress', { id: downloadId, progress: Math.min(parseFloat(pct[1]) / 100, 0.99) });
+            };
+            child.stdout?.on('data', onChunk);
+            child.stderr?.on('data', onChunk);
         });
     }
 }

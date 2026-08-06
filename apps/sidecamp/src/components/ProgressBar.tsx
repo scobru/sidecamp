@@ -9,6 +9,8 @@ interface ProgressBarProps {
   animated?: boolean;
   className?: string;
   showPercent?: boolean;
+  /** Nessun progresso in byte disponibile (es. Soulseek) - barra in movimento invece di uno 0% fermo. */
+  indeterminate?: boolean;
 }
 
 export function ProgressBar({ 
@@ -19,7 +21,8 @@ export function ProgressBar({
   total,
   animated = true,
   className = '',
-  showPercent = true
+  showPercent = true,
+  indeterminate = false
 }: ProgressBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const [displayProgress, setDisplayProgress] = useState(progress);
@@ -57,6 +60,13 @@ export function ProgressBar({
         </div>
       )}
       <div className="progress-bar-track">
+        {indeterminate ? (
+          <div
+            className="progress-bar-fill indeterminate"
+            role="progressbar"
+            aria-label={label || 'Download progress'}
+          />
+        ) : (
         <div 
           ref={barRef}
           className={`progress-bar-fill ${animated && progress > 0 && progress < 1 ? 'animated' : ''}`}
@@ -71,6 +81,7 @@ export function ProgressBar({
             <span className="progress-percent" aria-hidden="true">{pct}%</span>
           )}
         </div>
+        )}
       </div>
       {(downloaded !== undefined || total !== undefined) && (
         <div className="progress-meta">

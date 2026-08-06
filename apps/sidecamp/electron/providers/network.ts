@@ -1,12 +1,48 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import { EventEmitter } from 'events';
 
-export class NetworkService {
+export class NetworkService extends EventEmitter {
   private downloadDir: string;
 
   constructor(downloadDir: string) {
+    super();
     this.downloadDir = downloadDir;
+  }
+
+  /** Scrive una risposta in streaming nella cartella download, emettendo 'progress' se c'e' un downloadId. */
+  private saveStream(response: any, artist: string, title: string, downloadId?: string): Promise<string> {
+    const match = String(response.headers['content-disposition'] || '').match(/filename="(.+?)"/);
+    const filename = (match ? match[1] : `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`)
+      .replace(/[<>:"/\\|?*]/g, '_');
+    const destPath = path.join(this.downloadDir, filename);
+
+    const total = Number(response.headers['content-length']) || 0;
+    let downloaded = 0;
+    let lastEmit = 0;
+    if (downloadId) {
+      response.data.on('data', (chunk: Buffer) => {
+        downloaded += chunk.length;
+        const now = Date.now();
+        if (now - lastEmit < 250) return;
+        lastEmit = now;
+        // sotto 1: il renderer marca la riga completata a progress >= 1, prima che il file sia chiuso
+        this.emit('progress', {
+          id: downloadId,
+          progress: total ? Math.min(downloaded / total, 0.99) : 0,
+          downloaded,
+          total: total || undefined,
+        });
+      });
+    }
+
+    const writer = fs.createWriteStream(destPath);
+    response.data.pipe(writer);
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => resolve(destPath));
+      writer.on('error', reject);
+    });
   }
 
   public async authConnect(server: string, mode: 'login' | 'register', username: string, password: string) {
@@ -37,7 +73,8 @@ export class NetworkService {
     origin: string,
     trackId: string,
     artist: string,
-    title: string
+    title: string,
+    downloadId?: string
   ): Promise<string> {
     // Streams directly from the remote instance's public /stream endpoint —
     // no local server/token involved, unlike downloadCatalogTrack/downloadPeerTrack.
@@ -49,26 +86,7 @@ export class NetworkService {
     }
 
     const response = await axios({ method: 'get', url, responseType: 'stream' });
-
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`;
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="(.+?)"/);
-      if (match) {
-        filename = match[1];
-      }
-    }
-
-    filename = filename.replace(/[<>:"/\\|?*]/g, '_');
-    const destPath = path.join(this.downloadDir, filename);
-
-    const writer = fs.createWriteStream(destPath);
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(destPath));
-      writer.on('error', (err) => reject(err));
-    });
+    return this.saveStream(response, artist, title, downloadId);
   }
 
   public async getPeers(server: string, token: string) {
@@ -109,7 +127,8 @@ export class NetworkService {
     trackId: string,
     artist: string,
     title: string,
-    origin?: string
+    origin?: string,
+    downloadId?: string
   ): Promise<string> {
     // Remote federated instances have no knowledge of our local JWT and expose
     // their download endpoint publicly (opt-in), so we fetch directly from the
@@ -129,26 +148,7 @@ export class NetworkService {
       headers: origin ? {} : { 'Authorization': `Bearer ${token}` }
     });
 
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`;
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="(.+?)"/);
-      if (match) {
-        filename = match[1];
-      }
-    }
-    
-    // Sanitize filename
-    filename = filename.replace(/[<>:"/\\|?*]/g, '_');
-    const destPath = path.join(this.downloadDir, filename);
-
-    const writer = fs.createWriteStream(destPath);
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(destPath));
-      writer.on('error', (err) => reject(err));
-    });
+    return this.saveStream(response, artist, title, downloadId);
   }
 
   public async getCatalogTracks(server: string, token: string) {
@@ -164,7 +164,8 @@ export class NetworkService {
     token: string,
     trackId: string,
     artist: string,
-    title: string
+    title: string,
+    downloadId?: string
   ): Promise<string> {
     const cleanServer = server.replace(/\/$/, '');
     const url = `${cleanServer}/api/tracks/${trackId}/download`;
@@ -180,25 +181,6 @@ export class NetworkService {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`;
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="(.+?)"/);
-      if (match) {
-        filename = match[1];
-      }
-    }
-    
-    // Sanitize filename
-    filename = filename.replace(/[<>:"/\\|?*]/g, '_');
-    const destPath = path.join(this.downloadDir, filename);
-
-    const writer = fs.createWriteStream(destPath);
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(destPath));
-      writer.on('error', (err) => reject(err));
-    });
+    return this.saveStream(response, artist, title, downloadId);
   }
 }

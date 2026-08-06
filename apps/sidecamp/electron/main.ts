@@ -157,6 +157,8 @@ const uploader = new TuneCampUploader({ server: '', token: '' }); // Configured 
 torrent.on('log', (msg) => win?.webContents.send('download:log', `[Torrent] ${msg}`));
 torrent.on('progress', (data) => win?.webContents.send('download:progress', data));
 ytdlp.on('log', (msg) => win?.webContents.send('download:log', `[YT-DLP] ${msg}`));
+ytdlp.on('progress', (data) => win?.webContents.send('download:progress', data));
+network.on('progress', (data) => win?.webContents.send('download:progress', data));
 
 // --- Uploader IPC ---
 ipcMain.handle('upload:config', (event, server, token) => {
@@ -494,8 +496,8 @@ ipcMain.handle('config:set', (_event, key: string, value: any) => {
 });
 
 // --- Yt-dlp IPC ---
-ipcMain.handle('ytdlp:download', async (event, url) => {
-  return await ytdlp.download(url);
+ipcMain.handle('ytdlp:download', async (event, url, downloadId) => {
+  return await ytdlp.download(url, downloadId);
 });
 
 // --- Peer Daemon IPC ---
@@ -753,16 +755,16 @@ ipcMain.handle('network:tracks', async (event, server, token, sessionId, origin)
   return await network.getPeerTracks(server, token, sessionId, origin);
 });
 
-ipcMain.handle('network:download', async (event, server, token, sessionId, trackId, artist, title, origin) => {
-  return await network.downloadPeerTrack(server, token, sessionId, trackId, artist, title, origin);
+ipcMain.handle('network:download', async (event, server, token, sessionId, trackId, artist, title, origin, downloadId) => {
+  return await network.downloadPeerTrack(server, token, sessionId, trackId, artist, title, origin, downloadId);
 });
 
 ipcMain.handle('network:catalog-tracks', async (event, server, token) => {
   return await network.getCatalogTracks(server, token);
 });
 
-ipcMain.handle('network:catalog-download', async (event, server, token, trackId, artist, title) => {
-  return await network.downloadCatalogTrack(server, token, trackId, artist, title);
+ipcMain.handle('network:catalog-download', async (event, server, token, trackId, artist, title, downloadId) => {
+  return await network.downloadCatalogTrack(server, token, trackId, artist, title, downloadId);
 });
 
 ipcMain.handle('network:community-sites', async (event, server) => {
@@ -773,8 +775,8 @@ ipcMain.handle('network:federated-catalog', async (event, origin) => {
   return await network.getFederatedCatalog(origin);
 });
 
-ipcMain.handle('network:federated-catalog-download', async (event, origin, trackId, artist, title) => {
-  return await network.downloadFederatedCatalogTrack(origin, trackId, artist, title);
+ipcMain.handle('network:federated-catalog-download', async (event, origin, trackId, artist, title, downloadId) => {
+  return await network.downloadFederatedCatalogTrack(origin, trackId, artist, title, downloadId);
 });
 
 app.whenReady().then(() => {

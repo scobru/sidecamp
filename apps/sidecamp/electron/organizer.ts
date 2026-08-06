@@ -18,7 +18,7 @@ export interface Track {
   inferred: boolean;
 }
 
-export type OrganizeMode = 'artist' | 'artist-album' | 'genre';
+export type OrganizeMode = 'artist' | 'artist-album' | 'genre' | 'genre-artist';
 
 export interface Action {
   type: 'move' | 'duplicate';
@@ -132,8 +132,10 @@ export function buildPlan(tracks: Track[], root: string, mode: OrganizeMode): Pl
     const artist = sanitize(keeper.artist || 'Unknown Artist');
     const title = sanitize(keeper.title || path.basename(keeper.path, path.extname(keeper.path)));
     const fileName = `${artist} - ${title}${keeper.ext}`;
+    const genreDir = () => sanitize(keeper.genre || 'Unknown Genre');
     const destDir =
-      mode === 'genre' ? path.join(root, sanitize(keeper.genre || 'Unknown Genre')) :
+      mode === 'genre' ? path.join(root, genreDir()) :
+      mode === 'genre-artist' ? path.join(root, genreDir(), artist) :
       mode === 'artist-album' && keeper.album ? path.join(root, artist, sanitize(keeper.album)) :
       path.join(root, artist);
     const target = uniqueTarget(path.join(destDir, fileName));

@@ -71,6 +71,16 @@ describe('buildPlan', () => {
     expect(new Set(targets).size).toBe(targets.length);
   });
 
+  it('genre-artist mode nests Artist under Genre', () => {
+    const a = track({ path: path.join(ROOT, 'a.mp3'), artist: 'X', title: 'A', genre: 'Techno' });
+    const b = track({ path: path.join(ROOT, 'b.mp3'), artist: 'Y', title: 'B' });
+    const plan = buildPlan([a, b], ROOT, 'genre-artist');
+    expect(plan.actions.map(x => x.to).sort()).toEqual([
+      path.join(ROOT, 'Techno', 'X', 'X - A.mp3'),
+      path.join(ROOT, 'Unknown Genre', 'Y', 'Y - B.mp3'),
+    ].sort());
+  });
+
   it('album mode nests under Artist/Album', () => {
     const t = track({ path: path.join(ROOT, 'x.mp3'), artist: 'X', title: 'A', album: 'Discovery' });
     const plan = buildPlan([t], ROOT, 'artist-album');
