@@ -677,7 +677,7 @@ export function createCapacitorAdapter() {
 		},
 
 		openDownload: async (_filePath: string) => {},
-		removeTorrent: async (_infoHash: string) => {},
+		removeTorrent: async (_infoHash: string, _deleteFiles?: boolean) => {},
 		readTags: async (_filePath: string) => ({
 			title: "",
 			artist: "",

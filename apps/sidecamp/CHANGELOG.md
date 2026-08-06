@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.4] - 2026-08-06
+
+### Changed
+- **Cancelling a download now discards its partial data.** 0.26.3 stopped the transfer but left the fragment on disk, where the next Resume of the same magnet would inherit it silently. `TorrentService.remove()` gained a `deleteFiles` argument (WebTorrent's `destroyStore`) that defaults to false and is passed only by Cancel — the same method backs `Stop Seeding`, where the files are a completed download the user asked to keep, so deleting there would destroy real data. The confirmation dialog states that the partial data will be deleted.
+
 ## [0.26.3] - 2026-08-06
 
 ### Added

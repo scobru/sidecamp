@@ -2117,13 +2117,26 @@ function App() {
 	 * Targets `id` before `infoHash`: a torrent cancelled before its metadata
 	 * arrived has no infoHash yet, and the main process indexes in-flight
 	 * downloads under both.
+	 *
+	 * Passes `deleteFiles` — the partial data is an unplayable fragment, and
+	 * leaving it behind means the next Resume of the same magnet inherits it
+	 * silently. "Stop Seeding" deliberately does not pass it: there the files
+	 * are a finished download.
 	 */
 	const handleCancelTorrent = async (dl: any) => {
 		const label = dl.name || dl.id;
-		if (!confirm(`Cancel the download of "${label}"?`)) return;
+		if (
+			!confirm(
+				`Cancel the download of "${label}"?\n\nThe partially downloaded data will be deleted.`,
+			)
+		)
+			return;
 		try {
-			await window.electronAPI.removeTorrent(dl.id || dl.infoHash);
-			setDlLogs((prev) => [...prev, `[Torrent] Download cancelled: ${label}`]);
+			await window.electronAPI.removeTorrent(dl.id || dl.infoHash, true);
+			setDlLogs((prev) => [
+				...prev,
+				`[Torrent] Download cancelled and partial data deleted: ${label}`,
+			]);
 		} catch (e: any) {
 			console.error("Error cancelling torrent:", e);
 			setDlLogs((prev) => [
@@ -2132,7 +2145,7 @@ function App() {
 			]);
 		}
 		// Off the list either way: if remove() failed the torrent is in a state
-		// the row can no longer act on, and the partial file stays on disk.
+		// the row can no longer act on.
 		setActiveDownloads((prev) => prev.filter((d) => d.id !== dl.id));
 	};
 

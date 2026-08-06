@@ -175,8 +175,13 @@ export class TorrentService extends EventEmitter {
      * Stop a torrent, whether it is seeding or still downloading. Accepts an
      * infoHash or the downloadId the transfer was started with — a download
      * cancelled before its metadata arrived has no infoHash yet.
+     *
+     * `deleteFiles` discards the data on disk as well. It defaults to false and
+     * must stay that way: this same method backs "Stop Seeding", where the
+     * files are a finished download the user asked to keep. Only cancelling an
+     * in-progress transfer, whose files are an unusable fragment, passes true.
      */
-    public async remove(idOrInfoHash: string) {
+    public async remove(idOrInfoHash: string, deleteFiles = false) {
         if (!idOrInfoHash || idOrInfoHash === 'undefined') {
             return;
         }
@@ -186,13 +191,15 @@ export class TorrentService extends EventEmitter {
             try {
                 const torrent = await this.client.get(infoHash);
                 if (torrent) {
-                    this.emit('log', `Rimozione torrent e stop seeding per: ${torrent.name}`);
+                    this.emit('log', deleteFiles
+                        ? `Download annullato ed eliminato: ${torrent.name}`
+                        : `Rimozione torrent e stop seeding per: ${torrent.name}`);
                     for (const [file, magnet] of this.seededFiles.entries()) {
                         if (magnet === torrent.magnetURI) {
                             this.seededFiles.delete(file);
                         }
                     }
-                    await this.client.remove(torrent.infoHash);
+                    await this.client.remove(torrent.infoHash, { destroyStore: deleteFiles });
                 }
             } catch (err: any) {
                 console.error("Error removing torrent:", err);

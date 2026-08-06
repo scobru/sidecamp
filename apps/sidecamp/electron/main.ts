@@ -476,8 +476,8 @@ ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
   return magnetUri;
 });
 
-ipcMain.handle('torrent:remove', async (event, infoHash) => {
-  await torrent.remove(infoHash);
+ipcMain.handle('torrent:remove', async (event, infoHash, deleteFiles = false) => {
+  await torrent.remove(infoHash, deleteFiles);
   if (daemon) {
     daemon.refreshAndSendManifest();
   }

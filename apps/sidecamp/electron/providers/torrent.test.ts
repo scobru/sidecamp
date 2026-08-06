@@ -62,7 +62,39 @@ describe('TorrentService cancellation', () => {
         await svc.remove('abc123');
 
         await expect(pending).rejects.toThrow(CANCELLED);
-        expect(fakeClient.remove).toHaveBeenCalledWith('abc123');
+        expect(fakeClient.remove).toHaveBeenCalledWith('abc123', {
+            destroyStore: false,
+        });
+    });
+
+    it('discards the partial data only when asked', async () => {
+        const svc = new TorrentService('/downloads');
+        const pending = svc.download('magnet:?xt=urn:btih:abc123', 'dl-1');
+        await new Promise((r) => setTimeout(r, 0));
+
+        await svc.remove('dl-1', true);
+
+        await expect(pending).rejects.toThrow(CANCELLED);
+        expect(fakeClient.remove).toHaveBeenCalledWith('abc123', {
+            destroyStore: true,
+        });
+    });
+
+    it('does not delete files when seeding is stopped', async () => {
+        // The regression that matters: Stop Seeding and Cancel share remove(),
+        // and a completed torrent's files are the user's download.
+        const svc = new TorrentService('/downloads');
+        const pending = svc.download('magnet:?xt=urn:btih:abc123', 'dl-1');
+        await new Promise((r) => setTimeout(r, 0));
+        torrents[0].done = true;
+        torrents[0].emit('done');
+        await pending;
+
+        await svc.remove('abc123');
+
+        expect(fakeClient.remove).toHaveBeenCalledWith('abc123', {
+            destroyStore: false,
+        });
     });
 
     it('settles a download cancelled by downloadId', async () => {
@@ -74,7 +106,9 @@ describe('TorrentService cancellation', () => {
 
         await expect(pending).rejects.toThrow(CANCELLED);
         // Resolved through the downloadId, so the torrent itself still went.
-        expect(fakeClient.remove).toHaveBeenCalledWith('abc123');
+        expect(fakeClient.remove).toHaveBeenCalledWith('abc123', {
+            destroyStore: false,
+        });
     });
 
     it('settles a download cancelled before its metadata arrived', async () => {
@@ -103,7 +137,9 @@ describe('TorrentService cancellation', () => {
         // Stop Seeding after completion must not reject an already-resolved
         // download, and must still remove the torrent.
         await expect(svc.remove('abc123')).resolves.toBeUndefined();
-        expect(fakeClient.remove).toHaveBeenCalledWith('abc123');
+        expect(fakeClient.remove).toHaveBeenCalledWith('abc123', {
+            destroyStore: false,
+        });
     });
 
     it('ignores a removal with no usable identifier', async () => {

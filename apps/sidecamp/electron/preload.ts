@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDownloadProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('download:progress'); ipcRenderer.on('download:progress', (_, data) => callback(data)); },
   
   openDownload: (filePath: string) => ipcRenderer.invoke('downloads:open', filePath),
-  removeTorrent: (infoHash: string) => ipcRenderer.invoke('torrent:remove', infoHash),
+  removeTorrent: (infoHash: string, deleteFiles?: boolean) => ipcRenderer.invoke('torrent:remove', infoHash, deleteFiles),
   readTags: (filePath: string) => ipcRenderer.invoke('downloads:read-tags', filePath),
   getTracksMeta: (paths: string[]) => ipcRenderer.invoke('downloads:tracks-meta', paths),
   setTrackAnalysis: (filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number | null; cueOutPoint?: number | null }) => ipcRenderer.invoke('downloads:set-analysis', filePath, data),
