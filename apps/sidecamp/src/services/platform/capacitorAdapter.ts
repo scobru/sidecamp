@@ -5,13 +5,6 @@ import { FolderPicker } from "./folderPickerPlugin";
 import { PeerSharing } from "./peerSharingPlugin";
 import { generateKeyPair, encryptFor, decryptFrom } from "../e2eCrypto";
 
-function base64ToBlob(base64: string, mime: string): Blob {
-	const bytes = atob(base64);
-	const arr = new Uint8Array(bytes.length);
-	for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-	return new Blob([arr], { type: mime });
-}
-
 export function createCapacitorAdapter() {
 	const logListeners: ((msg: string) => void)[] = [];
 	const statusListeners: ((status: string) => void)[] = [];
@@ -619,7 +612,7 @@ export function createCapacitorAdapter() {
 
 		// media:// (local file) and stream://audio?url=&token= (remote) are
 		// Electron-only custom protocol schemes — resolve them into a URL the
-		// mobile WebView can actually play.
+		// mobile WebView can actually play via native progressive HTTP streaming.
 		resolvePlaybackSrc: async (src: string): Promise<string> => {
 			if (src.startsWith("media://")) {
 				const filePath = decodeURIComponent(src.slice("media://".length));
@@ -629,16 +622,10 @@ export function createCapacitorAdapter() {
 				const params = new URLSearchParams(src.slice(src.indexOf("?") + 1));
 				const url = params.get("url") || "";
 				const token = params.get("token") || "";
-				const res = await CapacitorHttp.get({
-					url,
-					headers: { Authorization: `Bearer ${token}` },
-					responseType: "blob",
-				});
-				const mime =
-					res.headers?.["Content-Type"] ||
-					res.headers?.["content-type"] ||
-					"audio/mpeg";
-				return URL.createObjectURL(base64ToBlob(res.data, mime));
+				if (!url) return src;
+				if (!token) return url;
+				const separator = url.includes("?") ? "&" : "?";
+				return `${url}${separator}token=${encodeURIComponent(token)}`;
 			}
 			return src;
 		},
