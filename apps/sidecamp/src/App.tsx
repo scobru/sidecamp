@@ -35,6 +35,7 @@ import {
 	MessageCircle,
 	Send,
 	Lock,
+	ShieldAlert,
 	Users,
 } from "lucide-react";
 import { Button } from "./components/Button";
@@ -207,12 +208,15 @@ function App() {
 	);
 	const [chatTo, setChatTo] = useState("");
 	const [chatText, setChatText] = useState("");
+	const [chatSending, setChatSending] = useState(false);
 	const {
 		messages: chatMessages,
 		peers: rawChatPeers,
 		unreadCounts: chatUnread,
 		status: chatStatus,
 		sendMessage: sendChatMessage,
+		keyChanges: chatKeyChanges,
+		acceptKeyChange: acceptChatKeyChange,
 		clearUnread,
 		formatUser,
 		connect: connectChat,
@@ -1632,11 +1636,32 @@ function App() {
 		disconnectChat();
 	};
 
-	const handleSendChat = () => {
+	// sendMessage refuses a DM it can't encrypt, so the draft survives a refusal
+	// instead of being wiped along with the "message not sent" notice.
+	const handleSendChat = async () => {
 		const text = chatText.trim();
-		if (!text) return;
-		sendChatMessage(chatTo, text);
-		setChatText("");
+		if (!text || chatSending) return;
+		setChatSending(true);
+		try {
+			if (await sendChatMessage(chatTo, text)) setChatText("");
+		} finally {
+			setChatSending(false);
+		}
+	};
+
+	const pendingChatKeyChange = chatTo ? chatKeyChanges[chatTo] : undefined;
+
+	const handleAcceptChatKeyChange = (peerId: string) => {
+		const change = chatKeyChanges[peerId];
+		if (!change) return;
+		const confirmed = window.confirm(
+			`Accept ${peerId}'s new encryption key?\n\n` +
+				`Pinned:  ${change.pinned}\n` +
+				`Offered: ${change.offered}\n\n` +
+				`Only accept if ${peerId} confirmed this fingerprint over a channel this server does not control. ` +
+				`A key swapped by the server looks exactly the same from here.`,
+		);
+		if (confirmed) acceptChatKeyChange(peerId);
 	};
 
 	const loadBrowser = async (root: string, subpath: string) => {
@@ -5589,6 +5614,61 @@ function App() {
 										</div>
 									)}
 
+									{pendingChatKeyChange && (
+										<div
+											style={{
+												borderTop: "1px solid var(--glass-border)",
+												padding: "0.75rem",
+												display: "flex",
+												gap: "0.5rem",
+												alignItems: "flex-start",
+												flexShrink: 0,
+												background: "rgba(251,191,36,0.08)",
+												fontSize: "0.75rem",
+											}}
+										>
+											<ShieldAlert
+												size={14}
+												style={{ color: "#fbbf24", flexShrink: 0, marginTop: "2px" }}
+											/>
+											<div style={{ flex: 1, minWidth: 0 }}>
+												<div style={{ fontWeight: 600 }}>
+													{pendingChatKeyChange.peerId}'s encryption key changed.
+												</div>
+												<div style={{ opacity: 0.7, marginTop: "0.15rem" }}>
+													Messages stay blocked until you accept it. Ask them for
+													their fingerprint somewhere this server can't reach — a
+													swapped key looks identical from here.
+												</div>
+												<div
+													style={{
+														fontFamily: "monospace",
+														opacity: 0.8,
+														marginTop: "0.3rem",
+														wordBreak: "break-all",
+													}}
+												>
+													pinned&nbsp;&nbsp;{pendingChatKeyChange.pinned}
+													<br />
+													offered&nbsp;{pendingChatKeyChange.offered}
+												</div>
+											</div>
+											<Button
+												variant="secondary"
+												onClick={() =>
+													handleAcceptChatKeyChange(pendingChatKeyChange.peerId)
+												}
+												style={{
+													padding: "0.35rem 0.7rem",
+													fontSize: "0.75rem",
+													flexShrink: 0,
+												}}
+											>
+												Accept new key
+											</Button>
+										</div>
+									)}
+
 									<div
 										style={{
 											borderTop: "1px solid var(--glass-border)",
@@ -5647,7 +5727,9 @@ function App() {
 										<Button
 											variant="primary"
 											onClick={handleSendChat}
-											disabled={chatStatus !== "online" || !chatText.trim()}
+											disabled={
+												chatStatus !== "online" || !chatText.trim() || chatSending
+											}
 											style={{
 												padding: "0.5rem 1rem",
 												display: "flex",
@@ -5808,13 +5890,22 @@ function App() {
 													>
 														{formatUser(peer.username, peer.instance)}
 													</span>
-													{peer.pubkey && (
-														<span title="E2E ready">
-															<Lock
+													{chatKeyChanges[peer.username] ? (
+														<span title="Key changed — messages blocked">
+															<ShieldAlert
 																size={10}
-																style={{ color: "#4ade80", flexShrink: 0 }}
+																style={{ color: "#fbbf24", flexShrink: 0 }}
 															/>
 														</span>
+													) : (
+														peer.pubkey && (
+															<span title="E2E ready">
+																<Lock
+																	size={10}
+																	style={{ color: "#4ade80", flexShrink: 0 }}
+																/>
+															</span>
+														)
 													)}
 													{unread > 0 && !isSelected && (
 														<span

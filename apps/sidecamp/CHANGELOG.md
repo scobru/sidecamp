@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.5] - 2026-08-07
+
+### Added
+
+- **Accept a peer's changed encryption key from the chat panel.** `@tunecamp/chat` pins a peer's key on first sight and blocks DMs when a different one is later offered, since the server chooses which key it serves and a silent substitution looks exactly like a wiretap. The panel reported the block but offered no way out, leaving DMs to that peer blocked permanently. The composer now shows the pinned and offered fingerprints with an explicit "Accept new key" confirmation, and the peer list flags the peer instead of marking it E2E-ready.
+
+### Fixed
+
+- **A refused message no longer wipes the draft.** `sendMessage` is async and refuses a DM it cannot encrypt; `handleSendChat` ignored the result and cleared the input regardless, so the user lost what they had written to a refusal they couldn't retry. The draft is now cleared only after the message goes out, and Send is disabled while it is in flight.
+
 ## [0.26.4] - 2026-08-06
 
 ### Changed
