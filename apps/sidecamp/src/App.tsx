@@ -209,6 +209,8 @@ function App() {
 	const [chatTo, setChatTo] = useState("");
 	const [chatText, setChatText] = useState("");
 	const [chatSending, setChatSending] = useState(false);
+	const [dlLogsExpanded, setDlLogsExpanded] = useState(false);
+	const [mobileChatView, setMobileChatView] = useState<"feed" | "peers">("feed");
 	const {
 		messages: chatMessages,
 		peers: rawChatPeers,
@@ -2517,9 +2519,9 @@ function App() {
 							title="Search & Download"
 						>
 							<span className="icon">
-								<Download size={16} />
-							</span>{" "}
-							{!sidebarCollapsed && <span className="nav-label">Search</span>}
+								<Download size={18} />
+							</span>
+							<span className="nav-label">Search</span>
 						</button>
 					)}
 					<button
@@ -2528,9 +2530,9 @@ function App() {
 						title="Library"
 					>
 						<span className="icon">
-							<Music size={16} />
-						</span>{" "}
-						{!sidebarCollapsed && <span className="nav-label">Library</span>}
+							<Music size={18} />
+						</span>
+						<span className="nav-label">Library</span>
 					</button>
 					<button
 						className={`nav-item ${activeTab === "network" ? "active" : ""}`}
@@ -2538,9 +2540,9 @@ function App() {
 						title="Network"
 					>
 						<span className="icon">
-							<Globe size={16} />
-						</span>{" "}
-						{!sidebarCollapsed && <span className="nav-label">Network</span>}
+							<Globe size={18} />
+						</span>
+						<span className="nav-label">Network</span>
 					</button>
 					<button
 						className={`nav-item ${activeTab === "peer" ? "active" : ""}`}
@@ -2548,9 +2550,9 @@ function App() {
 						title="Sharing — peer node & shared files"
 					>
 						<span className="icon">
-							<Radio size={16} />
-						</span>{" "}
-						{!sidebarCollapsed && <span className="nav-label">Sharing</span>}
+							<Radio size={18} />
+						</span>
+						<span className="nav-label">Sharing</span>
 					</button>
 					<button
 						className={`nav-item ${activeTab === "chat" ? "active" : ""}`}
@@ -2558,9 +2560,9 @@ function App() {
 						title="Chat — peer messaging"
 					>
 						<span className="icon">
-							<MessageCircle size={16} />
-						</span>{" "}
-						{!sidebarCollapsed && <span className="nav-label">Chat</span>}
+							<MessageCircle size={18} />
+						</span>
+						<span className="nav-label">Chat</span>
 					</button>
 					<button
 						className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
@@ -2568,9 +2570,9 @@ function App() {
 						title="Settings"
 					>
 						<span className="icon">
-							<Settings size={16} />
-						</span>{" "}
-						{!sidebarCollapsed && <span className="nav-label">Settings</span>}
+							<Settings size={18} />
+						</span>
+						<span className="nav-label">Settings</span>
 					</button>
 				</nav>
 
@@ -2668,23 +2670,23 @@ function App() {
 									marginBottom: "1rem",
 								}}
 							>
-								<h3 style={{ margin: 0 }}>
+								<h3 style={{ margin: 0, fontSize: "1.15rem", fontFamily: "var(--font-headings)" }}>
 									Shared Files{" "}
 									<span
 										style={{
-											fontSize: "0.85rem",
+											fontSize: "0.82rem",
 											fontWeight: 400,
 											color: "var(--text-muted)",
-											marginLeft: "8px",
+											marginLeft: "6px",
 										}}
 									>
-										browse, move & organize your files
+										browse, move & organize
 									</span>
 								</h3>
 							</div>
 							{browserRoots.length === 0 && (
 								<div
-									style={{ color: "var(--text-muted)", fontStyle: "italic" }}
+									style={{ color: "var(--text-muted)", fontStyle: "italic", padding: "1rem 0" }}
 								>
 									No folders yet. Add shared folders in the "Configuration" tab.
 								</div>
@@ -2699,18 +2701,20 @@ function App() {
 											marginBottom: "1rem",
 										}}
 									>
-										{browserRoots.map((r, i) => (
-											<Button
-												key={i}
-												variant={
-													browserRoot === r.path ? "primary" : "secondary"
-												}
-												style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
-												onClick={() => selectBrowserRoot(r.path)}
-											>
-												<Folder size={13} /> {r.label}
-											</Button>
-										))}
+										{browserRoots.map((r, i) => {
+											const isRootActive = browserRoot === r.path;
+											return (
+												<button
+													key={i}
+													type="button"
+													className={`platform-chip ${isRootActive ? "active" : ""}`}
+													style={{ padding: "6px 14px", fontSize: "0.82rem" }}
+													onClick={() => selectBrowserRoot(r.path)}
+												>
+													<Folder size={14} /> {r.label}
+												</button>
+											);
+										})}
 									</div>
 									{browserRoot && (
 										<>
@@ -2719,24 +2723,28 @@ function App() {
 													display: "flex",
 													alignItems: "center",
 													gap: "8px",
-													marginBottom: "0.75rem",
-													fontFamily: "monospace",
-													fontSize: "0.85rem",
+													marginBottom: "0.85rem",
+													background: "rgba(255, 255, 255, 0.03)",
+													padding: "6px 10px",
+													borderRadius: "10px",
+													border: "1px solid var(--glass-border)",
+													fontSize: "0.82rem",
 													color: "var(--text-muted)",
 												}}
 											>
 												<Button
 													variant="secondary"
 													style={{
-														padding: "0.3rem 0.6rem",
-														fontSize: "0.8rem",
+														padding: "0.3rem 0.65rem",
+														fontSize: "0.78rem",
+														borderRadius: "8px",
 													}}
 													onClick={browserGoUp}
 													disabled={!browserPath}
 												>
 													<ChevronUp size={13} /> Up
 												</Button>
-												<span>
+												<span style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
 													{browserRoot.split(/[/\\]/).pop() || browserRoot}
 													{browserPath
 														? " / " + browserPath.replace(/\//g, " / ")
@@ -2750,22 +2758,22 @@ function App() {
 														alignItems: "center",
 														gap: "10px",
 														flexWrap: "wrap",
-														padding: "0.6rem 0.9rem",
+														padding: "0.65rem 0.9rem",
 														marginBottom: "1rem",
-														background: "rgba(179,102,255,0.12)",
+														background: "rgba(217, 70, 239, 0.12)",
 														border: "1px solid var(--primary)",
-														borderRadius: "8px",
+														borderRadius: "10px",
 														fontSize: "0.85rem",
 													}}
 												>
 													<span>
 														Moving <strong>{movingItem.name}</strong> — navigate
-														to a folder, then:
+														to destination:
 													</span>
 													<Button
 														variant="primary"
 														style={{
-															padding: "0.3rem 0.7rem",
+															padding: "0.3rem 0.75rem",
 															fontSize: "0.8rem",
 														}}
 														onClick={handleMoveHere}
@@ -2775,7 +2783,7 @@ function App() {
 													<Button
 														variant="secondary"
 														style={{
-															padding: "0.3rem 0.7rem",
+															padding: "0.3rem 0.75rem",
 															fontSize: "0.8rem",
 														}}
 														onClick={() => setMovingItem(null)}
@@ -2788,16 +2796,16 @@ function App() {
 												style={{
 													display: "flex",
 													gap: "8px",
-													marginBottom: "1rem",
+													marginBottom: "0.85rem",
 												}}
 											>
 												<input
 													type="text"
 													value={newFolderName}
 													onChange={(e) => setNewFolderName(e.target.value)}
-													placeholder="New subfolder name"
+													placeholder="New subfolder name..."
 													className="glass-input"
-													style={{ flex: 1 }}
+													style={{ flex: 1, padding: "0.55rem 0.85rem", fontSize: "0.85rem", borderRadius: "10px" }}
 													onKeyDown={(e) =>
 														e.key === "Enter" && handleCreateFolder()
 													}
@@ -2810,9 +2818,13 @@ function App() {
 														display: "flex",
 														alignItems: "center",
 														gap: "6px",
+														padding: "0.55rem 0.9rem",
+														fontSize: "0.85rem",
+														borderRadius: "10px",
+														flexShrink: 0,
 													}}
 												>
-													<FolderPlus size={16} /> Create
+													<FolderPlus size={15} /> Create
 												</Button>
 											</div>
 											{browserError && (
@@ -2831,22 +2843,23 @@ function App() {
 													type="text"
 													value={browserSearch}
 													onChange={(e) => setBrowserSearch(e.target.value)}
-													placeholder="Search in this folder…"
+													placeholder="Filter in this folder…"
 													className="glass-input"
 													style={{
 														width: "100%",
 														marginBottom: "0.75rem",
-														padding: "0.4rem 0.8rem",
+														padding: "0.5rem 0.85rem",
 														fontSize: "0.85rem",
+														borderRadius: "10px",
 													}}
 												/>
 											)}
-											{/* Capped height so a big folder doesn't push the sharing controls below off-screen. */}
+											{/* Scrollable folder list */}
 											<div
 												style={{
 													display: "flex",
 													flexDirection: "column",
-													gap: "4px",
+													gap: "6px",
 													maxHeight: "50vh",
 													overflowY: "auto",
 													paddingRight: "4px",
@@ -2863,7 +2876,6 @@ function App() {
 													const audio = visible.filter(
 														(en) => !en.isDir && isAudio(en.name),
 													);
-													// Queue = the audio files of the folder view, so next/prev walk the folder.
 													const browserQueue = audio.map((en) =>
 														libraryQueueItem({
 															name: en.name,
@@ -2876,11 +2888,13 @@ function App() {
 															style={{
 																display: "flex",
 																alignItems: "center",
-																gap: "10px",
-																padding: "0.6rem 0.9rem",
-																background: "rgba(255,255,255,0.03)",
+																justifyContent: "space-between",
+																gap: "8px",
+																padding: "0.6rem 0.85rem",
+																background: "rgba(255, 255, 255, 0.03)",
 																border: "1px solid var(--glass-border)",
-																borderRadius: "8px",
+																borderRadius: "10px",
+																transition: "all 0.15s ease",
 															}}
 														>
 															<div
@@ -2903,13 +2917,26 @@ function App() {
 																	gap: "10px",
 																	flex: 1,
 																	minWidth: 0,
+																	minHeight: "36px",
 																	cursor:
 																		en.isDir || isAudio(en.name)
 																			? "pointer"
 																			: "default",
 																}}
 															>
-																<span style={{ display: "inline-flex" }}>
+																<span
+																	style={{
+																		display: "inline-flex",
+																		alignItems: "center",
+																		justifyContent: "center",
+																		width: "28px",
+																		height: "28px",
+																		borderRadius: "6px",
+																		background: en.isDir ? "rgba(217, 70, 239, 0.12)" : "rgba(6, 182, 212, 0.12)",
+																		color: en.isDir ? "var(--primary)" : "var(--accent)",
+																		flexShrink: 0,
+																	}}
+																>
 																	{en.isDir ? (
 																		<Folder size={15} />
 																	) : (
@@ -2920,7 +2947,8 @@ function App() {
 																	style={{
 																		flex: 1,
 																		color: "var(--text-main)",
-																		fontSize: "0.9rem",
+																		fontSize: "0.88rem",
+																		fontWeight: en.isDir ? 600 : 400,
 																		wordBreak: "break-all",
 																	}}
 																>
@@ -2930,48 +2958,39 @@ function App() {
 																	<ChevronRight
 																		size={16}
 																		color="var(--text-muted)"
+																		style={{ flexShrink: 0 }}
 																	/>
 																)}
 															</div>
-															<button
-																onClick={() =>
-																	setMovingItem({
-																		root: browserRoot,
-																		path: browserPath,
-																		name: en.name,
-																		isDir: en.isDir,
-																	})
-																}
-																title={`Move ${en.isDir ? "folder" : "file"}`}
-																style={{
-																	background: "transparent",
-																	border: "none",
-																	color: "var(--text-muted)",
-																	cursor: "pointer",
-																	padding: "4px",
-																	display: "inline-flex",
-																	borderRadius: "6px",
-																}}
-															>
-																<FolderSync size={16} />
-															</button>
-															<button
-																onClick={() =>
-																	handleDeleteEntry(en.name, en.isDir)
-																}
-																title={`Delete ${en.isDir ? "folder" : "file"}`}
-																style={{
-																	background: "transparent",
-																	border: "none",
-																	color: "#e74c3c",
-																	cursor: "pointer",
-																	padding: "4px",
-																	display: "inline-flex",
-																	borderRadius: "6px",
-																}}
-															>
-																<Trash2 size={16} />
-															</button>
+															<div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+																<button
+																	type="button"
+																	onClick={() =>
+																		setMovingItem({
+																			root: browserRoot,
+																			path: browserPath,
+																			name: en.name,
+																			isDir: en.isDir,
+																		})
+																	}
+																	title={`Move ${en.isDir ? "folder" : "file"}`}
+																	className="track-card-action-btn"
+																	style={{ width: "34px", height: "34px" }}
+																>
+																	<FolderSync size={15} />
+																</button>
+																<button
+																	type="button"
+																	onClick={() =>
+																		handleDeleteEntry(en.name, en.isDir)
+																	}
+																	title={`Delete ${en.isDir ? "folder" : "file"}`}
+																	className="track-card-action-btn"
+																	style={{ width: "34px", height: "34px", color: "var(--danger)" }}
+																>
+																	<Trash2 size={15} />
+																</button>
+															</div>
 														</div>
 													));
 												})()}
@@ -2981,6 +3000,8 @@ function App() {
 															color: "var(--text-muted)",
 															fontStyle: "italic",
 															fontSize: "0.9rem",
+															padding: "1rem",
+															textAlign: "center",
 														}}
 													>
 														Empty folder.
@@ -4887,7 +4908,7 @@ function App() {
 					{activeTab === "network" && (
 						<div
 							className="glass-card network-card"
-							style={{ display: "flex", gap: "2.5rem", minHeight: "450px" }}
+							style={{ display: "flex", gap: "2rem", minHeight: "450px" }}
 						>
 							{/* Left pane: Peers list */}
 							<div
@@ -4895,7 +4916,7 @@ function App() {
 								style={{
 									flex: "1",
 									borderRight: "1px solid var(--glass-border)",
-									paddingRight: "2rem",
+									paddingRight: "1.5rem",
 								}}
 							>
 								<div
@@ -4903,7 +4924,7 @@ function App() {
 										display: "flex",
 										justifyContent: "space-between",
 										alignItems: "center",
-										marginBottom: "1.5rem",
+										marginBottom: "1.25rem",
 									}}
 								>
 									<h3
@@ -4919,7 +4940,7 @@ function App() {
 										variant="secondary"
 										onClick={loadNetworkPeers}
 										disabled={isLoadingPeers}
-										style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+										style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
 									>
 										{isLoadingPeers ? "Refreshing..." : "Refresh"}
 									</Button>
@@ -4965,96 +4986,96 @@ function App() {
 										style={{
 											display: "flex",
 											flexDirection: "column",
-											gap: "10px",
+											gap: "8px",
 										}}
 									>
-										{networkPeers.map((p) => (
-											<div
-												key={p.id}
-												className={`peer-row ${selectedPeer?.id === p.id ? "active" : ""}`}
-												onClick={() => selectPeer(p)}
-												style={{
-													padding: "0.9rem 1.2rem",
-													background:
-														selectedPeer?.id === p.id
-															? "rgba(255, 255, 255, 0.05)"
-															: "rgba(0, 0, 0, 0.15)",
-													border:
-														selectedPeer?.id === p.id
+										{networkPeers.map((p) => {
+											const isSelected = selectedPeer?.id === p.id;
+											return (
+												<div
+													key={p.id}
+													className={`peer-row ${isSelected ? "active" : ""}`}
+													onClick={() => selectPeer(p)}
+													style={{
+														padding: "0.8rem 1rem",
+														background: isSelected
+															? "linear-gradient(135deg, rgba(217, 70, 239, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)"
+															: "rgba(255, 255, 255, 0.03)",
+														border: isSelected
 															? "1px solid var(--primary)"
 															: "1px solid var(--glass-border)",
-													borderRadius: "8px",
-													cursor: "pointer",
-													display: "flex",
-													justifyContent: "space-between",
-													alignItems: "center",
-													transition: "all 0.15s ease",
-												}}
-											>
-												<span
-													style={{
-														fontWeight: 600,
-														color:
-															selectedPeer?.id === p.id
-																? "var(--primary)"
-																: "var(--text-main)",
-														fontSize: "0.95rem",
+														borderRadius: "12px",
+														cursor: "pointer",
+														display: "flex",
+														justifyContent: "space-between",
+														alignItems: "center",
+														transition: "all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)",
+														boxShadow: isSelected
+															? "0 4px 16px rgba(217, 70, 239, 0.18)"
+															: "none",
 													}}
 												>
-													{p.id === "server" ? (
-														<Cloud
-															size={14}
+													<div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
+														<div
 															style={{
-																verticalAlign: "-2px",
-																marginRight: "6px",
-															}}
-														/>
-													) : (
-														<User
-															size={14}
-															style={{
-																verticalAlign: "-2px",
-																marginRight: "6px",
-															}}
-														/>
-													)}
-													{p.username || "Unknown"}
-													{p.origin && (
-														<span
-															style={{
-																marginLeft: "8px",
-																fontSize: "0.7rem",
-																color: "var(--primary)",
-																background: "rgba(var(--primary-rgb), 0.15)",
-																padding: "2px 6px",
-																borderRadius: "4px",
-																verticalAlign: "middle",
-																border:
-																	"1px solid rgba(var(--primary-rgb), 0.3)",
-																whiteSpace: "nowrap",
-																textOverflow: "ellipsis",
-																overflow: "hidden",
-																maxWidth: "100px",
-																display: "inline-block",
+																width: "32px",
+																height: "32px",
+																borderRadius: "8px",
+																background: isSelected ? "var(--primary)" : "rgba(255,255,255,0.06)",
+																color: isSelected ? "#fff" : "var(--text-muted)",
+																display: "flex",
+																alignItems: "center",
+																justifyContent: "center",
+																flexShrink: 0,
 															}}
 														>
-															{new URL(p.origin).hostname}
-														</span>
-													)}
-												</span>
-												<span
-													style={{
-														fontSize: "0.8rem",
-														color: "var(--text-muted)",
-														background: "rgba(255, 255, 255, 0.04)",
-														padding: "2px 8px",
-														borderRadius: "12px",
-													}}
-												>
-													{p.trackCount || 0} tracks
-												</span>
-											</div>
-										))}
+															{p.id === "server" ? <Cloud size={16} /> : <User size={16} />}
+														</div>
+														<div style={{ minWidth: 0, flex: 1 }}>
+															<div
+																style={{
+																	fontWeight: 600,
+																	color: isSelected ? "var(--primary)" : "var(--text-main)",
+																	fontSize: "0.9rem",
+																	whiteSpace: "nowrap",
+																	overflow: "hidden",
+																	textOverflow: "ellipsis",
+																}}
+															>
+																{p.username || "Unknown"}
+															</div>
+															{p.origin && (
+																<div
+																	style={{
+																		fontSize: "0.72rem",
+																		color: "var(--text-muted)",
+																		whiteSpace: "nowrap",
+																		overflow: "hidden",
+																		textOverflow: "ellipsis",
+																	}}
+																>
+																	{new URL(p.origin).hostname}
+																</div>
+															)}
+														</div>
+													</div>
+													<span
+														style={{
+															fontSize: "0.74rem",
+															color: "var(--text-muted)",
+															background: "rgba(255, 255, 255, 0.06)",
+															padding: "2px 8px",
+															borderRadius: "9999px",
+															border: "1px solid rgba(255, 255, 255, 0.08)",
+															marginLeft: "8px",
+															flexShrink: 0,
+														}}
+													>
+														{p.trackCount || 0} tracks
+													</span>
+												</div>
+											);
+										})}
 									</div>
 								)}
 							</div>
@@ -5063,7 +5084,7 @@ function App() {
 							<div className="network-tracks-pane" style={{ flex: "2" }}>
 								<h3
 									style={{
-										marginBottom: "1.5rem",
+										marginBottom: "1.25rem",
 										fontSize: "1.15rem",
 										fontFamily: "var(--font-headings)",
 										borderBottom: "1px solid var(--glass-border)",
@@ -5143,83 +5164,55 @@ function App() {
 													style={{ marginBottom: "1rem" }}
 												/>
 												<div
-													className="track-table-wrap peer-tracks-wrap"
-													style={{ maxHeight: "420px" }}
+													className="mobile-track-list peer-tracks-wrap"
+													style={{ maxHeight: "420px", overflowY: "auto", paddingRight: "4px" }}
 												>
-													<table className="track-table">
-														<thead>
-															<tr>
-																<th className="col-num">#</th>
-																<th className="col-title">Title</th>
-																<th className="col-artist">Artist</th>
-																<th className="col-album">Album</th>
-																<th className="col-key col-fmt">Fmt</th>
-																<th
-																	className="col-actions"
-																	style={{ width: "64px" }}
-																></th>
-															</tr>
-														</thead>
-														<tbody>
-															{filtered.map((t, i) => {
-																const isCurrent =
-																	currentPlayback?.name ===
-																	`${t.artist} - ${t.title}`;
-																return (
-																	<tr
-																		key={t.id}
-																		className={isCurrent ? "playing" : ""}
-																		onDoubleClick={() =>
-																			playNetworkTrack(selectedPeer, t)
-																		}
+													{filtered.map((t, i) => {
+														const isCurrent =
+															currentPlayback?.name ===
+															`${t.artist} - ${t.title}`;
+														const isDownloading = downloadingTrackId === t.id;
+														return (
+															<div
+																key={t.id || i}
+																className={`mobile-track-card ${isCurrent ? "playing" : ""}`}
+																onDoubleClick={() => playNetworkTrack(selectedPeer, t)}
+															>
+																<button
+																	type="button"
+																	className="track-card-play-btn"
+																	title="Play"
+																	onClick={() => playNetworkTrack(selectedPeer, t)}
+																>
+																	<Play size={14} style={{ marginLeft: "2px" }} />
+																</button>
+																<div className="track-card-main">
+																	<div className="track-card-title" title={t.title}>
+																		{t.title || "Unknown Title"}
+																	</div>
+																	<div className="track-card-subtitle">
+																		<span>{t.artist || "Unknown Artist"}</span>
+																		{t.album && <span style={{ opacity: 0.7 }}>• {t.album}</span>}
+																		{t.format && <span className="track-card-badge">{t.format}</span>}
+																	</div>
+																</div>
+																<div className="track-card-actions">
+																	<button
+																		type="button"
+																		className="track-card-action-btn"
+																		title={isDownloading ? "Downloading…" : "Download"}
+																		disabled={isDownloading}
+																		onClick={() => handleDownloadPeerTrack(t)}
+																		style={{
+																			color: isDownloading ? "var(--accent)" : "inherit",
+																		}}
 																	>
-																		<td className="col-num">
-																			{isCurrent ? "▶" : i + 1}
-																		</td>
-																		<td
-																			className="cell-ellipsis col-title"
-																			style={{ fontWeight: 500 }}
-																			title={t.title}
-																		>
-																			{t.title || "Unknown Title"}
-																		</td>
-																		<td className="cell-ellipsis col-artist">
-																			{t.artist || "Unknown Artist"}
-																		</td>
-																		<td className="cell-ellipsis cell-muted col-album">
-																			{t.album || ""}
-																		</td>
-																		<td className="cell-mono cell-muted col-fmt">
-																			{t.format}
-																		</td>
-																		<td className="col-actions">
-																			<button
-																				title="Play"
-																				onClick={() =>
-																					playNetworkTrack(selectedPeer, t)
-																				}
-																			>
-																				<Play size={13} />
-																			</button>
-																			<button
-																				title={
-																					downloadingTrackId === t.id
-																						? "Downloading…"
-																						: "Download"
-																				}
-																				disabled={downloadingTrackId === t.id}
-																				onClick={() =>
-																					handleDownloadPeerTrack(t)
-																				}
-																			>
-																				<Download size={13} />
-																			</button>
-																		</td>
-																	</tr>
-																);
-															})}
-														</tbody>
-													</table>
+																		<Download size={16} />
+																	</button>
+																</div>
+															</div>
+														);
+													})}
 													{filtered.length === 0 && (
 														<div
 															style={{
@@ -5339,7 +5332,7 @@ function App() {
 								display: "flex",
 								flexDirection: "column",
 								height: "100%",
-								gap: "1rem",
+								gap: "0.75rem",
 							}}
 						>
 							<div
@@ -5370,7 +5363,7 @@ function App() {
 									</h2>
 									<p
 										style={{
-											fontSize: "0.8rem",
+											fontSize: "0.78rem",
 											opacity: 0.6,
 											margin: "0.2rem 0 0 0",
 										}}
@@ -5405,7 +5398,7 @@ function App() {
 										{chatStatus}
 									</span>
 									<Button
-										variant="secondary"
+										variant={chatStatus === "online" ? "secondary" : "primary"}
 										size="sm"
 										onClick={() => {
 											if (chatStatus === "online") {
@@ -5415,45 +5408,55 @@ function App() {
 											}
 										}}
 										style={{
-											padding: "0.2rem 0.6rem",
+											padding: "0.3rem 0.75rem",
 											fontSize: "0.75rem",
+											borderRadius: "8px",
 										}}
 									>
-										{chatStatus === "online" ? "Disconnect Chat" : "Connect Chat"}
+										{chatStatus === "online" ? "Disconnect" : "Connect"}
 									</Button>
 								</div>
 							</div>
 
+							{/* Mobile View Toggle */}
+							<div className="chat-mobile-toggle">
+								<button
+									type="button"
+									className={`chat-mobile-btn ${mobileChatView === "feed" ? "active" : ""}`}
+									onClick={() => setMobileChatView("feed")}
+								>
+									<MessageCircle size={14} />
+									<span>Messages {chatTo ? `(${chatTo})` : "(Lobby)"}</span>
+								</button>
+								<button
+									type="button"
+									className={`chat-mobile-btn ${mobileChatView === "peers" ? "active" : ""}`}
+									onClick={() => setMobileChatView("peers")}
+								>
+									<Users size={14} />
+									<span>Peers ({chatPeers.length})</span>
+								</button>
+							</div>
+
 							<div
-								className="chat-main-grid"
+								className={`chat-main-grid ${mobileChatView === "feed" ? "show-feed" : "show-peers"}`}
 								style={{
 									display: "grid",
-									gridTemplateColumns: "1fr 220px",
+									gridTemplateColumns: "1fr 240px",
 									gap: "1rem",
 									flex: 1,
 									minHeight: 0,
 								}}
 							>
 								{/* Chat Feed */}
-								<div
-									className="glass-card chat-feed-card"
-									style={{
-										display: "flex",
-										flexDirection: "column",
-										height: "100%",
-										overflow: "hidden",
-										background: "var(--elevated-bg, rgba(255,255,255,0.03))",
-										border: "1px solid var(--glass-border)",
-										borderRadius: "16px",
-									}}
-								>
+								<div className="glass-card chat-feed-card">
 									<div
 										ref={chatScrollContainerRef}
 										className="chat-scroll-feed"
 										style={{
 											flex: 1,
 											overflowY: "auto",
-											padding: "1rem",
+											padding: "0.85rem",
 											display: "flex",
 											flexDirection: "column",
 											gap: "0.75rem",
@@ -5475,7 +5478,7 @@ function App() {
 														style={{
 															margin: "auto",
 															textAlign: "center",
-															padding: "2rem",
+															padding: "2rem 1rem",
 															opacity: 0.5,
 														}}
 													>
@@ -5516,8 +5519,8 @@ function App() {
 													: formatUser(m.from, m.instance);
 												const align = isSelf ? "flex-end" : "flex-start";
 												const bubbleBg = isSelf
-													? "var(--primary, #b366ff)"
-													: "var(--card-bg, rgba(255,255,255,0.08))";
+													? "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)"
+													: "rgba(255,255,255,0.06)";
 												const textColor = isSelf ? "#fff" : "var(--text-main)";
 
 												return (
@@ -5564,7 +5567,7 @@ function App() {
 														</div>
 														<div
 															style={{
-																maxWidth: "75%",
+																maxWidth: "85%",
 																padding: "0.6rem 0.9rem",
 																borderRadius: isSelf
 																	? "16px 16px 4px 16px"
@@ -5573,7 +5576,9 @@ function App() {
 																color: textColor,
 																fontSize: "0.875rem",
 																wordBreak: "break-word",
-																boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+																boxShadow: isSelf
+																	? "0 3px 12px rgba(168, 85, 247, 0.25)"
+																	: "0 2px 6px rgba(0,0,0,0.15)",
 															}}
 														>
 															{m.text}
@@ -5595,21 +5600,11 @@ function App() {
 											}}
 										>
 											<button
+												type="button"
+												className="chat-scroll-latest-btn"
 												onClick={() => scrollToBottom()}
-												style={{
-													background: "var(--glass-border)",
-													border: "none",
-													color: "var(--text-main)",
-													padding: "0.2rem 0.6rem",
-													borderRadius: "12px",
-													fontSize: "0.75rem",
-													cursor: "pointer",
-													display: "flex",
-													alignItems: "center",
-													gap: "0.25rem",
-												}}
 											>
-												<ChevronDown size={12} /> Latest
+												<ChevronDown size={13} /> Latest
 											</button>
 										</div>
 									)}
@@ -5672,7 +5667,7 @@ function App() {
 									<div
 										style={{
 											borderTop: "1px solid var(--glass-border)",
-											padding: "0.75rem",
+											padding: "0.65rem 0.75rem",
 											display: "flex",
 											gap: "0.5rem",
 											alignItems: "center",
@@ -5684,14 +5679,16 @@ function App() {
 											onChange={(e) => setChatTo(e.target.value)}
 											className="glass-input"
 											style={{
-												width: "150px",
+												width: "120px",
+												maxWidth: "32%",
 												flexShrink: 0,
-												padding: "0.5rem 0.75rem",
-												fontSize: "0.8rem",
+												padding: "0.5rem 0.5rem",
+												fontSize: "0.78rem",
+												borderRadius: "10px",
 											}}
 											disabled={chatStatus !== "online"}
 										>
-											<option value="">Lobby (everyone)</option>
+											<option value="">Lobby (all)</option>
 											{chatPeers.map((p) => (
 												<option key={p.username} value={p.username}>
 													{formatUser(p.username, p.instance)}
@@ -5712,8 +5709,10 @@ function App() {
 											className="glass-input"
 											style={{
 												flex: 1,
+												minWidth: 0,
 												padding: "0.5rem 0.75rem",
 												fontSize: "0.85rem",
+												borderRadius: "10px",
 											}}
 											disabled={chatStatus !== "online"}
 											maxLength={2000}
@@ -5724,53 +5723,37 @@ function App() {
 												}
 											}}
 										/>
-										<Button
-											variant="primary"
+										<button
+											type="button"
+											className="chat-send-btn"
 											onClick={handleSendChat}
 											disabled={
 												chatStatus !== "online" || !chatText.trim() || chatSending
 											}
-											style={{
-												padding: "0.5rem 1rem",
-												display: "flex",
-												alignItems: "center",
-												gap: "0.4rem",
-											}}
+											title="Send message"
 										>
-											<Send size={14} /> Send
-										</Button>
+											<Send size={15} />
+										</button>
 									</div>
 								</div>
 
 								{/* Connected Peers Sidebar */}
-								<div
-									className="glass-card chat-peers-sidebar"
-									style={{
-										background: "var(--elevated-bg, rgba(255,255,255,0.03))",
-										border: "1px solid var(--glass-border)",
-										borderRadius: "16px",
-										padding: "0.75rem",
-										display: "flex",
-										flexDirection: "column",
-										height: "100%",
-										overflow: "hidden",
-									}}
-								>
+								<div className="glass-card chat-peers-sidebar">
 									<div
 										style={{
 											display: "flex",
 											alignItems: "center",
 											gap: "0.4rem",
-											fontSize: "0.75rem",
+											fontSize: "0.78rem",
 											fontWeight: 600,
-											opacity: 0.7,
+											opacity: 0.75,
 											marginBottom: "0.75rem",
 											padding: "0 0.25rem",
 											flexShrink: 0,
 										}}
 									>
 										<Users size={14} />
-										Connected ({chatPeers.length})
+										Connected Peers ({chatPeers.length})
 									</div>
 									<div
 										style={{
@@ -5778,37 +5761,20 @@ function App() {
 											overflowY: "auto",
 											display: "flex",
 											flexDirection: "column",
-											gap: "0.25rem",
+											gap: "0.3rem",
 										}}
 									>
 										{/* Explicit Public Lobby item */}
 										<button
-											onClick={() => setChatTo("")}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "0.5rem",
-												padding: "0.4rem 0.6rem",
-												borderRadius: "8px",
-												border: "none",
-												background:
-													chatTo === ""
-														? "rgba(179,102,255,0.15)"
-														: "transparent",
-												color:
-													chatTo === ""
-														? "var(--primary, #b366ff)"
-														: "var(--text-main)",
-												fontWeight: chatTo === "" ? 700 : 500,
-												fontSize: "0.78rem",
-												cursor: "pointer",
-												textAlign: "left",
-												width: "100%",
-												transition: "background 0.15s ease",
+											type="button"
+											className={`chat-peer-btn ${chatTo === "" ? "active" : ""}`}
+											onClick={() => {
+												setChatTo("");
+												setMobileChatView("feed");
 											}}
 										>
 											<Globe
-												size={14}
+												size={15}
 												style={{
 													color:
 														chatTo === ""
@@ -5825,7 +5791,7 @@ function App() {
 													whiteSpace: "nowrap",
 												}}
 											>
-												🌐 Public Lobby
+												Public Lobby
 											</span>
 										</button>
 
@@ -5835,7 +5801,7 @@ function App() {
 													fontSize: "0.75rem",
 													opacity: 0.4,
 													margin: 0,
-													padding: "0.25rem 0.25rem 0",
+													padding: "0.5rem 0.25rem",
 												}}
 											>
 												No other peers connected.
@@ -5847,39 +5813,15 @@ function App() {
 											return (
 												<button
 													key={peer.username}
+													type="button"
+													className={`chat-peer-btn ${isSelected ? "active" : ""}`}
 													onClick={() => {
 														setChatTo(isSelected ? "" : peer.username);
 														clearUnread(peer.username);
-													}}
-													style={{
-														display: "flex",
-														alignItems: "center",
-														gap: "0.5rem",
-														padding: "0.4rem 0.6rem",
-														borderRadius: "8px",
-														border: "none",
-														background: isSelected
-															? "rgba(179,102,255,0.15)"
-															: "transparent",
-														color: isSelected
-															? "var(--primary, #b366ff)"
-															: "var(--text-main)",
-														fontSize: "0.78rem",
-														cursor: "pointer",
-														textAlign: "left",
-														width: "100%",
-														transition: "background 0.15s ease",
+														setMobileChatView("feed");
 													}}
 												>
-													<span
-														style={{
-															width: "8px",
-															height: "8px",
-															borderRadius: "50%",
-															background: "#4ade80",
-															flexShrink: 0,
-														}}
-													/>
+													<span className="chat-peer-dot" />
 													<span
 														style={{
 															flex: 1,
@@ -5893,7 +5835,7 @@ function App() {
 													{chatKeyChanges[peer.username] ? (
 														<span title="Key changed — messages blocked">
 															<ShieldAlert
-																size={10}
+																size={12}
 																style={{ color: "#fbbf24", flexShrink: 0 }}
 															/>
 														</span>
@@ -5901,24 +5843,14 @@ function App() {
 														peer.pubkey && (
 															<span title="E2E ready">
 																<Lock
-																	size={10}
+																	size={12}
 																	style={{ color: "#4ade80", flexShrink: 0 }}
 																/>
 															</span>
 														)
 													)}
-													{unread > 0 && !isSelected && (
-														<span
-															style={{
-																background: "#ef4444",
-																color: "#fff",
-																borderRadius: "9999px",
-																fontSize: "0.65rem",
-																fontWeight: 700,
-																padding: "0.1rem 0.4rem",
-																lineHeight: 1,
-															}}
-														>
+													{unread > 0 && (
+														<span className="chat-unread-badge">
 															{unread}
 														</span>
 													)}
@@ -5931,10 +5863,10 @@ function App() {
 
 							<p
 								style={{
-									fontSize: "0.7rem",
+									fontSize: "0.72rem",
 									opacity: 0.5,
-									margin: 0,
 									textAlign: "center",
+									margin: "0.25rem 0 0 0",
 									flexShrink: 0,
 								}}
 							>
@@ -5965,194 +5897,32 @@ function App() {
 
 							{downloadSource === "soulseek" && (
 								<>
-									<div
-										className="platform-selector"
-										style={{
-											display: "flex",
-											gap: "1.5rem",
-											marginBottom: "1rem",
-											padding: "0.2rem 0.5rem",
-											flexWrap: "wrap",
-										}}
-									>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="all"
-												checked={searchSource === "all"}
-												onChange={() => {
-													setSearchSource("all");
+									<div className="platform-selector">
+										{[
+											{ id: "all", label: "All Platforms" },
+											...(!isCapacitor
+												? [{ id: "soulseek", label: "Soulseek" }]
+												: []),
+											{ id: "soundcloud", label: "SoundCloud" },
+											{ id: "bandcamp", label: "Bandcamp" },
+											{ id: "torrent", label: "Torrent" },
+											{ id: "network", label: "Network" },
+											{ id: "archive", label: "Archive.org" },
+											{ id: "youtube", label: "YouTube" },
+										].map((p) => (
+											<button
+												key={p.id}
+												type="button"
+												className={`platform-chip ${searchSource === p.id ? "active" : ""}`}
+												onClick={() => {
+													setSearchSource(p.id);
 													setSearchResults([]);
-												}}
-											/>
-											All Platforms
-										</label>
-										{!isCapacitor && (
-											<label
-												style={{
-													display: "flex",
-													alignItems: "center",
-													gap: "8px",
-													cursor: "pointer",
-													fontSize: "0.9rem",
-													color: "var(--text-main)",
 												}}
 											>
-												<input
-													type="radio"
-													name="searchSource"
-													value="soulseek"
-													checked={searchSource === "soulseek"}
-													onChange={() => {
-														setSearchSource("soulseek");
-														setSearchResults([]);
-													}}
-												/>
-												Soulseek
-											</label>
-										)}
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="soundcloud"
-												checked={searchSource === "soundcloud"}
-												onChange={() => {
-													setSearchSource("soundcloud");
-													setSearchResults([]);
-												}}
-											/>
-											SoundCloud
-										</label>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="bandcamp"
-												checked={searchSource === "bandcamp"}
-												onChange={() => {
-													setSearchSource("bandcamp");
-													setSearchResults([]);
-												}}
-											/>
-											Bandcamp
-										</label>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="torrent"
-												checked={searchSource === "torrent"}
-												onChange={() => {
-													setSearchSource("torrent");
-													setSearchResults([]);
-												}}
-											/>
-											Torrent
-										</label>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="network"
-												checked={searchSource === "network"}
-												onChange={() => {
-													setSearchSource("network");
-													setSearchResults([]);
-												}}
-											/>
-											Network
-										</label>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="archive"
-												checked={searchSource === "archive"}
-												onChange={() => {
-													setSearchSource("archive");
-													setSearchResults([]);
-												}}
-											/>
-											Archive.org
-										</label>
-										<label
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "8px",
-												cursor: "pointer",
-												fontSize: "0.9rem",
-												color: "var(--text-main)",
-											}}
-										>
-											<input
-												type="radio"
-												name="searchSource"
-												value="youtube"
-												checked={searchSource === "youtube"}
-												onChange={() => {
-													setSearchSource("youtube");
-													setSearchResults([]);
-												}}
-											/>
-											YouTube
-										</label>
+												<span className="platform-chip-dot" />
+												{p.label}
+											</button>
+										))}
 									</div>
 
 									<div className="search-bar">
@@ -6160,7 +5930,7 @@ function App() {
 											type="text"
 											value={searchQuery}
 											onChange={(e) => setSearchQuery(e.target.value)}
-											placeholder={`Search on ${searchSource === "soulseek" ? "Soulseek" : searchSource === "soundcloud" ? "SoundCloud" : searchSource === "bandcamp" ? "Bandcamp" : searchSource === "network" ? "TuneCamp Network" : searchSource === "archive" ? "Archive.org" : searchSource === "youtube" ? "YouTube" : "Torrent (PirateBay)"}...`}
+											placeholder={`Search on ${searchSource === "soulseek" ? "Soulseek" : searchSource === "soundcloud" ? "SoundCloud" : searchSource === "bandcamp" ? "Bandcamp" : searchSource === "network" ? "TuneCamp Network" : searchSource === "archive" ? "Archive.org" : searchSource === "youtube" ? "YouTube" : "Torrent"}...`}
 											className="glass-input search-input"
 											onKeyDown={(e) => e.key === "Enter" && handleSearch()}
 										/>
@@ -6172,118 +5942,70 @@ function App() {
 									{searchResults.length === 0 ? (
 										<div className="no-results">No results.</div>
 									) : (
-										<div
-											className="track-table-wrap"
-											style={{ maxHeight: "55vh" }}
-										>
-											<table className="track-table">
-												<thead>
-													<tr>
-														<th className="col-num">#</th>
-														<th>Title</th>
-														<th className="col-size col-right">Size</th>
-														<th className="col-kbps col-right">kbps</th>
-														<th style={{ width: "220px" }}>Source / User</th>
-														<th
-															className="col-actions"
-															style={{ width: "40px" }}
-														></th>
-													</tr>
-												</thead>
-												<tbody>
-													{searchResults.map((res, i) => {
-														const dl = activeDownloads.find(
-															(d) => d.id === res.id,
-														);
-														const busy = dl && dl.status === "downloading";
-														const name =
-															res.title ||
-															(res.file && res.file.split(/[/\\]/).pop()) ||
-															"Unknown Track";
-														return (
-															<tr
-																key={i}
-																onDoubleClick={() =>
-																	!busy && handleDownload(res)
-																}
-															>
-																<td className="col-num">{i + 1}</td>
-																<td
-																	className="cell-ellipsis"
-																	style={{ fontWeight: 500 }}
-																	title={res.file || name}
+										<div className="mobile-track-list" style={{ maxHeight: "55vh", overflowY: "auto", paddingRight: "4px" }}>
+											{searchResults.map((res, i) => {
+												const dl = activeDownloads.find(
+													(d) => d.id === res.id,
+												);
+												const busy = dl && dl.status === "downloading";
+												const name =
+													res.title ||
+													(res.file && res.file.split(/[/\\]/).pop()) ||
+													"Unknown Track";
+												return (
+													<div
+														key={i}
+														className="mobile-track-card"
+														onDoubleClick={() => !busy && handleDownload(res)}
+													>
+														<div className="track-card-main">
+															<div className="track-card-title" title={res.file || name}>
+																{name}
+															</div>
+															<div className="track-card-subtitle">
+																{res.source && (
+																	<span className="track-card-badge">
+																		{res.source}
+																	</span>
+																)}
+																{res.bitrate && (
+																	<span className="track-card-badge">
+																		{res.bitrate}
+																	</span>
+																)}
+																{res.size && (
+																	<span style={{ fontSize: "0.72rem" }}>
+																		{(res.size / 1024 / 1024).toFixed(1)} MB
+																	</span>
+																)}
+																{res.user && (
+																	<span style={{ fontSize: "0.72rem", opacity: 0.8 }}>
+																		• {res.user}
+																	</span>
+																)}
+															</div>
+														</div>
+														<div className="track-card-actions">
+															{busy && dl ? (
+																<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+																	<span style={{ fontSize: "0.75rem", color: "var(--accent)", fontWeight: 600 }}>
+																		{(dl.progress * 100).toFixed(0)}%
+																	</span>
+																</div>
+															) : (
+																<button
+																	type="button"
+																	className="track-card-action-btn"
+																	title="Download"
+																	onClick={() => handleDownload(res)}
 																>
-																	{name}
-																</td>
-																<td className="col-right cell-mono cell-muted">
-																	{res.size
-																		? (res.size / 1024 / 1024).toFixed(1) + "M"
-																		: ""}
-																</td>
-																<td className="col-right cell-mono cell-muted">
-																	{res.bitrate || ""}
-																</td>
-																<td className="cell-ellipsis cell-muted">
-																	{res.source === "soulseek" ||
-																	res.source === "peer"
-																		? `${res.source} • ${res.user}`
-																		: res.user || res.source}
-																</td>
-																<td
-																	className="col-actions"
-																	style={{ minWidth: "100px" }}
-																>
-																	{busy && dl ? (
-																		<div
-																			style={{
-																				display: "flex",
-																				alignItems: "center",
-																				gap: "4px",
-																			}}
-																		>
-																			<div
-																				style={{
-																					flex: 1,
-																					height: "4px",
-																					background: "rgba(255,255,255,0.1)",
-																					borderRadius: "2px",
-																					overflow: "hidden",
-																				}}
-																			>
-																				<div
-																					style={{
-																						width: `${(dl.progress * 100).toFixed(0)}%`,
-																						height: "100%",
-																						background: "var(--accent)",
-																						borderRadius: "2px",
-																						transition: "width 0.3s",
-																					}}
-																				/>
-																			</div>
-																			<span
-																				style={{
-																					fontSize: "0.7rem",
-																					color: "var(--text-muted)",
-																					minWidth: "28px",
-																				}}
-																			>
-																				{(dl.progress * 100).toFixed(0)}%
-																			</span>
-																		</div>
-																	) : (
-																		<button
-																			title="Download"
-																			onClick={() => handleDownload(res)}
-																		>
-																			<Download size={13} />
-																		</button>
-																	)}
-																</td>
-															</tr>
-														);
-													})}
-												</tbody>
-											</table>
+																	<Download size={16} />
+																</button>
+															)}
+														</div>
+													</div>
+												);
+											})}
 										</div>
 									)}
 								</>
@@ -6357,21 +6079,33 @@ function App() {
 								</div>
 							)}
 
-							{/* Logs di Download (visibili sia per Soulseek che per Link Diretto) */}
-							<div className="terminal-log" style={{ marginTop: "2rem" }}>
-								<div className="terminal-header">Download Logs</div>
-								<div className="terminal-body" style={{ height: "220px" }}>
-									{dlLogs.map((log, i) => (
-										<div key={i} className="log-line">
-											{log}
-										</div>
-									))}
-									{dlLogs.length === 0 && (
-										<div className="log-line dim">
-											No active download logs...
-										</div>
-									)}
+							{/* Logs di Download (visibili sia per Soulseek che per Link Diretto, collapsible) */}
+							<div className="terminal-log" style={{ marginTop: "1.5rem" }}>
+								<div
+									className="terminal-header"
+									onClick={() => setDlLogsExpanded((x) => !x)}
+									title="Click to toggle download logs"
+									style={{ cursor: "pointer" }}
+								>
+									<span>Download Logs ({dlLogs.length})</span>
+									<span style={{ fontSize: "0.72rem", opacity: 0.8 }}>
+										{dlLogsExpanded ? "Collapse ▲" : "Expand ▼"}
+									</span>
 								</div>
+								{dlLogsExpanded && (
+									<div className="terminal-body" style={{ height: "180px" }}>
+										{dlLogs.map((log, i) => (
+											<div key={i} className="log-line">
+												{log}
+											</div>
+										))}
+										{dlLogs.length === 0 && (
+											<div className="log-line dim">
+												No active download logs...
+											</div>
+										)}
+									</div>
+								)}
 							</div>
 						</div>
 					)}
