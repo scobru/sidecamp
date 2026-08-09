@@ -35,6 +35,31 @@
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
+  box-sizing: border-box;
+}
+
+.track-table thead th.th-resizable {
+  position: relative;
+  overflow: visible;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 5;
+  transition: background var(--tc-transition-fast);
+}
+
+.col-resizer:hover,
+.col-resizer.resizing {
+  background: var(--tc-color-accent-magenta, var(--primary));
+  box-shadow: 0 0 8px var(--tc-color-accent-magenta, var(--primary));
 }
 
 .track-table thead th:hover { color: var(--text-main); }
@@ -161,6 +186,9 @@
   font-size: 0.78rem;
   padding: 1px 5px;
   outline: none;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto;
 }
 
 .track-table .col-actions { width: 158px; text-align: right; }

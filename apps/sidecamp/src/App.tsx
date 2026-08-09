@@ -37,6 +37,9 @@ import {
 	Lock,
 	ShieldAlert,
 	Users,
+	Sparkles,
+	RefreshCw,
+	Check,
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
@@ -181,6 +184,40 @@ function loadChatIdentity(): KeyPair | null {
 	}
 }
 
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+	check: 32,
+	num: 38,
+	wave: 140,
+	title: 220,
+	artist: 160,
+	album: 140,
+	genre: 120,
+	bpm: 58,
+	key: 52,
+	time: 58,
+	year: 52,
+	kbps: 52,
+	size: 58,
+	added: 88,
+	actions: 170,
+};
+
+function cleanTrackMetadata(filename: string): { artist: string; title: string } {
+	let base = (filename.split(/[/\\]/).pop() || filename).replace(/\.[^/.]+$/, "");
+	base = base
+		.replace(/^\d{1,3}[\s._-]+(?=\D)/, "")
+		.replace(/[\[(](?:official|audio|video|hd|hq|4k|1080p|lyrics|remastered|explicit|clean|320kbps|free\s*download)[^\])]*[\])]/gi, "")
+		.replace(/_/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+
+	const m = base.match(/^(.+?)\s*[-–—|~]\s*(.+)$/);
+	if (m) {
+		return { artist: m[1].trim(), title: m[2].trim() };
+	}
+	return { artist: "", title: base };
+}
+
 function App() {
 	const playNotification = useCallback(() => {
 		const audio = new Audio(pingSound);
@@ -317,6 +354,62 @@ function App() {
 			setSortCol(col);
 			setSortDir(col === "added" || col === "size" ? -1 : 1);
 		}
+	};
+
+	const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+		try {
+			const saved = localStorage.getItem("tc_library_col_widths");
+			return saved ? { ...DEFAULT_COL_WIDTHS, ...JSON.parse(saved) } : DEFAULT_COL_WIDTHS;
+		} catch {
+			return DEFAULT_COL_WIDTHS;
+		}
+	});
+
+	const resizingRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
+
+	const handleColResizeStart = (col: string, e: React.MouseEvent) => {
+		e.stopPropagation();
+		e.preventDefault();
+		const startX = e.clientX;
+		const startW = colWidths[col] || DEFAULT_COL_WIDTHS[col] || 80;
+		resizingRef.current = { col, startX, startW };
+
+		const onMouseMove = (moveEvent: MouseEvent) => {
+			if (!resizingRef.current) return;
+			const delta = moveEvent.clientX - resizingRef.current.startX;
+			const newW = Math.max(30, resizingRef.current.startW + delta);
+			setColWidths((prev) => ({ ...prev, [col]: newW }));
+		};
+
+		const onMouseUp = () => {
+			if (resizingRef.current) {
+				setColWidths((latest) => {
+					try {
+						localStorage.setItem("tc_library_col_widths", JSON.stringify(latest));
+					} catch {}
+					return latest;
+				});
+				resizingRef.current = null;
+			}
+			window.removeEventListener("mousemove", onMouseMove);
+			window.removeEventListener("mouseup", onMouseUp);
+		};
+
+		window.addEventListener("mousemove", onMouseMove);
+		window.addEventListener("mouseup", onMouseUp);
+	};
+
+	const handleColReset = (col: string, e: React.MouseEvent) => {
+		e.stopPropagation();
+		e.preventDefault();
+		const defaultW = DEFAULT_COL_WIDTHS[col] || 80;
+		setColWidths((prev) => {
+			const next = { ...prev, [col]: defaultW };
+			try {
+				localStorage.setItem("tc_library_col_widths", JSON.stringify(next));
+			} catch {}
+			return next;
+		});
 	};
 	// BPM auto-analysis (Web Audio decode + beat detection), one file at a time
 	const [analyzing, setAnalyzing] = useState<{
@@ -475,12 +568,28 @@ function App() {
 		name: string;
 		path: string;
 	} | null>(null);
-	const [editTagsData, setEditTagsData] = useState({
+	const [editTagsData, setEditTagsData] = useState<{
+		title: string;
+		artist: string;
+		album: string;
+		genre: string;
+		year: string | number;
+		bpm: string | number;
+		key: string;
+		filename: string;
+	}>({
 		title: "",
 		artist: "",
 		album: "",
+		genre: "",
+		year: "",
+		bpm: "",
+		key: "",
 		filename: "",
 	});
+	const [editTagsSearching, setEditTagsSearching] = useState<"beatport" | "musicbrainz" | null>(null);
+	const [editTagsResults, setEditTagsResults] = useState<any[]>([]);
+	const [editTagsSearchError, setEditTagsSearchError] = useState("");
 
 	// Pre-Upload Metadata Editor States
 	const [metadataModalFile, setMetadataModalFile] = useState<{
@@ -1524,33 +1633,116 @@ function App() {
 	};
 
 	const handleEditTags = async (file: any) => {
-		setEditTagsFile({ name: file.name, path: file.path });
+		const currentFilename = file.name.split(/[/\\]/).pop() || file.name;
+		const parsed = cleanTrackMetadata(currentFilename);
+		const existing = trackMeta[file.path];
+
+		let initialTitle = existing?.title || parsed.title || "";
+		let initialArtist = existing?.artist || parsed.artist || "";
+		let initialAlbum = existing?.album || "";
+		let initialGenre = existing?.genre || "";
+		let initialYear: string | number = existing?.year ?? "";
+		let initialBpm: string | number = existing?.bpm ?? "";
+		let initialKey = existing?.key || "";
+
 		try {
 			const tags = await window.electronAPI.readTags(file.path);
-			const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(
-				/\.[^/.]+$/,
-				"",
-			);
-			const currentFilename = file.name.split(/[/\\]/).pop() || file.name;
-			setEditTagsData({
-				title: tags.title || baseName,
-				artist: tags.artist || "",
-				album: tags.album || "",
-				filename: currentFilename,
-			});
+			if (tags) {
+				if (tags.title) initialTitle = tags.title;
+				if (tags.artist) initialArtist = tags.artist;
+				if (tags.album) initialAlbum = tags.album;
+				if (tags.genre) initialGenre = tags.genre;
+				if (tags.year !== undefined && tags.year !== null) initialYear = tags.year;
+				if (tags.bpm !== undefined && tags.bpm !== null) initialBpm = tags.bpm;
+				if (tags.initialKey || tags.key) initialKey = tags.initialKey || tags.key;
+			}
 		} catch {
-			const baseName = (file.name.split(/[/\\]/).pop() || file.name).replace(
-				/\.[^/.]+$/,
-				"",
-			);
-			const currentFilename = file.name.split(/[/\\]/).pop() || file.name;
-			setEditTagsData({
-				title: baseName,
-				artist: "",
-				album: "",
-				filename: currentFilename,
-			});
+			// fallback to initial values
 		}
+
+		setEditTagsData({
+			title: initialTitle,
+			artist: initialArtist,
+			album: initialAlbum,
+			genre: initialGenre,
+			year: initialYear,
+			bpm: initialBpm,
+			key: initialKey,
+			filename: currentFilename,
+		});
+		setEditTagsResults([]);
+		setEditTagsSearching(null);
+		setEditTagsSearchError("");
+		setEditTagsFile({ name: file.name, path: file.path });
+	};
+
+	const handleSearchBeatport = async () => {
+		if (!editTagsData.title && !editTagsData.artist) return;
+		setEditTagsSearching("beatport");
+		setEditTagsSearchError("");
+		setEditTagsResults([]);
+		try {
+			const results = await window.electronAPI.searchBeatport(
+				editTagsData.artist,
+				editTagsData.title,
+			);
+			if (results && results.length > 0) {
+				setEditTagsResults(results);
+			} else {
+				setEditTagsSearchError("No matching tracks found on Beatport.");
+			}
+		} catch (e: any) {
+			setEditTagsSearchError("Beatport search failed: " + (e.message || e));
+		} finally {
+			setEditTagsSearching(null);
+		}
+	};
+
+	const handleSearchMusicBrainz = async () => {
+		if (!editTagsData.title && !editTagsData.artist) return;
+		setEditTagsSearching("musicbrainz");
+		setEditTagsSearchError("");
+		setEditTagsResults([]);
+		try {
+			const results = await window.electronAPI.searchMusicBrainz(
+				editTagsData.artist,
+				editTagsData.title,
+			);
+			if (results && results.length > 0) {
+				setEditTagsResults(results);
+			} else {
+				setEditTagsSearchError("No matching recordings found on MusicBrainz.");
+			}
+		} catch (e: any) {
+			setEditTagsSearchError("MusicBrainz search failed: " + (e.message || e));
+		} finally {
+			setEditTagsSearching(null);
+		}
+	};
+
+	const handleAutoCleanFilename = () => {
+		if (!editTagsFile) return;
+		const originalFilename = editTagsFile.name.split(/[/\\]/).pop() || editTagsFile.name;
+		const parsed = cleanTrackMetadata(originalFilename);
+		setEditTagsData((prev) => ({
+			...prev,
+			title: parsed.title || prev.title,
+			artist: parsed.artist || prev.artist,
+		}));
+	};
+
+	const applySearchResult = (res: any) => {
+		setEditTagsData((prev) => ({
+			...prev,
+			title: res.title || prev.title,
+			artist: res.artist || prev.artist,
+			album: res.album || prev.album,
+			genre: res.genre || prev.genre,
+			bpm: res.bpm !== undefined && res.bpm !== null ? res.bpm : prev.bpm,
+			key: res.key || prev.key,
+			year: res.year !== undefined && res.year !== null ? res.year : prev.year,
+		}));
+		setEditTagsResults([]);
 	};
 
 	const confirmEditTags = async () => {
@@ -1560,17 +1752,32 @@ function App() {
 			await window.electronAPI.writeTags(editTagsFile.path, tags);
 			const originalFilename =
 				editTagsFile.name.split(/[/\\]/).pop() || editTagsFile.name;
+			let currentPath = editTagsFile.path;
 			if (filename && filename !== originalFilename) {
-				await window.electronAPI.renameDownload(editTagsFile.path, filename);
+				const renamed = await window.electronAPI.renameDownload(editTagsFile.path, filename);
+				if (renamed && typeof renamed === "string") currentPath = renamed;
 			}
+			setTrackMeta((prev) => ({
+				...prev,
+				[currentPath]: {
+					...(prev[editTagsFile.path] || { duration: 0, bitrate: 0 }),
+					title: editTagsData.title,
+					artist: editTagsData.artist,
+					album: editTagsData.album,
+					genre: editTagsData.genre,
+					bpm: editTagsData.bpm ? parseFloat(String(editTagsData.bpm)) : null,
+					key: editTagsData.key,
+					year: editTagsData.year ? parseInt(String(editTagsData.year), 10) : null,
+				},
+			}));
 			setDlLogs((prev) => [
 				...prev,
-				`[Library] Tags saved: ${editTagsFile.name}`,
+				`[Library] Tags saved: ${editTagsData.title || editTagsFile.name}`,
 			]);
 			setEditTagsFile(null);
 			loadDownloadedFiles();
 		} catch (e: any) {
-			alert("Error: " + (e.message || e));
+			alert("Error saving tags: " + (e.message || e));
 		}
 		setEditTagsFile(null);
 	};
@@ -3886,13 +4093,45 @@ function App() {
 									</div>
 								));
 							const th = (id: string, label: string, cls?: string) => (
-								<th className={cls} onClick={() => toggleSort(id)}>
-									{label}
-									{sortCol === id ? (
-										<span className="sort-arrow">
-											{sortDir === 1 ? "▲" : "▼"}
+								<th
+									className={`th-resizable ${cls || ""}`}
+									style={{
+										width: colWidths[id] || DEFAULT_COL_WIDTHS[id],
+										minWidth: colWidths[id] || DEFAULT_COL_WIDTHS[id],
+									}}
+									onClick={() => toggleSort(id)}
+								>
+									<div
+										style={{
+											display: "flex",
+											alignItems: "center",
+											width: "100%",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+										}}
+									>
+										<span
+											style={{
+												overflow: "hidden",
+												textOverflow: "ellipsis",
+												flex: 1,
+											}}
+										>
+											{label}
 										</span>
-									) : null}
+										{sortCol === id ? (
+											<span className="sort-arrow">
+												{sortDir === 1 ? "▲" : "▼"}
+											</span>
+										) : null}
+									</div>
+									<div
+										className="col-resizer"
+										title="Drag to resize, double-click to reset"
+										onMouseDown={(e) => handleColResizeStart(id, e)}
+										onDoubleClick={(e) => handleColReset(id, e)}
+										onClick={(e) => e.stopPropagation()}
+									/>
 								</th>
 							);
 							const editableCell = (
@@ -3903,10 +4142,17 @@ function App() {
 								cellEdit &&
 								cellEdit.path === r.file.path &&
 								cellEdit.field === field ? (
-									<td className={cls}>
+									<td
+										className={cls}
+										style={{
+											width: colWidths[field],
+											maxWidth: colWidths[field],
+										}}
+									>
 										<input
 											className="cell-edit-input"
 											autoFocus
+											draggable={false}
 											value={cellEdit.value}
 											onChange={(e) =>
 												setCellEdit((c) =>
@@ -3917,13 +4163,18 @@ function App() {
 												if (e.key === "Enter") saveCellEdit();
 												if (e.key === "Escape") setCellEdit(null);
 											}}
-											onBlur={() => setCellEdit(null)}
+											onMouseDown={(e) => e.stopPropagation()}
+											onBlur={saveCellEdit}
 											onDoubleClick={(e) => e.stopPropagation()}
 										/>
 									</td>
 								) : (
 									<td
 										className={cls}
+										style={{
+											width: colWidths[field],
+											maxWidth: colWidths[field],
+										}}
 										title={`${r.file.name} — double-click to edit ${field}`}
 										onDoubleClick={(e) => {
 											e.stopPropagation();
@@ -4160,9 +4411,53 @@ function App() {
 												<table className="track-table">
 													<thead>
 														<tr>
-															<th className="col-check"></th>
-															<th className="col-num">#</th>
-															<th className="col-wave">Wave</th>
+															<th
+																className="th-resizable col-check"
+																style={{
+																	width: colWidths.check || DEFAULT_COL_WIDTHS.check,
+																	minWidth: colWidths.check || DEFAULT_COL_WIDTHS.check,
+																}}
+															>
+																<div
+																	className="col-resizer"
+																	title="Drag to resize, double-click to reset"
+																	onMouseDown={(e) => handleColResizeStart("check", e)}
+																	onDoubleClick={(e) => handleColReset("check", e)}
+																	onClick={(e) => e.stopPropagation()}
+																/>
+															</th>
+															<th
+																className="th-resizable col-num"
+																style={{
+																	width: colWidths.num || DEFAULT_COL_WIDTHS.num,
+																	minWidth: colWidths.num || DEFAULT_COL_WIDTHS.num,
+																}}
+															>
+																#
+																<div
+																	className="col-resizer"
+																	title="Drag to resize, double-click to reset"
+																	onMouseDown={(e) => handleColResizeStart("num", e)}
+																	onDoubleClick={(e) => handleColReset("num", e)}
+																	onClick={(e) => e.stopPropagation()}
+																/>
+															</th>
+															<th
+																className="th-resizable col-wave"
+																style={{
+																	width: colWidths.wave || DEFAULT_COL_WIDTHS.wave,
+																	minWidth: colWidths.wave || DEFAULT_COL_WIDTHS.wave,
+																}}
+															>
+																Wave
+																<div
+																	className="col-resizer"
+																	title="Drag to resize, double-click to reset"
+																	onMouseDown={(e) => handleColResizeStart("wave", e)}
+																	onDoubleClick={(e) => handleColReset("wave", e)}
+																	onClick={(e) => e.stopPropagation()}
+																/>
+															</th>
 															{th("title", "Title", "col-title")}
 															{th("artist", "Artist", "col-artist")}
 															{th("album", "Album", "col-album")}
@@ -4174,7 +4469,21 @@ function App() {
 															{th("kbps", "kbps", "col-kbps col-right")}
 															{th("size", "Size", "col-size col-right")}
 															{th("added", "Added", "col-added")}
-															<th className="col-actions"></th>
+															<th
+																className="th-resizable col-actions"
+																style={{
+																	width: colWidths.actions || DEFAULT_COL_WIDTHS.actions,
+																	minWidth: colWidths.actions || DEFAULT_COL_WIDTHS.actions,
+																}}
+															>
+																<div
+																	className="col-resizer"
+																	title="Drag to resize, double-click to reset"
+																	onMouseDown={(e) => handleColResizeStart("actions", e)}
+																	onDoubleClick={(e) => handleColReset("actions", e)}
+																	onClick={(e) => e.stopPropagation()}
+																/>
+															</th>
 														</tr>
 													</thead>
 													<tbody>
@@ -4188,7 +4497,7 @@ function App() {
 																	key={file.path}
 																	className={isCurrent ? "playing" : ""}
 																	onDoubleClick={() => playAt(libraryQueue, i)}
-																	draggable
+																	draggable={cellEdit?.path !== file.path}
 																	onDragStart={(e) => {
 																		const paths = selectedSet.has(file.path)
 																			? selectedFiles
@@ -4200,7 +4509,13 @@ function App() {
 																		e.dataTransfer.effectAllowed = "copy";
 																	}}
 																>
-																	<td className="col-check">
+																	<td
+																		className="col-check"
+																		style={{
+																			width: colWidths.check,
+																			maxWidth: colWidths.check,
+																		}}
+																	>
 																		{isSeeding ? (
 																			<span
 																				className="seed-check"
@@ -4220,11 +4535,21 @@ function App() {
 																			/>
 																		)}
 																	</td>
-																	<td className="col-num">
+																	<td
+																		className="col-num"
+																		style={{
+																			width: colWidths.num,
+																			maxWidth: colWidths.num,
+																		}}
+																	>
 																		{isCurrent ? "▶" : i + 1}
 																	</td>
 																	<td
 																		className="col-wave"
+																		style={{
+																			width: colWidths.wave,
+																			maxWidth: colWidths.wave,
+																		}}
 																		title={
 																			isCurrent
 																				? "Click to seek"
@@ -4275,26 +4600,76 @@ function App() {
 																		"genre",
 																		"cell-ellipsis cell-muted col-genre",
 																	)}
-																	<td className="col-right cell-mono">
+																	<td
+																		className="col-right cell-mono"
+																		style={{
+																			width: colWidths.bpm,
+																			maxWidth: colWidths.bpm,
+																		}}
+																	>
 																		{r.bpm ?? ""}
 																	</td>
-																	<td className="col-key cell-mono">{r.key}</td>
-																	<td className="col-right cell-mono">
+																	<td
+																		className="col-key cell-mono"
+																		style={{
+																			width: colWidths.key,
+																			maxWidth: colWidths.key,
+																		}}
+																	>
+																		{r.key}
+																	</td>
+																	<td
+																		className="col-right cell-mono"
+																		style={{
+																			width: colWidths.time,
+																			maxWidth: colWidths.time,
+																		}}
+																	>
 																		{r.duration ? formatTime(r.duration) : ""}
 																	</td>
-																	<td className="col-right cell-mono cell-muted">
+																	<td
+																		className="col-right cell-mono cell-muted"
+																		style={{
+																			width: colWidths.year,
+																			maxWidth: colWidths.year,
+																		}}
+																	>
 																		{r.year ?? ""}
 																	</td>
-																	<td className="col-right cell-mono cell-muted">
+																	<td
+																		className="col-right cell-mono cell-muted"
+																		style={{
+																			width: colWidths.kbps,
+																			maxWidth: colWidths.kbps,
+																		}}
+																	>
 																		{r.kbps || ""}
 																	</td>
-																	<td className="col-right cell-mono cell-muted">
+																	<td
+																		className="col-right cell-mono cell-muted"
+																		style={{
+																			width: colWidths.size,
+																			maxWidth: colWidths.size,
+																		}}
+																	>
 																		{(file.size / 1024 / 1024).toFixed(1)}M
 																	</td>
-																	<td className="cell-mono cell-muted">
+																	<td
+																		className="cell-mono cell-muted"
+																		style={{
+																			width: colWidths.added,
+																			maxWidth: colWidths.added,
+																		}}
+																	>
 																		{new Date(file.ctime).toLocaleDateString()}
 																	</td>
-																	<td className="col-actions">
+																	<td
+																		className="col-actions"
+																		style={{
+																			width: colWidths.actions,
+																			maxWidth: colWidths.actions,
+																		}}
+																	>
 																		<button
 																			title="Play"
 																			onClick={() => playAt(libraryQueue, i)}
@@ -6661,31 +7036,297 @@ function App() {
 				<div className="modal-overlay" onClick={() => setEditTagsFile(null)}>
 					<div
 						className="modal-content glass-card"
+						style={{ maxWidth: "560px", width: "95%" }}
 						onClick={(e) => e.stopPropagation()}
 					>
-						<h3
+						<div
 							style={{
-								fontFamily: "var(--font-headings)",
-								marginBottom: "1.2rem",
-								fontSize: "1.25rem",
+								display: "flex",
+								justifyContent: "space-between",
+								alignItems: "center",
+								marginBottom: "1rem",
 							}}
 						>
-							Edit File Tags
-						</h3>
+							<h3
+								style={{
+									fontFamily: "var(--font-headings)",
+									margin: 0,
+									fontSize: "1.25rem",
+									display: "flex",
+									alignItems: "center",
+									gap: "8px",
+								}}
+							>
+								<Tag size={18} style={{ color: "var(--primary)" }} /> Edit File Tags
+							</h3>
+							<button
+								onClick={() => setEditTagsFile(null)}
+								style={{
+									background: "transparent",
+									border: "none",
+									color: "var(--text-muted)",
+									cursor: "pointer",
+									padding: "4px",
+								}}
+							>
+								<X size={18} />
+							</button>
+						</div>
+
 						<p
 							style={{
-								fontSize: "0.85rem",
+								fontSize: "0.82rem",
 								color: "var(--text-muted)",
-								marginBottom: "1rem",
+								marginBottom: "1.2rem",
 								wordBreak: "break-all",
+								background: "rgba(0,0,0,0.2)",
+								padding: "6px 10px",
+								borderRadius: "6px",
 							}}
 						>
-							<span
-								style={{ fontFamily: "monospace", color: "var(--text-main)" }}
-							>
+							<span style={{ fontFamily: "monospace", color: "var(--text-main)" }}>
 								{editTagsFile.name.split(/[/\\]/).pop()}
 							</span>
 						</p>
+
+						{/* Tag Online Search / Clean Bar */}
+						<div
+							style={{
+								display: "flex",
+								gap: "8px",
+								flexWrap: "wrap",
+								marginBottom: "1.2rem",
+								background: "var(--elevated-bg, rgba(255,255,255,0.03))",
+								border: "1px solid var(--glass-border)",
+								borderRadius: "8px",
+								padding: "8px",
+							}}
+						>
+							<Button
+								variant="secondary"
+								disabled={editTagsSearching !== null}
+								onClick={handleSearchBeatport}
+								style={{
+									fontSize: "0.8rem",
+									padding: "0.4rem 0.75rem",
+									display: "flex",
+									alignItems: "center",
+									gap: "6px",
+								}}
+								title="Search track metadata on Beatport (BPM, Key, Genre, Album, Year)"
+							>
+								{editTagsSearching === "beatport" ? (
+									<RefreshCw size={13} className="spin" />
+								) : (
+									<Globe size={13} />
+								)}
+								Search Beatport
+							</Button>
+							<Button
+								variant="secondary"
+								disabled={editTagsSearching !== null}
+								onClick={handleSearchMusicBrainz}
+								style={{
+									fontSize: "0.8rem",
+									padding: "0.4rem 0.75rem",
+									display: "flex",
+									alignItems: "center",
+									gap: "6px",
+								}}
+								title="Search recordings on MusicBrainz"
+							>
+								{editTagsSearching === "musicbrainz" ? (
+									<RefreshCw size={13} className="spin" />
+								) : (
+									<Music size={13} />
+								)}
+								Search MusicBrainz
+							</Button>
+							<Button
+								variant="secondary"
+								onClick={handleAutoCleanFilename}
+								style={{
+									fontSize: "0.8rem",
+									padding: "0.4rem 0.75rem",
+									display: "flex",
+									alignItems: "center",
+									gap: "6px",
+								}}
+								title="Clean track name and artist by parsing filename"
+							>
+								<Sparkles size={13} /> Clean Filename
+							</Button>
+						</div>
+
+						{/* Search Error Message */}
+						{editTagsSearchError && (
+							<div
+								style={{
+									fontSize: "0.82rem",
+									color: "#f87171",
+									background: "rgba(239, 68, 68, 0.1)",
+									border: "1px solid rgba(239, 68, 68, 0.25)",
+									borderRadius: "6px",
+									padding: "8px 12px",
+									marginBottom: "1.2rem",
+									display: "flex",
+									justifyContent: "space-between",
+									alignItems: "center",
+								}}
+							>
+								<span>{editTagsSearchError}</span>
+								<button
+									onClick={() => setEditTagsSearchError("")}
+									style={{
+										background: "transparent",
+										border: "none",
+										color: "#f87171",
+										cursor: "pointer",
+									}}
+								>
+									<X size={14} />
+								</button>
+							</div>
+						)}
+
+						{/* Online Search Candidates */}
+						{editTagsResults.length > 0 && (
+							<div
+								style={{
+									marginBottom: "1.5rem",
+									background: "rgba(0,0,0,0.3)",
+									border: "1px solid var(--primary)",
+									borderRadius: "8px",
+									padding: "10px",
+									maxHeight: "220px",
+									overflowY: "auto",
+								}}
+							>
+								<div
+									style={{
+										display: "flex",
+										justifyContent: "space-between",
+										alignItems: "center",
+										marginBottom: "8px",
+										paddingBottom: "6px",
+										borderBottom: "1px solid var(--glass-border)",
+									}}
+								>
+									<span
+										style={{
+											fontSize: "0.78rem",
+											fontWeight: 600,
+											color: "var(--primary)",
+											textTransform: "uppercase",
+										}}
+									>
+										Found {editTagsResults.length} Matched Tracks — Click to Apply
+									</span>
+									<button
+										onClick={() => setEditTagsResults([])}
+										style={{
+											background: "transparent",
+											border: "none",
+											color: "var(--text-muted)",
+											cursor: "pointer",
+											fontSize: "0.75rem",
+										}}
+									>
+										Close
+									</button>
+								</div>
+								<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+									{editTagsResults.map((match, idx) => (
+										<div
+											key={idx}
+											style={{
+												display: "flex",
+												justifyContent: "space-between",
+												alignItems: "center",
+												gap: "8px",
+												padding: "6px 8px",
+												borderRadius: "6px",
+												background: "rgba(255,255,255,0.03)",
+												border: "1px solid var(--glass-border)",
+											}}
+										>
+											<div style={{ flex: 1, minWidth: 0 }}>
+												<div
+													style={{
+														fontSize: "0.85rem",
+														fontWeight: 600,
+														color: "var(--text-main)",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														whiteSpace: "nowrap",
+													}}
+												>
+													{match.title}
+												</div>
+												<div
+													style={{
+														fontSize: "0.78rem",
+														color: "var(--text-muted)",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														whiteSpace: "nowrap",
+													}}
+												>
+													{match.artist} {match.album ? `• ${match.album}` : ""}
+												</div>
+												<div
+													style={{
+														display: "flex",
+														gap: "6px",
+														marginTop: "3px",
+														fontSize: "0.72rem",
+														color: "var(--text-subtle)",
+														flexWrap: "wrap",
+													}}
+												>
+													{match.genre && (
+														<span
+															style={{
+																background: "rgba(168, 85, 247, 0.2)",
+																color: "var(--primary)",
+																padding: "1px 5px",
+																borderRadius: "4px",
+															}}
+														>
+															{match.genre}
+														</span>
+													)}
+													{match.bpm && (
+														<span style={{ fontFamily: "monospace" }}>
+															{match.bpm} BPM
+														</span>
+													)}
+													{match.key && (
+														<span style={{ fontFamily: "monospace" }}>
+															Key: {match.key}
+														</span>
+													)}
+													{match.year && <span>{match.year}</span>}
+												</div>
+											</div>
+											<Button
+												variant="accent"
+												onClick={() => applySearchResult(match)}
+												style={{
+													fontSize: "0.75rem",
+													padding: "0.3rem 0.65rem",
+													whiteSpace: "nowrap",
+												}}
+											>
+												<Check size={12} /> Apply
+											</Button>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* Form Inputs */}
 						<div className="form-group">
 							<label>Track Title</label>
 							<input
@@ -6698,8 +7339,10 @@ function App() {
 									}))
 								}
 								className="glass-input"
+								placeholder="e.g. Rumble"
 							/>
 						</div>
+
 						<div className="form-group">
 							<label>Artist Name</label>
 							<input
@@ -6712,22 +7355,97 @@ function App() {
 									}))
 								}
 								className="glass-input"
+								placeholder="e.g. Skrillex, Fred again.., Flowdan"
 							/>
 						</div>
-						<div className="form-group">
-							<label>Album</label>
-							<input
-								type="text"
-								value={editTagsData.album}
-								onChange={(e) =>
-									setEditTagsData((prev) => ({
-										...prev,
-										album: e.target.value,
-									}))
-								}
-								className="glass-input"
-							/>
+
+						<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+							<div className="form-group">
+								<label>Album</label>
+								<input
+									type="text"
+									value={editTagsData.album}
+									onChange={(e) =>
+										setEditTagsData((prev) => ({
+											...prev,
+											album: e.target.value,
+										}))
+									}
+									className="glass-input"
+									placeholder="e.g. Quest For Fire"
+								/>
+							</div>
+							<div className="form-group">
+								<label>Genre</label>
+								<input
+									type="text"
+									value={editTagsData.genre}
+									onChange={(e) =>
+										setEditTagsData((prev) => ({
+											...prev,
+											genre: e.target.value,
+										}))
+									}
+									className="glass-input"
+									placeholder="e.g. Deep Dubstep / Bass"
+								/>
+							</div>
 						</div>
+
+						<div
+							style={{
+								display: "grid",
+								gridTemplateColumns: "1fr 1fr 1fr",
+								gap: "12px",
+							}}
+						>
+							<div className="form-group">
+								<label>Year</label>
+								<input
+									type="number"
+									value={editTagsData.year}
+									onChange={(e) =>
+										setEditTagsData((prev) => ({
+											...prev,
+											year: e.target.value,
+										}))
+									}
+									className="glass-input"
+									placeholder="2024"
+								/>
+							</div>
+							<div className="form-group">
+								<label>BPM</label>
+								<input
+									type="text"
+									value={editTagsData.bpm}
+									onChange={(e) =>
+										setEditTagsData((prev) => ({
+											...prev,
+											bpm: e.target.value,
+										}))
+									}
+									className="glass-input"
+									placeholder="140"
+								/>
+							</div>
+							<div className="form-group">
+								<label>Key</label>
+								<input
+									type="text"
+									value={editTagsData.key}
+									onChange={(e) =>
+										setEditTagsData((prev) => ({
+											...prev,
+											key: e.target.value,
+										}))
+									}
+									className="glass-input"
+									placeholder="4m / F min"
+								/>
+							</div>
+						</div>
+
 						<div className="form-group">
 							<label>File Name</label>
 							<input
@@ -6742,9 +7460,10 @@ function App() {
 								className="glass-input"
 							/>
 						</div>
+
 						<div
 							className="btn-group"
-							style={{ marginTop: "2rem", justifyContent: "flex-end" }}
+							style={{ marginTop: "1.5rem", justifyContent: "flex-end", gap: "8px" }}
 						>
 							<Button variant="secondary" onClick={() => setEditTagsFile(null)}>
 								Cancel

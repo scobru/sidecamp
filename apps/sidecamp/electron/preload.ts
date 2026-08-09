@@ -73,7 +73,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: () => ipcRenderer.invoke('dialog:open-file'),
   exportPlaylist: (destDir: string, folderName: string, items: { path: string; exportName: string }[]) => ipcRenderer.invoke('playlist:export', destDir, folderName, items),
 
-  // Library Organizer
+  // Library Organizer & Tag Search
+  searchBeatport: (artist: string, title: string) => ipcRenderer.invoke('tag:search-beatport', artist, title),
+  searchMusicBrainz: (artist: string, title: string) => ipcRenderer.invoke('tag:search-musicbrainz', artist, title),
   organizeScan: (root: string, mode: string) => ipcRenderer.invoke('organize:scan', root, mode),
   organizeApply: (root: string, actions: any[]) => ipcRenderer.invoke('organize:apply', root, actions),
   organizeFillGenres: (root: string) => ipcRenderer.invoke('organize:fill-genres', root),

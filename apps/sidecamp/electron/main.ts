@@ -361,8 +361,19 @@ ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
   // update (merge) instead of write (replace): keeps tags we don't edit, e.g. TBPM/genre.
+  const id3Tags: Record<string, any> = {};
+  if (tags.title !== undefined) id3Tags.title = String(tags.title);
+  if (tags.artist !== undefined) id3Tags.artist = String(tags.artist);
+  if (tags.album !== undefined) id3Tags.album = String(tags.album);
+  if (tags.genre !== undefined) id3Tags.genre = String(tags.genre);
+  if (tags.year !== undefined && tags.year !== null && tags.year !== '') id3Tags.year = String(tags.year);
+  if (tags.bpm !== undefined && tags.bpm !== null && tags.bpm !== '') id3Tags.bpm = String(tags.bpm);
+  if (tags.key !== undefined && tags.key) id3Tags.initialKey = String(tags.key);
+  if (tags.initialKey !== undefined && tags.initialKey) id3Tags.initialKey = String(tags.initialKey);
+  if (tags.trackNumber !== undefined && tags.trackNumber !== null && tags.trackNumber !== '') id3Tags.trackNumber = String(tags.trackNumber);
+
   try {
-    await NodeID3.Promise.update(tags, filePath);
+    await NodeID3.Promise.update(id3Tags, filePath);
   } catch (err: any) {
     throw new Error(`NodeID3.update failed: ${err.message || err}`);
   }
@@ -662,11 +673,27 @@ ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: s
   }
 });
 
-// --- Library Organizer IPC ---
+// --- Library Organizer IPC & Tag Lookup ---
 import { scanDir, buildPlan, applyPlan, OrganizeMode, Track } from './organizer';
 import { cacheGet, cachePut } from './organizer-cache';
-import { lookupGenre } from './beatport';
-import { lookupGenre as lookupGenreMB } from './musicbrainz';
+import { lookupGenre, searchTracksBeatport } from './beatport';
+import { lookupGenre as lookupGenreMB, searchRecordingsMB } from './musicbrainz';
+
+ipcMain.handle('tag:search-beatport', async (_event, artist: string, title: string) => {
+  try {
+    return await searchTracksBeatport(artist || '', title || '', net.fetch);
+  } catch (err: any) {
+    return [];
+  }
+});
+
+ipcMain.handle('tag:search-musicbrainz', async (_event, artist: string, title: string) => {
+  try {
+    return await searchRecordingsMB(artist || '', title || '', net.fetch);
+  } catch (err: any) {
+    return [];
+  }
+});
 
 ipcMain.handle('organize:scan', async (event, root: string, mode: OrganizeMode) => {
   if (!root) return { error: 'No folder selected' };

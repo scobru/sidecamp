@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { topTag, lookupGenre } from './musicbrainz';
+import { topTag, lookupGenre, searchRecordingsMB, cleanQuery } from './musicbrainz';
+
+describe('cleanQuery', () => {
+  it('cleans extensions, rip tags, track numbers, and underscores', () => {
+    expect(cleanQuery('01. Daft_Punk_-_One_More_Time_(Official_Video)_[1080p].mp3')).toBe('Daft Punk - One More Time');
+    expect(cleanQuery('05 - Song Name (Lyrics) [HQ]')).toBe('Song Name');
+  });
+});
 
 describe('topTag', () => {
   it('picks highest-voted tag, Title-cased', () => {
@@ -41,3 +48,43 @@ describe('lookupGenre', () => {
     expect(await lookupGenre('X', 'Y', fn)).toBeNull();
   });
 });
+
+describe('searchRecordingsMB', () => {
+  it('returns candidate recordings with full metadata', async () => {
+    const payload = {
+      recordings: [
+        {
+          id: 'mb-rec-1',
+          title: 'One More Time',
+          score: 100,
+          'artist-credit': [{ name: 'Daft Punk' }],
+          releases: [
+            {
+              title: 'Discovery',
+              date: '2001-03-12',
+              media: [{ position: 1, track: [{ number: '1' }] }],
+              tags: [{ count: 10, name: 'french house' }]
+            }
+          ],
+          tags: [{ count: 5, name: 'house' }],
+          length: 320000
+        }
+      ]
+    };
+    const fn = async () => ({ json: async () => payload });
+    const matches = await searchRecordingsMB('Daft Punk', 'One More Time', fn);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toEqual({
+      id: 'mb-rec-1',
+      title: 'One More Time',
+      artist: 'Daft Punk',
+      album: 'Discovery',
+      year: 2001,
+      genre: 'House',
+      trackNumber: 1,
+      duration: 320,
+      score: 100
+    });
+  });
+});
+

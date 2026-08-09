@@ -693,7 +693,9 @@ export function createCapacitorAdapter() {
 			_items: any[],
 		) => {},
 
-		// Library Organizer
+		// Library Organizer & Tag Search
+		searchBeatport: async (_artist: string, _title: string) => [],
+		searchMusicBrainz: async (_artist: string, _title: string) => [],
 		organizeScan: async (_root: string, _mode: string) => ({ actions: [] }),
 		organizeApply: async (_root: string, _actions: any[]) => ({
 			success: true,
