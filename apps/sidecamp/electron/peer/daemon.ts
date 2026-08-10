@@ -212,7 +212,13 @@ export class PeerDaemon extends EventEmitter {
             // Handlers bind to this local socket, not to the field: a late event from
             // a socket we already replaced must not close the current one nor stack a
             // second reconnect chain on top of the live one.
-            const ws = new WebSocket(wsUrl.toString());
+            // `ws` offers permessage-deflate by default on the client side; the
+            // instance never enables it. An intermediary that accepts the offer
+            // on the instance's behalf and then forwards uncompressed frames —
+            // or compresses ones we did not negotiate — yields "RSV1 must
+            // clear" and a dead socket. Not offering it leaves nothing to
+            // mis-negotiate.
+            const ws = new WebSocket(wsUrl.toString(), { perMessageDeflate: false });
             this.ws = ws;
 
             ws.on('open', () => {
