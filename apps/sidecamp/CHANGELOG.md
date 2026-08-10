@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.9] - 2026-08-10
+
+### Fixed
+
+- **The peer daemon no longer offers permessage-deflate.** `ws` enables the extension by default for clients, while the TuneCamp instance never enables it server-side, so nothing between the two agrees on who compresses. A user hit `Invalid WebSocket frame: RSV1 must clear` immediately after "WebSocket connesso" — which is what an intermediary accepting the offer on the instance's behalf looks like, since compressed frames cannot originate from the instance itself. Not offering the extension leaves nothing to mis-negotiate. This affects the desktop daemon only; the Capacitor adapter uses the browser's `WebSocket`, which takes no options.
+
 ## [0.26.5] - 2026-08-07
 
 ### Added
