@@ -13,6 +13,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "compile": "tsc -b && vite build",
     "build": "npm run compile && electron-builder --publish never"
   },
@@ -29,13 +31,17 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^6.0.3",
     "audio-engine": "*",
     "electron": "43.1.0",
     "electron-builder": "^26.15.3",
     "graph-ui": "*",
+    "jsdom": "^29.1.1",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
+    "vitest": "^4.1.10",
     "vite-plugin-electron": "^1.1.0",
     "vite-plugin-electron-renderer": "^1.0.0"
   },

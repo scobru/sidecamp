@@ -27,8 +27,8 @@
     "cap:open:ios": "cap open ios",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.0",

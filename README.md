@@ -69,9 +69,12 @@ npm run dev --workspace apps/graphofone
 We use **Vitest** and **React Testing Library** for unit and hook testing:
 
 ```bash
-cd apps/sidecamp
-npm run test       # watch mode
-npm run test:run   # single run
+# From the repo root: every workspace that has tests, single run
+npm test
+
+# Or a single workspace
+npm test --workspace apps/sidecamp
+npm run test:watch --workspace apps/sidecamp   # watch mode
 ```
 
 ### Build for production
