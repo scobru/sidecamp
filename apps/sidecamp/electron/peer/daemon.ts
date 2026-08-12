@@ -206,6 +206,11 @@ export class PeerDaemon extends EventEmitter {
             wsUrl.pathname = '/ws/peer';
             wsUrl.searchParams.set('token', this.config.token);
             wsUrl.searchParams.set('allowDownloads', String(this.config.allowDownloads));
+            // Tells the instance it may answer Range requests for us. Without it
+            // the instance advertises `Accept-Ranges: none`: an older daemon would
+            // ignore `start` and stream the file from byte 0, which the browser
+            // would then splice in at the requested offset as corrupt audio.
+            wsUrl.searchParams.set('caps', 'range');
             
             this.emit("status", "connecting");
             
@@ -249,7 +254,7 @@ export class PeerDaemon extends EventEmitter {
                     } else if (msg.type === 'ping') {
                         this.ws?.send(JSON.stringify({ type: 'pong' }));
                     } else if (msg.type === 'stream_request' || msg.type === 'download_request') {
-                        this.handleRequest(msg.requestId, msg.trackId);
+                        this.handleRequest(msg.requestId, msg.trackId, msg.start, msg.end);
                     } else if (msg.type === 'cancel_request') {
                         this.handleCancel(msg.requestId);
                     } else if (msg.type === 'rtc_signal') {
@@ -294,18 +299,48 @@ export class PeerDaemon extends EventEmitter {
         }, 5000);
     }
 
-    private handleRequest(requestId: string, trackId: string) {
+    // `start`/`end` are absolute, inclusive byte offsets resolved by the instance
+    // from the listener's Range header — the same convention fs.createReadStream
+    // uses. Kept synchronous (statSync) so a cancel_request arriving right after
+    // cannot slip in before the stream is registered in activeStreams.
+    private handleRequest(requestId: string, trackId: string, start?: number, end?: number) {
         const track = this.fileIndex.get(trackId);
-        if (!track || !fs.existsSync(track.path)) {
+        let totalSize: number;
+        try {
+            if (!track) throw new Error('unknown track');
+            totalSize = fs.statSync(track.path).size;
+        } catch {
             this.ws?.send(JSON.stringify({ type: 'chunk_error', requestId, message: 'File non trovato' }));
+            return;
+        }
+
+        const isRanged = start !== undefined || end !== undefined;
+        const from = start ?? 0;
+        // The file can be shorter than when it was indexed, so clamp against what
+        // is on disk right now rather than the manifest's size.
+        const to = Math.min(end ?? totalSize - 1, totalSize - 1);
+        if (isRanged && (from > to || from >= totalSize)) {
+            this.ws?.send(JSON.stringify({
+                type: 'chunk_error',
+                requestId,
+                code: 'range_not_satisfiable',
+                message: `Range ${from}-${end ?? ''} outside 0-${totalSize - 1}`,
+            }));
             return;
         }
 
         this.emit("log", `Streaming/Download richiesto: ${track.title} [Req: ${requestId}]`);
 
-        const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024 });
+        const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024, start: from, end: to });
         this.activeStreams.set(requestId, stream);
         let seq = 0;
+
+        // Only ranged requests get this: it lets the instance emit an accurate
+        // Content-Range, and older instances never ask for a range so they never
+        // see a message type they don't know.
+        if (isRanged) {
+            this.ws?.send(JSON.stringify({ type: 'chunk_start', requestId, start: from, end: to, totalSize }));
+        }
 
         stream.on('data', (chunk: Buffer) => {
             if (this.ws?.readyState === WebSocket.OPEN) {

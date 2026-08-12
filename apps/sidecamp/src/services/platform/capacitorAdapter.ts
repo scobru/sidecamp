@@ -160,7 +160,12 @@ export function createCapacitorAdapter() {
 		return tracks;
 	};
 
-	const handlePeerRequest = async (requestId: string, trackId: string) => {
+	const handlePeerRequest = async (
+		requestId: string,
+		trackId: string,
+		start?: number,
+		end?: number,
+	) => {
 		const track = fileIndex.get(trackId);
 		if (!track) {
 			ws?.send(
@@ -180,8 +185,39 @@ export function createCapacitorAdapter() {
 				? await FolderPicker.readFile({ uri: track.uri })
 				: await Filesystem.readFile({ path: track.uri });
 			const binary = atob(data as string);
-			const bytes = new Uint8Array(binary.length);
-			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+			const full = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) full[i] = binary.charCodeAt(i);
+
+			// The platform APIs hand us the whole file, so a range is just a view
+			// over it — no I/O saved, but seeking works. Offsets are inclusive.
+			const totalSize = full.length;
+			const isRanged = start !== undefined || end !== undefined;
+			const from = start ?? 0;
+			const to = Math.min(end ?? totalSize - 1, totalSize - 1);
+			if (isRanged && (from > to || from >= totalSize)) {
+				ws?.send(
+					JSON.stringify({
+						type: "chunk_error",
+						requestId,
+						code: "range_not_satisfiable",
+						message: `Range ${from}-${end ?? ""} outside 0-${totalSize - 1}`,
+					}),
+				);
+				return;
+			}
+			if (isRanged) {
+				ws?.send(
+					JSON.stringify({
+						type: "chunk_start",
+						requestId,
+						start: from,
+						end: to,
+						totalSize,
+					}),
+				);
+			}
+
+			const bytes = full.subarray(from, to + 1);
 			const CHUNK = 64 * 1024;
 			let seq = 0;
 			for (let offset = 0; offset < bytes.length; offset += CHUNK) {
@@ -231,6 +267,9 @@ export function createCapacitorAdapter() {
 			wsUrl.pathname = "/ws/peer";
 			wsUrl.searchParams.set("token", config.token);
 			wsUrl.searchParams.set("allowDownloads", String(config.allowDownloads));
+			// See the desktop daemon: without this the instance must assume we
+			// ignore `start` and so refuses to advertise Range support at all.
+			wsUrl.searchParams.set("caps", "range");
 
 			emitStatus("connecting");
 			ws = new WebSocket(wsUrl.toString());
@@ -289,7 +328,7 @@ export function createCapacitorAdapter() {
 						msg.type === "stream_request" ||
 						msg.type === "download_request"
 					) {
-						handlePeerRequest(msg.requestId, msg.trackId);
+						handlePeerRequest(msg.requestId, msg.trackId, msg.start, msg.end);
 					} else if (msg.type === "cancel_request") {
 						cancelledRequests.add(msg.requestId);
 					}
