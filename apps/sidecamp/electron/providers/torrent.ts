@@ -61,7 +61,7 @@ export class TorrentService extends EventEmitter {
             const name = torrentName || (typeof input === 'string' ? path.basename(input) : 'Album');
             this.emit('log', `Avvio seeding per il torrent: ${name}`);
 
-            client.seed(input, { name }, (torrent) => {
+            client.seed(input, { name }, (torrent: any) => {
                 this.emit('log', `Seeding attivo: ${torrent.name}`);
                 
                 if (Array.isArray(input)) {
@@ -122,7 +122,7 @@ export class TorrentService extends EventEmitter {
                 this.pending.set(downloadId, entry);
             }
 
-            client.add(magnetUri, { path: this.downloadDir }, (torrent) => {
+            client.add(magnetUri, { path: this.downloadDir }, (torrent: any) => {
                 this.emit('log', `Metadati ricevuti: ${torrent.name}`);
 
                 // Metadata is the first point the infoHash exists; a cancel
@@ -158,12 +158,12 @@ export class TorrentService extends EventEmitter {
                 torrent.on('done', () => {
                     emitProgress(true);
                     this.emit('log', `Download completato e in seeding: ${torrent.name}`);
-                    const files = torrent.files.map(f => path.join(this.downloadDir, f.path));
+                    const files = torrent.files.map((f: any) => path.join(this.downloadDir, f.path));
                     forget();
                     resolve(files);
                 });
 
-                torrent.on('error', (err) => {
+                torrent.on('error', (err: any) => {
                     forget();
                     reject(err);
                 });

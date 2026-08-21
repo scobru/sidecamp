@@ -1,8 +1,8 @@
 import { execFile } from 'child_process';
 import { EventEmitter } from 'events';
+import { Readable } from 'stream';
 import path from 'path';
 import fs from 'fs';
-import axios from 'axios';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 
@@ -29,9 +29,13 @@ export class YtdlpService extends EventEmitter {
         this.emit('log', 'yt-dlp non trovato, scarico binario ufficiale...');
         fs.mkdirSync(this.binDir, { recursive: true });
 
-        const response = await axios({ method: 'get', url: YTDLP_RELEASE_URL, responseType: 'stream' });
+        const response = await fetch(YTDLP_RELEASE_URL);
+        if (!response.ok || !response.body) {
+            throw new Error(`Failed to download yt-dlp: ${response.status} ${response.statusText}`);
+        }
         const writer = fs.createWriteStream(binPath);
-        response.data.pipe(writer);
+        const nodeStream = Readable.fromWeb(response.body as any);
+        nodeStream.pipe(writer);
         await new Promise<void>((resolve, reject) => {
             writer.on('finish', () => resolve());
             writer.on('error', reject);

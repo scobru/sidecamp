@@ -201,9 +201,9 @@ export class PeerDaemon extends EventEmitter {
                 ? Array.from(this.fileIndex.values()).map(t => ({ ...t, path: undefined }))
                 : await this.scanFolders();
 
-            const wsUrl = new URL(this.config.server);
-            wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-            wsUrl.pathname = '/ws/peer';
+            const parsedServer = new URL(this.config.server);
+            const wsProtocol = parsedServer.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = new URL(`${wsProtocol}//${parsedServer.host}/ws/peer`);
             wsUrl.searchParams.set('token', this.config.token);
             wsUrl.searchParams.set('allowDownloads', String(this.config.allowDownloads));
             // Tells the instance it may answer Range requests for us. Without it
@@ -510,7 +510,7 @@ export class PeerDaemon extends EventEmitter {
         const stream = fs.createReadStream(track.path, { highWaterMark: 64 * 1024 });
         let seq = 0;
 
-        stream.on('data', (chunk: Buffer) => {
+        stream.on('data', (chunk: any) => {
             if (channel.readyState === 'open') {
                 channel.send(JSON.stringify({
                     type: 'chunk',

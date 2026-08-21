@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
+import { Readable } from 'stream';
 import { EventEmitter } from 'events';
 
 export class NetworkService extends EventEmitter {
@@ -12,17 +12,25 @@ export class NetworkService extends EventEmitter {
   }
 
   /** Scrive una risposta in streaming nella cartella download, emettendo 'progress' se c'e' un downloadId. */
-  private saveStream(response: any, artist: string, title: string, downloadId?: string): Promise<string> {
-    const match = String(response.headers['content-disposition'] || '').match(/filename="(.+?)"/);
+  private saveStream(response: Response, artist: string, title: string, downloadId?: string): Promise<string> {
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const match = contentDisposition.match(/filename="(.+?)"/);
     const filename = (match ? match[1] : `${artist || 'Unknown Artist'} - ${title || 'Track'}.mp3`)
       .replace(/[<>:"/\\|?*]/g, '_');
     const destPath = path.join(this.downloadDir, filename);
 
-    const total = Number(response.headers['content-length']) || 0;
+    const total = Number(response.headers.get('content-length')) || 0;
     let downloaded = 0;
     let lastEmit = 0;
+
+    if (!response.body) {
+      return Promise.reject(new Error('Response body is empty'));
+    }
+
+    const nodeStream = Readable.fromWeb(response.body as any);
+
     if (downloadId) {
-      response.data.on('data', (chunk: Buffer) => {
+      nodeStream.on('data', (chunk: Buffer) => {
         downloaded += chunk.length;
         const now = Date.now();
         if (now - lastEmit < 250) return;
@@ -38,35 +46,45 @@ export class NetworkService extends EventEmitter {
     }
 
     const writer = fs.createWriteStream(destPath);
-    response.data.pipe(writer);
+    nodeStream.pipe(writer);
     return new Promise((resolve, reject) => {
       writer.on('finish', () => resolve(destPath));
       writer.on('error', reject);
     });
   }
 
-  public async authConnect(server: string, mode: 'login' | 'register', username: string, password: string) {
+  public async authConnect(server: string, mode: 'login' | 'register', username: string, password: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
     try {
-      const response = await axios.post(`${cleanServer}/api/auth/${mode}`, { username, password });
-      return response.data;
+      const response = await fetch(`${cleanServer}/api/auth/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!response.ok) {
+        const err: any = await response.json().catch(() => ({}));
+        throw new Error(err.error || response.statusText || 'Connection failed');
+      }
+      return (await response.json()) as any;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || error.message || 'Connection failed');
+      throw new Error(error.message || 'Connection failed');
     }
   }
 
-  public async getCommunitySites(server: string) {
+  public async getCommunitySites(server: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
-    const response = await axios.get(`${cleanServer}/api/community/sites`);
-    return response.data;
+    const response = await fetch(`${cleanServer}/api/community/sites`);
+    if (!response.ok) throw new Error(`Failed to get community sites: ${response.status}`);
+    return (await response.json()) as any;
   }
 
-  public async getFederatedCatalog(origin: string) {
+  public async getFederatedCatalog(origin: string): Promise<any> {
     // Public, unauthenticated — /api/catalog/full only ever returns the
     // remote instance's Public Stage releases, regardless of who calls it.
     const cleanOrigin = origin.replace(/\/$/, '');
-    const response = await axios.get(`${cleanOrigin}/api/catalog/full`);
-    return response.data;
+    const response = await fetch(`${cleanOrigin}/api/catalog/full`);
+    if (!response.ok) throw new Error(`Failed to get federated catalog: ${response.status}`);
+    return (await response.json()) as any;
   }
 
   public async downloadFederatedCatalogTrack(
@@ -85,39 +103,44 @@ export class NetworkService extends EventEmitter {
       fs.mkdirSync(this.downloadDir, { recursive: true });
     }
 
-    const response = await axios({ method: 'get', url, responseType: 'stream' });
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
     return this.saveStream(response, artist, title, downloadId);
   }
 
-  public async getPeers(server: string, token: string) {
+  public async getPeers(server: string, token: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
-    const response = await axios.get(`${cleanServer}/api/peers`, {
+    const response = await fetch(`${cleanServer}/api/peers`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    return response.data;
+    if (!response.ok) throw new Error(`Failed to get peers: ${response.status}`);
+    return (await response.json()) as any;
   }
 
   // Chat roster, not the sharing roster: /api/peers only lists daemon sessions
   // on /ws/peer, so webapp users (who connect to /ws/chat) are invisible there.
   // The lobby is shared by both transports, so the chat recipient list must come
   // from the chat registry instead.
-  public async getChatPeers(server: string, token: string) {
+  public async getChatPeers(server: string, token: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
-    const response = await axios.get(`${cleanServer}/api/chat/peers`, {
+    const response = await fetch(`${cleanServer}/api/chat/peers`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    return response.data?.clients ?? [];
+    if (!response.ok) return [];
+    const data: any = await response.json().catch(() => ({}));
+    return data?.clients ?? [];
   }
 
-  public async getPeerTracks(server: string, token: string, sessionId: string, origin?: string) {
+  public async getPeerTracks(server: string, token: string, sessionId: string, origin?: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
     const url = origin
       ? `${cleanServer}/api/peers/${sessionId}/tracks?origin=${encodeURIComponent(origin)}`
       : `${cleanServer}/api/peers/${sessionId}/tracks`;
-    const response = await axios.get(url, {
+    const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    return response.data;
+    if (!response.ok) throw new Error(`Failed to get peer tracks: ${response.status}`);
+    return (await response.json()) as any;
   }
 
   public async downloadPeerTrack(
@@ -141,22 +164,20 @@ export class NetworkService extends EventEmitter {
       fs.mkdirSync(this.downloadDir, { recursive: true });
     }
 
-    const response = await axios({
-      method: 'get',
-      url: url,
-      responseType: 'stream',
+    const response = await fetch(url, {
       headers: origin ? {} : { 'Authorization': `Bearer ${token}` }
     });
-
+    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
     return this.saveStream(response, artist, title, downloadId);
   }
 
-  public async getCatalogTracks(server: string, token: string) {
+  public async getCatalogTracks(server: string, token: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
-    const response = await axios.get(`${cleanServer}/api/tracks`, {
+    const response = await fetch(`${cleanServer}/api/tracks`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    return response.data;
+    if (!response.ok) throw new Error(`Failed to get catalog tracks: ${response.status}`);
+    return (await response.json()) as any;
   }
 
   public async downloadCatalogTrack(
@@ -174,13 +195,10 @@ export class NetworkService extends EventEmitter {
       fs.mkdirSync(this.downloadDir, { recursive: true });
     }
 
-    const response = await axios({
-      method: 'get',
-      url: url,
-      responseType: 'stream',
+    const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-
+    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
     return this.saveStream(response, artist, title, downloadId);
   }
 }

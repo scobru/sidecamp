@@ -10,15 +10,14 @@
   "scripts": {
     "cli": "tsx src/index.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "coverage:scriptc": "scriptc coverage src/index.ts --dynamic"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "andrade-soulseek-downloader": "^1.0.28",
-    "axios": "^1.18.1",
     "commander": "^12.1.0",
-    "form-data": "^4.0.6",
     "fs-extra": "^11.3.6",
     "webtorrent": "^3.0.16"
   },

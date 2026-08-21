@@ -1,7 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
-import FormData from 'form-data';
 
 export interface UploaderConfig {
     server: string;
@@ -22,16 +20,17 @@ export class TuneCampUploader {
     /**
      * Uploads a local file to TuneCamp via the /api/admin/upload/tracks endpoint
      */
-    public async uploadTrack(filePath: string, metadata?: { releaseSlug?: string, artist?: string, album?: string, artistId?: number }): Promise<any> {
+    public async uploadTrack(filePath: string, metadata?: { releaseSlug?: string, artist?: string, title?: string, album?: string, artistId?: number }): Promise<any> {
         if (!fs.existsSync(filePath)) {
             throw new Error(`File not found: ${filePath}`);
         }
 
+        const fileBuffer = await fs.promises.readFile(filePath);
+        const fileBlob = new Blob([fileBuffer]);
         const formData = new FormData();
-        
-        // Append the file stream
-        const fileStream = fs.createReadStream(filePath);
-        formData.append('files', fileStream, path.basename(filePath));
+
+        // Append the file
+        formData.append('files', fileBlob, path.basename(filePath));
 
         // Append optional metadata hints for TuneCamp's scanner
         if (metadata?.releaseSlug) formData.append('releaseSlug', metadata.releaseSlug);
@@ -43,21 +42,27 @@ export class TuneCampUploader {
         const uploadUrl = `${this.config.server.replace(/\/$/, '')}/api/admin/upload/tracks`;
 
         try {
-            const response = await axios.post(uploadUrl, formData, {
+            const response = await fetch(uploadUrl, {
+                method: 'POST',
+                body: formData as any,
                 headers: {
-                    ...formData.getHeaders(),
                     'Authorization': `Bearer ${this.config.token}`
-                },
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity
+                }
             });
-            
-            return response.data;
-        } catch (error: any) {
-            if (error.response) {
-                throw new Error(`Upload failed: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+
+            if (!response.ok) {
+                let errorData: any = '';
+                try {
+                    errorData = await response.json();
+                } catch {
+                    errorData = await response.text();
+                }
+                throw new Error(`Upload failed: ${response.status} - ${typeof errorData === 'object' ? JSON.stringify(errorData) : errorData}`);
             }
-            throw new Error(`Upload failed: ${error.message}`);
+
+            return await response.json();
+        } catch (error: any) {
+            throw new Error(error.message || 'Upload failed');
         }
     }
 }
