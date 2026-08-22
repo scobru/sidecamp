@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
   - `CreateRoomModal`: Create public, private, or passphrase-encrypted rooms with one click.
   - Room management in chat sidebar: Room unread indicators, leave/delete controls, and active E2EE status badges (`ShieldCheck` / `E2EE`).
   - Mobile responsive segmented toggle (*Messaggi*, *Stanze*, *Peers*) for seamless mobile operation.
+- **Updated `@tunecamp/chat` to `v3.2.0`**: Includes room-scoped moderation, `room_kicked` handling, and global Zen admin commands.
 
 ## [0.26.10] - 2026-08-22
 
