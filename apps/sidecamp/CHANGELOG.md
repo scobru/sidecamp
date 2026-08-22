@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0] - 2026-08-22
+
+### Added
+
+- **E2EE Passphrase Encrypted Rooms (Zen SEA)**: Full room chat and end-to-end passphrase encryption support across desktop and mobile.
+  - Messages in encrypted rooms use PBKDF2 (100,000 iterations) key derivation with Zen SEA and the unforgeable `tce2e:<salt>:<blob>` envelope format.
+  - `UnlockRoomModal`: Enter, update, or forget the local room passphrase with real-time in-memory decryption.
+  - `CreateRoomModal`: Create public, private, or passphrase-encrypted rooms with one click.
+  - Room management in chat sidebar: Room unread indicators, leave/delete controls, and active E2EE status badges (`ShieldCheck` / `E2EE`).
+  - Mobile responsive segmented toggle (*Messaggi*, *Stanze*, *Peers*) for seamless mobile operation.
+
+## [0.26.10] - 2026-08-22
+
+### Changed
+
+- Update `@tunecamp/chat` to `v3.1.0`.
+
 ## [0.26.9] - 2026-08-10
 
 ### Fixed

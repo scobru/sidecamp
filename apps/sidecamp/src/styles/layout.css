@@ -382,7 +382,8 @@ body, .app-container, .sidebar, .main-content {
     display: none !important;
   }
 
-  .chat-main-grid.show-peers .chat-feed-card {
+  .chat-main-grid.show-peers .chat-feed-card,
+  .chat-main-grid.show-rooms .chat-feed-card {
     display: none !important;
   }
 
@@ -390,7 +391,8 @@ body, .app-container, .sidebar, .main-content {
     display: flex !important;
   }
 
-  .chat-main-grid.show-peers .chat-peers-sidebar {
+  .chat-main-grid.show-peers .chat-peers-sidebar,
+  .chat-main-grid.show-rooms .chat-peers-sidebar {
     display: flex !important;
   }
 }

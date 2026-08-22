@@ -35,15 +35,22 @@ import {
 	MessageCircle,
 	Send,
 	Lock,
+	Key,
+	Unlock,
+	ShieldCheck,
 	ShieldAlert,
 	Users,
+	Hash,
+	LogOut,
 	Sparkles,
 	RefreshCw,
 	Check,
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
-import { useTuneCampChat } from "@tunecamp/chat";
+import { UnlockRoomModal } from "./components/UnlockRoomModal";
+import { CreateRoomModal } from "./components/CreateRoomModal";
+import { useTuneCampChat, type RoomInfo } from "@tunecamp/chat";
 import { guess } from "web-audio-beat-detector";
 import "./index.css";
 import logo from "./assets/logo.png";
@@ -246,17 +253,31 @@ function App() {
 	const [chatTo, setChatTo] = useState("");
 	const [chatText, setChatText] = useState("");
 	const [chatSending, setChatSending] = useState(false);
+	const [activeRoomId, setActiveRoomId] = useState<number | undefined>();
+	const [showUnlockRoomModal, setShowUnlockRoomModal] = useState(false);
+	const [unlockModalRoom, setUnlockModalRoom] = useState<RoomInfo | null>(null);
+	const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
 	const [dlLogsExpanded, setDlLogsExpanded] = useState(false);
-	const [mobileChatView, setMobileChatView] = useState<"feed" | "peers">("feed");
+	const [mobileChatView, setMobileChatView] = useState<"feed" | "peers" | "rooms">("feed");
 	const {
 		messages: chatMessages,
 		peers: rawChatPeers,
 		unreadCounts: chatUnread,
 		status: chatStatus,
 		sendMessage: sendChatMessage,
+		createRoom,
+		deleteRoom,
+		leaveRoom,
+		sendRoomMessage,
+		rooms: chatRooms,
+		roomUnreadCounts,
+		roomPassphrases,
+		setRoomPassphrase,
+		clearRoomPassphrase,
 		keyChanges: chatKeyChanges,
 		acceptKeyChange: acceptChatKeyChange,
 		clearUnread,
+		clearRoomUnread,
 		formatUser,
 		connect: connectChat,
 		disconnect: disconnectChat,
@@ -268,11 +289,86 @@ function App() {
 			autoConnect: false,
 		},
 		chatTo,
+		activeRoomId,
 	);
 	
 	const chatPeers = useMemo(() => {
 		return rawChatPeers.filter(p => p.username !== chatUsername);
 	}, [rawChatPeers, chatUsername]);
+
+	const activeRoom = useMemo(() => {
+		return chatRooms.find((r: RoomInfo) => r.id === activeRoomId);
+	}, [chatRooms, activeRoomId]);
+
+	const selectLobby = useCallback(() => {
+		setChatTo("");
+		setActiveRoomId(undefined);
+		setMobileChatView("feed");
+	}, []);
+
+	const selectChatPeer = useCallback((username: string) => {
+		setActiveRoomId(undefined);
+		setChatTo(username);
+		clearUnread(username);
+		setMobileChatView("feed");
+	}, [clearUnread]);
+
+	const selectRoom = useCallback((room: RoomInfo) => {
+		setChatTo("");
+		setActiveRoomId(room.id);
+		clearRoomUnread(room.id);
+		setMobileChatView("feed");
+	}, [clearRoomUnread]);
+
+	const handleCreateRoom = useCallback(async (name: string, isPrivate: boolean, passphrase?: string) => {
+		const room = await createRoom(name, undefined, isPrivate);
+		if (room) {
+			if (passphrase) {
+				setRoomPassphrase(room.id, passphrase);
+			}
+			selectRoom(room);
+			return true;
+		}
+		return false;
+	}, [createRoom, setRoomPassphrase, selectRoom]);
+
+	const handleLeaveRoom = useCallback(async (room: RoomInfo) => {
+		await leaveRoom(room.id);
+		if (activeRoomId === room.id) setActiveRoomId(undefined);
+	}, [leaveRoom, activeRoomId]);
+
+	const handleDeleteRoom = useCallback(async (room: RoomInfo) => {
+		if (window.confirm(`Eliminare la stanza "${room.name}" e la sua cronologia per tutti?`)) {
+			await deleteRoom(room.id);
+			if (activeRoomId === room.id) setActiveRoomId(undefined);
+		}
+	}, [deleteRoom, activeRoomId]);
+
+	const handleSendChat = useCallback(async () => {
+		const body = chatText.trim();
+		if (!body || chatSending) return;
+		setChatSending(true);
+		try {
+			if (activeRoomId) {
+				if (sendRoomMessage(activeRoomId, body)) {
+					setChatText("");
+				}
+			} else if (await sendChatMessage(chatTo, body)) {
+				setChatText("");
+			}
+		} finally {
+			setChatSending(false);
+		}
+	}, [chatText, chatSending, activeRoomId, sendRoomMessage, sendChatMessage, chatTo]);
+
+	const pendingChatKeyChange = chatTo.trim() ? chatKeyChanges[chatTo.trim()] : undefined;
+	const handleAcceptChatKeyChange = useCallback((peerId: string) => {
+		const change = chatKeyChanges[peerId];
+		if (!change) return;
+		if (window.confirm(`Accept ${peerId}'s new encryption key?\n\nPinned: ${change.pinned}\nOffered: ${change.offered}`)) {
+			acceptChatKeyChange(peerId);
+		}
+	}, [chatKeyChanges, acceptChatKeyChange]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<any[]>([]);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1843,34 +1939,6 @@ function App() {
 	const handleStopPeer = async () => {
 		await window.electronAPI.stopPeer();
 		disconnectChat();
-	};
-
-	// sendMessage refuses a DM it can't encrypt, so the draft survives a refusal
-	// instead of being wiped along with the "message not sent" notice.
-	const handleSendChat = async () => {
-		const text = chatText.trim();
-		if (!text || chatSending) return;
-		setChatSending(true);
-		try {
-			if (await sendChatMessage(chatTo, text)) setChatText("");
-		} finally {
-			setChatSending(false);
-		}
-	};
-
-	const pendingChatKeyChange = chatTo ? chatKeyChanges[chatTo] : undefined;
-
-	const handleAcceptChatKeyChange = (peerId: string) => {
-		const change = chatKeyChanges[peerId];
-		if (!change) return;
-		const confirmed = window.confirm(
-			`Accept ${peerId}'s new encryption key?\n\n` +
-				`Pinned:  ${change.pinned}\n` +
-				`Offered: ${change.offered}\n\n` +
-				`Only accept if ${peerId} confirmed this fingerprint over a channel this server does not control. ` +
-				`A key swapped by the server looks exactly the same from here.`,
-		);
-		if (confirmed) acceptChatKeyChange(peerId);
 	};
 
 	const loadBrowser = async (root: string, subpath: string) => {
@@ -5743,9 +5811,11 @@ function App() {
 											margin: "0.2rem 0 0 0",
 										}}
 									>
-										{chatTo
-											? `Direct message to ${chatTo}`
-											: "Talk to everyone in the lobby"}
+										{activeRoom
+											? `Room · #${activeRoom.name}`
+											: chatTo
+												? `Direct message to ${chatTo}`
+												: "Talk to everyone in the lobby"}
 									</p>
 								</div>
 								<div
@@ -5801,7 +5871,15 @@ function App() {
 									onClick={() => setMobileChatView("feed")}
 								>
 									<MessageCircle size={14} />
-									<span>Messages {chatTo ? `(${chatTo})` : "(Lobby)"}</span>
+									<span>Messaggi {activeRoom ? `(#${activeRoom.name})` : chatTo ? `(${chatTo})` : "(Lobby)"}</span>
+								</button>
+								<button
+									type="button"
+									className={`chat-mobile-btn ${mobileChatView === "rooms" ? "active" : ""}`}
+									onClick={() => setMobileChatView("rooms")}
+								>
+									<Hash size={14} />
+									<span>Stanze ({chatRooms.length})</span>
 								</button>
 								<button
 									type="button"
@@ -5814,7 +5892,7 @@ function App() {
 							</div>
 
 							<div
-								className={`chat-main-grid ${mobileChatView === "feed" ? "show-feed" : "show-peers"}`}
+								className={`chat-main-grid ${mobileChatView === "feed" ? "show-feed" : mobileChatView === "rooms" ? "show-rooms" : "show-peers"}`}
 								style={{
 									display: "grid",
 									gridTemplateColumns: "1fr 240px",
@@ -5825,6 +5903,112 @@ function App() {
 							>
 								{/* Chat Feed */}
 								<div className="glass-card chat-feed-card">
+									{activeRoom && (
+										<div
+											style={{
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "space-between",
+												padding: "0.6rem 0.85rem",
+												borderBottom: "1px solid var(--glass-border)",
+												background: "rgba(255, 255, 255, 0.02)",
+												fontSize: "0.8rem",
+												flexShrink: 0,
+											}}
+										>
+											<div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
+												<Hash size={16} style={{ color: "var(--primary)", flexShrink: 0 }} />
+												<span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+													{activeRoom.name}
+												</span>
+												{roomPassphrases[activeRoom.id] ? (
+													<span
+														style={{
+															fontSize: "0.68rem",
+															padding: "0.15rem 0.4rem",
+															borderRadius: "6px",
+															background: "rgba(56, 189, 248, 0.15)",
+															color: "#38bdf8",
+															fontWeight: 600,
+															display: "inline-flex",
+															alignItems: "center",
+															gap: "3px",
+														}}
+													>
+														<ShieldCheck size={11} /> E2EE Attiva
+													</span>
+												) : activeRoom.is_private ? (
+													<span
+														style={{
+															fontSize: "0.68rem",
+															padding: "0.15rem 0.4rem",
+															borderRadius: "6px",
+															background: "rgba(255, 255, 255, 0.06)",
+															color: "var(--text-muted)",
+															display: "inline-flex",
+															alignItems: "center",
+															gap: "3px",
+														}}
+													>
+														<Lock size={11} /> Privata
+													</span>
+												) : (
+													<span
+														style={{
+															fontSize: "0.68rem",
+															padding: "0.15rem 0.4rem",
+															borderRadius: "6px",
+															background: "rgba(255, 255, 255, 0.04)",
+															color: "var(--text-muted)",
+															display: "inline-flex",
+															alignItems: "center",
+															gap: "3px",
+														}}
+													>
+														<Globe size={11} /> Pubblica
+													</span>
+												)}
+											</div>
+											<div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
+												<Button
+													variant={roomPassphrases[activeRoom.id] ? "secondary" : "primary"}
+													size="sm"
+													onClick={() => {
+														setUnlockModalRoom(activeRoom || null);
+														setShowUnlockRoomModal(true);
+													}}
+													leftIcon={
+														roomPassphrases[activeRoom.id] ? (
+															<ShieldCheck size={13} style={{ color: "#38bdf8" }} />
+														) : (
+															<Key size={13} />
+														)
+													}
+													style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem" }}
+												>
+													{roomPassphrases[activeRoom.id] ? "E2EE" : "Sblocca E2EE"}
+												</Button>
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={() => handleLeaveRoom(activeRoom)}
+													leftIcon={<LogOut size={13} />}
+													style={{ padding: "0.25rem 0.5rem", fontSize: "0.72rem" }}
+													title="Esci dalla stanza"
+												>
+													Esci
+												</Button>
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={() => handleDeleteRoom(activeRoom)}
+													leftIcon={<Trash2 size={13} style={{ color: "var(--danger)" }} />}
+													style={{ padding: "0.25rem 0.5rem", fontSize: "0.72rem" }}
+													title="Elimina stanza"
+												/>
+											</div>
+										</div>
+									)}
 									<div
 										ref={chatScrollContainerRef}
 										className="chat-scroll-feed"
@@ -5838,129 +6022,186 @@ function App() {
 										}}
 									>
 										{(() => {
-											const visible = chatTo
-												? chatMessages.filter(
+											const visible = activeRoomId
+												? chatMessages.filter((m) => m.roomId === activeRoomId)
+												: chatTo
+													? chatMessages.filter(
+															(m) =>
+																!m.roomId &&
+																!m.lobby &&
+																(m.from === chatTo ||
+																	(m.self && m.to === chatTo)),
+														)
+													: chatMessages.filter((m) => !m.roomId && m.lobby !== false);
+
+											const hasLocked = Boolean(
+												activeRoom &&
+													!roomPassphrases[activeRoom.id] &&
+													visible.some(
 														(m) =>
-															!m.lobby &&
-															(m.from === chatTo ||
-																(m.self && m.to === chatTo)),
-													)
-												: chatMessages.filter((m) => m.lobby !== false);
+															(m as any).isEncrypted ||
+															(m.text && m.text.includes("[Messaggio cifrato")),
+													),
+											);
 
-											if (visible.length === 0) {
-												return (
-													<div
-														style={{
-															margin: "auto",
-															textAlign: "center",
-															padding: "2rem 1rem",
-															opacity: 0.5,
-														}}
-													>
-														<MessageCircle
-															size={36}
-															style={{
-																margin: "0 auto 0.5rem auto",
-																opacity: 0.4,
-															}}
-														/>
-														<p
-															style={{
-																fontSize: "0.9rem",
-																fontWeight: 600,
-																margin: 0,
-															}}
-														>
-															Nothing here yet.
-														</p>
-														<p
-															style={{
-																fontSize: "0.75rem",
-																marginTop: "0.25rem",
-															}}
-														>
-															{chatTo
-																? `Start an encrypted conversation with ${chatTo}.`
-																: "Say hello to the lobby, or select a peer for a direct message."}
-														</p>
-													</div>
-												);
-											}
-
-											return visible.map((m, i) => {
-												const isSelf = m.self;
-												const label = isSelf
-													? "You"
-													: formatUser(m.from, m.instance);
-												const align = isSelf ? "flex-end" : "flex-start";
-												const bubbleBg = isSelf
-													? "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)"
-													: "rgba(255,255,255,0.06)";
-												const textColor = isSelf ? "#fff" : "var(--text-main)";
-
-												return (
-													<div
-														key={`${m.ts}-${i}`}
-														style={{
-															display: "flex",
-															flexDirection: "column",
-															alignItems: align,
-															maxWidth: "100%",
-														}}
-													>
+											return (
+												<>
+													{hasLocked && (
 														<div
 															style={{
+																padding: "0.6rem 0.8rem",
+																borderRadius: "10px",
+																background: "rgba(251,191,36,0.12)",
+																border: "1px solid rgba(251,191,36,0.3)",
 																display: "flex",
 																alignItems: "center",
-																gap: "0.4rem",
-																fontSize: "0.7rem",
-																opacity: 0.6,
-																marginBottom: "2px",
-																padding: "0 4px",
+																justifyContent: "space-between",
+																gap: "0.5rem",
+																fontSize: "0.78rem",
 															}}
 														>
-															<span style={{ fontWeight: 600 }}>{label}</span>
-															<span>•</span>
-															<span>
-																{new Date(m.ts).toLocaleTimeString([], {
-																	hour: "2-digit",
-																	minute: "2-digit",
-																})}
-															</span>
-															{m.e2e ? (
-																<span title="End-to-end encrypted">
-																	<Lock
-																		size={10}
-																		style={{ color: "#4ade80" }}
-																	/>
-																</span>
-															) : (
-																<span title="Lobby broadcast">
-																	<Globe size={10} style={{ opacity: 0.5 }} />
-																</span>
-															)}
+															<div style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: "#fbbf24" }}>
+																<Key size={15} style={{ flexShrink: 0 }} />
+																<span>Questa stanza contiene messaggi cifrati con Passphrase.</span>
+															</div>
+															<Button
+																variant="primary"
+																size="sm"
+																onClick={() => {
+																	setUnlockModalRoom(activeRoom || null);
+																	setShowUnlockRoomModal(true);
+																}}
+																leftIcon={<Unlock size={12} />}
+																style={{ padding: "0.25rem 0.6rem", fontSize: "0.72rem" }}
+															>
+																Sblocca
+															</Button>
 														</div>
+													)}
+
+													{visible.length === 0 && (
 														<div
 															style={{
-																maxWidth: "85%",
-																padding: "0.6rem 0.9rem",
-																borderRadius: isSelf
-																	? "16px 16px 4px 16px"
-																	: "16px 16px 16px 4px",
-																background: bubbleBg,
-																color: textColor,
-																fontSize: "0.875rem",
-																wordBreak: "break-word",
-																boxShadow: isSelf
-																	? "0 3px 12px rgba(168, 85, 247, 0.25)"
-																	: "0 2px 6px rgba(0,0,0,0.15)",
+																margin: "auto",
+																textAlign: "center",
+																padding: "2rem 1rem",
+																opacity: 0.5,
 															}}
 														>
-															{m.text}
+															<MessageCircle
+																size={36}
+																style={{
+																	margin: "0 auto 0.5rem auto",
+																	opacity: 0.4,
+																}}
+															/>
+															<p
+																style={{
+																	fontSize: "0.9rem",
+																	fontWeight: 600,
+																	margin: 0,
+																}}
+															>
+																Nothing here yet.
+															</p>
+															<p
+																style={{
+																	fontSize: "0.75rem",
+																	marginTop: "0.25rem",
+																}}
+															>
+																{activeRoom
+																	? `Be the first to say something in #${activeRoom.name}.`
+																	: chatTo
+																		? `Start an encrypted conversation with ${chatTo}.`
+																		: "Say hello to the lobby, pick a room, or select a peer for a direct message."}
+															</p>
 														</div>
-													</div>
-												);
-											});
+													)}
+
+													{visible.map((m, i) => {
+														const isSelf = m.self;
+														const label = isSelf
+															? "You"
+															: formatUser(m.from, m.instance);
+														const align = isSelf ? "flex-end" : "flex-start";
+														const bubbleBg = isSelf
+															? "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)"
+															: "rgba(255,255,255,0.06)";
+														const textColor = isSelf ? "#fff" : "var(--text-main)";
+
+														return (
+															<div
+																key={`${m.ts}-${i}`}
+																style={{
+																	display: "flex",
+																	flexDirection: "column",
+																	alignItems: align,
+																	maxWidth: "100%",
+																}}
+															>
+																<div
+																	style={{
+																		display: "flex",
+																		alignItems: "center",
+																		gap: "0.4rem",
+																		fontSize: "0.7rem",
+																		opacity: 0.6,
+																		marginBottom: "2px",
+																		padding: "0 4px",
+																	}}
+																>
+																	<span style={{ fontWeight: 600 }}>{label}</span>
+																	<span>•</span>
+																	<span>
+																		{new Date(m.ts).toLocaleTimeString([], {
+																			hour: "2-digit",
+																			minute: "2-digit",
+																		})}
+																	</span>
+																	{m.e2e ? (
+																		<span title="End-to-end encrypted">
+																			<Lock
+																				size={10}
+																				style={{ color: "#4ade80" }}
+																			/>
+																		</span>
+																	) : (m as any).isEncrypted ? (
+																		<span title="Cifrato con Passphrase">
+																			<Key
+																				size={10}
+																				style={{ color: "#fbbf24" }}
+																			/>
+																		</span>
+																	) : (
+																		<span title="Broadcast">
+																			<Globe size={10} style={{ opacity: 0.5 }} />
+																		</span>
+																	)}
+																</div>
+																<div
+																	style={{
+																		maxWidth: "85%",
+																		padding: "0.6rem 0.9rem",
+																		borderRadius: isSelf
+																			? "16px 16px 4px 16px"
+																			: "16px 16px 16px 4px",
+																		background: bubbleBg,
+																		color: textColor,
+																		fontSize: "0.875rem",
+																		wordBreak: "break-word",
+																		boxShadow: isSelf
+																			? "0 3px 12px rgba(168, 85, 247, 0.25)"
+																			: "0 2px 6px rgba(0,0,0,0.15)",
+																	}}
+																>
+																	{m.text}
+																</div>
+															</div>
+														);
+													})}
+												</>
+											);
 										})()}
 										<div ref={chatBottomRef} />
 									</div>
@@ -6049,36 +6290,65 @@ function App() {
 											flexShrink: 0,
 										}}
 									>
-										<select
-											value={chatTo}
-											onChange={(e) => setChatTo(e.target.value)}
-											className="glass-input"
-											style={{
-												width: "120px",
-												maxWidth: "32%",
-												flexShrink: 0,
-												padding: "0.5rem 0.5rem",
-												fontSize: "0.78rem",
-												borderRadius: "10px",
-											}}
-											disabled={chatStatus !== "online"}
-										>
-											<option value="">Lobby (all)</option>
-											{chatPeers.map((p) => (
-												<option key={p.username} value={p.username}>
-													{formatUser(p.username, p.instance)}
-												</option>
-											))}
-										</select>
+										{activeRoom ? (
+											<div
+												style={{
+													display: "flex",
+													alignItems: "center",
+													gap: "0.3rem",
+													padding: "0.45rem 0.65rem",
+													borderRadius: "8px",
+													background: "rgba(255, 255, 255, 0.05)",
+													border: "1px solid var(--glass-border)",
+													fontSize: "0.8rem",
+													fontWeight: 600,
+													color: "var(--primary)",
+													maxWidth: "140px",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+													flexShrink: 0,
+												}}
+											>
+												<Hash size={13} style={{ flexShrink: 0 }} />
+												<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+													{activeRoom.name}
+												</span>
+											</div>
+										) : (
+											<select
+												value={chatTo}
+												onChange={(e) => setChatTo(e.target.value)}
+												className="glass-input"
+												style={{
+													width: "120px",
+													maxWidth: "32%",
+													flexShrink: 0,
+													padding: "0.5rem 0.5rem",
+													fontSize: "0.78rem",
+													borderRadius: "10px",
+												}}
+												disabled={chatStatus !== "online"}
+											>
+												<option value="">Lobby (all)</option>
+												{chatPeers.map((p) => (
+													<option key={p.username} value={p.username}>
+														{formatUser(p.username, p.instance)}
+													</option>
+												))}
+											</select>
+										)}
 										<input
 											type="text"
 											value={chatText}
 											onChange={(e) => setChatText(e.target.value)}
 											placeholder={
 												chatStatus === "online"
-													? chatTo
-														? "Encrypted message..."
-														: "Message..."
+													? activeRoom
+														? `Message #${activeRoom.name}...`
+														: chatTo
+															? "Encrypted message..."
+															: "Message..."
 													: "Connecting..."
 											}
 											className="glass-input"
@@ -6112,89 +6382,246 @@ function App() {
 									</div>
 								</div>
 
-								{/* Connected Peers Sidebar */}
+								{/* Connected Peers and Rooms Sidebar */}
 								<div className="glass-card chat-peers-sidebar">
+									{/* Public Lobby Item */}
+									<button
+										type="button"
+										className={`chat-peer-btn ${!chatTo && !activeRoomId ? "active" : ""}`}
+										onClick={selectLobby}
+										style={{ marginBottom: "0.5rem" }}
+									>
+										<Globe
+											size={15}
+											style={{
+												color:
+													!chatTo && !activeRoomId
+														? "var(--primary)"
+														: "var(--text-muted)",
+												flexShrink: 0,
+											}}
+										/>
+										<span
+											style={{
+												flex: 1,
+												overflow: "hidden",
+												textOverflow: "ellipsis",
+												whiteSpace: "nowrap",
+												fontWeight: !chatTo && !activeRoomId ? 700 : 500,
+											}}
+										>
+											Public Lobby
+										</span>
+									</button>
+
+									{/* Rooms Section */}
 									<div
 										style={{
 											display: "flex",
 											alignItems: "center",
+											justifyContent: "space-between",
 											gap: "0.4rem",
-											fontSize: "0.78rem",
-											fontWeight: 600,
+											fontSize: "0.75rem",
+											fontWeight: 700,
 											opacity: 0.75,
-											marginBottom: "0.75rem",
+											margin: "0.5rem 0 0.35rem 0",
 											padding: "0 0.25rem",
 											flexShrink: 0,
+											textTransform: "uppercase",
+											letterSpacing: "0.04em",
 										}}
 									>
-										<Users size={14} />
-										Connected Peers ({chatPeers.length})
+										<div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+											<Hash size={13} />
+											<span>Stanze ({chatRooms.length})</span>
+										</div>
+										<button
+											type="button"
+											onClick={() => setShowCreateRoomModal(true)}
+											style={{
+												background: "transparent",
+												border: "none",
+												color: "var(--primary)",
+												cursor: "pointer",
+												padding: "2px",
+												display: "flex",
+												alignItems: "center",
+											}}
+											title="Crea nuova stanza"
+										>
+											<Plus size={14} />
+										</button>
 									</div>
+
+									<div
+										style={{
+											display: "flex",
+											flexDirection: "column",
+											gap: "0.25rem",
+											marginBottom: "0.75rem",
+											maxHeight: "180px",
+											overflowY: "auto",
+										}}
+									>
+										{chatRooms.length === 0 && (
+											<p
+												style={{
+													fontSize: "0.72rem",
+													opacity: 0.4,
+													margin: 0,
+													padding: "0.3rem 0.25rem",
+													fontStyle: "italic",
+												}}
+											>
+												Nessuna stanza creata.
+											</p>
+										)}
+										{chatRooms.map((room: RoomInfo) => {
+											const isSelected = activeRoomId === room.id;
+											const unread = roomUnreadCounts[room.id] || 0;
+											const isUnlocked = Boolean(roomPassphrases[room.id]);
+
+											return (
+												<div
+													key={room.id}
+													style={{
+														display: "flex",
+														alignItems: "center",
+														gap: "2px",
+														width: "100%",
+													}}
+												>
+													<button
+														type="button"
+														className={`chat-peer-btn ${isSelected ? "active" : ""}`}
+														onClick={() => selectRoom(room)}
+														style={{ flex: 1, minWidth: 0 }}
+													>
+														{isUnlocked ? (
+															<ShieldCheck
+																size={14}
+																style={{ color: "#38bdf8", flexShrink: 0 }}
+															/>
+														) : room.is_private ? (
+															<Lock
+																size={13}
+																style={{ opacity: 0.6, flexShrink: 0 }}
+															/>
+														) : (
+															<Hash
+																size={14}
+																style={{
+																	opacity: isSelected ? 1 : 0.6,
+																	flexShrink: 0,
+																}}
+															/>
+														)}
+														<span
+															style={{
+																flex: 1,
+																overflow: "hidden",
+																textOverflow: "ellipsis",
+																whiteSpace: "nowrap",
+															}}
+														>
+															{room.name}
+														</span>
+														{isUnlocked && (
+															<span
+																style={{
+																	fontSize: "0.62rem",
+																	padding: "1px 4px",
+																	borderRadius: "4px",
+																	background: "rgba(56, 189, 248, 0.2)",
+																	color: "#38bdf8",
+																	fontWeight: 700,
+																	flexShrink: 0,
+																}}
+															>
+																E2EE
+															</span>
+														)}
+														{unread > 0 && !isSelected && (
+															<span className="chat-unread-badge">
+																{unread}
+															</span>
+														)}
+													</button>
+													<button
+														type="button"
+														onClick={() => {
+															setUnlockModalRoom(room);
+															setShowUnlockRoomModal(true);
+														}}
+														style={{
+															background: "transparent",
+															border: "none",
+															color: isUnlocked ? "#38bdf8" : "var(--text-muted)",
+															cursor: "pointer",
+															padding: "4px",
+															display: "flex",
+															alignItems: "center",
+															opacity: 0.8,
+														}}
+														title={isUnlocked ? "Gestisci passphrase E2EE" : "Sblocca con passphrase"}
+													>
+														<Key size={12} />
+													</button>
+												</div>
+											);
+										})}
+									</div>
+
+									{/* Connected Peers Header */}
+									<div
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: "0.35rem",
+											fontSize: "0.75rem",
+											fontWeight: 700,
+											opacity: 0.75,
+											margin: "0.5rem 0 0.35rem 0",
+											padding: "0 0.25rem",
+											flexShrink: 0,
+											textTransform: "uppercase",
+											letterSpacing: "0.04em",
+										}}
+									>
+										<Users size={13} />
+										<span>Connected Peers ({chatPeers.length})</span>
+									</div>
+
 									<div
 										style={{
 											flex: 1,
 											overflowY: "auto",
 											display: "flex",
 											flexDirection: "column",
-											gap: "0.3rem",
+											gap: "0.25rem",
 										}}
 									>
-										{/* Explicit Public Lobby item */}
-										<button
-											type="button"
-											className={`chat-peer-btn ${chatTo === "" ? "active" : ""}`}
-											onClick={() => {
-												setChatTo("");
-												setMobileChatView("feed");
-											}}
-										>
-											<Globe
-												size={15}
-												style={{
-													color:
-														chatTo === ""
-															? "var(--primary)"
-															: "var(--text-muted)",
-													flexShrink: 0,
-												}}
-											/>
-											<span
-												style={{
-													flex: 1,
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap",
-												}}
-											>
-												Public Lobby
-											</span>
-										</button>
-
 										{chatPeers.length === 0 && (
 											<p
 												style={{
-													fontSize: "0.75rem",
+													fontSize: "0.72rem",
 													opacity: 0.4,
 													margin: 0,
-													padding: "0.5rem 0.25rem",
+													padding: "0.3rem 0.25rem",
 												}}
 											>
 												No other peers connected.
 											</p>
 										)}
 										{chatPeers.map((peer) => {
-											const isSelected = chatTo === peer.username;
+											const isSelected = !activeRoomId && chatTo === peer.username;
 											const unread = chatUnread[peer.username] || 0;
 											return (
 												<button
 													key={peer.username}
 													type="button"
 													className={`chat-peer-btn ${isSelected ? "active" : ""}`}
-													onClick={() => {
-														setChatTo(isSelected ? "" : peer.username);
-														clearUnread(peer.username);
-														setMobileChatView("feed");
-													}}
+													onClick={() => selectChatPeer(peer.username)}
 												>
 													<span className="chat-peer-dot" />
 													<span
@@ -6224,7 +6651,7 @@ function App() {
 															</span>
 														)
 													)}
-													{unread > 0 && (
+													{unread > 0 && !isSelected && (
 														<span className="chat-unread-badge">
 															{unread}
 														</span>
@@ -6245,10 +6672,29 @@ function App() {
 									flexShrink: 0,
 								}}
 							>
-								{chatTo
-									? "Direct messages are end-to-end encrypted and never stored on the server."
-									: "Lobby messages are visible to everyone connected. Direct messages are end-to-end encrypted."}
+								{activeRoom
+									? activeRoom.is_private
+										? "I messaggi di questa stanza restano su questa istanza."
+										: "I messaggi di questa stanza vengono federati tra i peer di TuneCamp."
+									: chatTo
+										? "I messaggi diretti sono cifrati end-to-end e non transitano mai in chiaro."
+										: "I messaggi della Lobby sono visibili a tutti gli utenti connessi."}
 							</p>
+
+							<UnlockRoomModal
+								isOpen={showUnlockRoomModal}
+								onClose={() => setShowUnlockRoomModal(false)}
+								room={unlockModalRoom}
+								currentPassphrase={unlockModalRoom ? roomPassphrases[unlockModalRoom.id] || "" : ""}
+								onSavePassphrase={setRoomPassphrase}
+								onClearPassphrase={clearRoomPassphrase}
+							/>
+
+							<CreateRoomModal
+								isOpen={showCreateRoomModal}
+								onClose={() => setShowCreateRoomModal(false)}
+								onCreateRoom={handleCreateRoom}
+							/>
 						</div>
 					)}
 
