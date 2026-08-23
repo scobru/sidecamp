@@ -350,7 +350,7 @@ function App() {
 		setChatSending(true);
 		try {
 			if (activeRoomId) {
-				if (sendRoomMessage(activeRoomId, body)) {
+				if (await sendRoomMessage(activeRoomId, body)) {
 					setChatText("");
 				}
 			} else if (await sendChatMessage(chatTo, body)) {

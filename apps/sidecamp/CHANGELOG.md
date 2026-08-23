@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.2] - 2026-08-23
+
+### Fixed
+
+- **Room slash commands and moderation**: Properly await room message delivery and execute room-scoped slash commands (`/kick`, `/ban`, `/unban`, etc.) on desktop and mobile.
+
 ## [0.27.1] - 2026-08-22
 
 ### Changed
