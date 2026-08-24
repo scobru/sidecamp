@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.1] - 2026-08-24
+
+### Changed
+
+- Docs catch up with 0.28.0: the README no longer advertises Peer Chat, and the roadmap no longer promises deeper `@tunecamp/chat` integration. No code changes — 0.28.0 already shipped without chat.
+
 ## [0.28.0] - 2026-08-24
 
 ### Removed
