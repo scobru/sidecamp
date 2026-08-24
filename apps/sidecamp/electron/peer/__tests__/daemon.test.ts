@@ -14,15 +14,6 @@ vi.mock('ws', () => ({
 	},
 }));
 
-const mockGenerateKeyPair = vi.fn();
-const mockEncryptFor = vi.fn();
-const mockDecryptFrom = vi.fn();
-vi.mock('../../../src/services/e2eCrypto', () => ({
-	generateKeyPair: (...args: any[]) => mockGenerateKeyPair(...args),
-	encryptFor: (...args: any[]) => mockEncryptFor(...args),
-	decryptFrom: (...args: any[]) => mockDecryptFrom(...args),
-}));
-
 import { PeerDaemon } from '../daemon';
 import { WebSocket } from 'ws';
 

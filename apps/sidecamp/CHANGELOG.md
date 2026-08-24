@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0] - 2026-08-24
+
+### Removed
+
+- **Chat.** TuneCamp is dropping its chat protocol to stay a music, federation and publishing platform, and messaging moves to [linda-pear](https://github.com/scobru/linda-pear). Gone from Sidecamp: the Chat tab and its rooms, the peer roster and DM UI, the room passphrase and create-room modals, the Zen identity vault opened at login, and the `@tunecamp/chat` dependency. Sharing, the library, downloads and the network browser are untouched — they never went through the chat socket.
+
 ## [0.27.5] - 2026-08-24
 
 ### Fixed
