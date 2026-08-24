@@ -45,6 +45,8 @@ import {
 	Sparkles,
 	RefreshCw,
 	Check,
+	UserPlus,
+	Ban,
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
@@ -282,6 +284,13 @@ function App() {
 		connect: connectChat,
 		disconnect: disconnectChat,
 		username: chatUsername,
+		contactsData,
+		blocklist,
+		sendContactRequest,
+		acceptContactRequest,
+		rejectContactRequest,
+		blockUser,
+		unblockUser,
 	} = useTuneCampChat(
 		{
 			serverUrl: server,
@@ -6572,6 +6581,56 @@ function App() {
 										})}
 									</div>
 
+									{contactsData.pendingIn.length > 0 && (
+										<div style={{ marginBottom: "0.5rem" }}>
+											<div
+												style={{
+													fontSize: "0.72rem",
+													fontWeight: 700,
+													opacity: 0.75,
+													textTransform: "uppercase",
+													letterSpacing: "0.04em",
+													padding: "0 0.25rem",
+													marginBottom: "0.25rem",
+												}}
+											>
+												Contact requests ({contactsData.pendingIn.length})
+											</div>
+											{contactsData.pendingIn.map((from) => (
+												<div
+													key={from}
+													style={{
+														display: "flex",
+														alignItems: "center",
+														gap: "0.35rem",
+														padding: "0.25rem",
+														fontSize: "0.78rem",
+													}}
+												>
+													<span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+														{formatUser(from)}
+													</span>
+													<button
+														type="button"
+														onClick={() => acceptContactRequest(from)}
+														title="Accept"
+														style={{ background: "transparent", border: "none", color: "#4ade80", cursor: "pointer", padding: "2px" }}
+													>
+														<Check size={14} />
+													</button>
+													<button
+														type="button"
+														onClick={() => rejectContactRequest(from)}
+														title="Reject"
+														style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px" }}
+													>
+														<X size={14} />
+													</button>
+												</div>
+											))}
+										</div>
+									)}
+
 									{/* Connected Peers Header */}
 									<div
 										style={{
@@ -6616,47 +6675,70 @@ function App() {
 										{chatPeers.map((peer) => {
 											const isSelected = !activeRoomId && chatTo === peer.username;
 											const unread = chatUnread[peer.username] || 0;
+											const isContact = contactsData.contacts.includes(peer.username);
+											const isPendingOut = contactsData.pendingOut.includes(peer.username);
+											const isBlocked = blocklist.includes(peer.username);
 											return (
-												<button
-													key={peer.username}
-													type="button"
-													className={`chat-peer-btn ${isSelected ? "active" : ""}`}
-													onClick={() => selectChatPeer(peer.username)}
-												>
-													<span className="chat-peer-dot" />
-													<span
-														style={{
-															flex: 1,
-															overflow: "hidden",
-															textOverflow: "ellipsis",
-															whiteSpace: "nowrap",
-														}}
+												<div key={peer.username} style={{ display: "flex", alignItems: "center", gap: "2px", width: "100%" }}>
+													<button
+														type="button"
+														className={`chat-peer-btn ${isSelected ? "active" : ""}`}
+														onClick={() => selectChatPeer(peer.username)}
+														style={{ flex: 1, minWidth: 0 }}
 													>
-														{formatUser(peer.username, peer.instance)}
-													</span>
-													{chatKeyChanges[peer.username] ? (
-														<span title="Key changed — messages blocked">
-															<ShieldAlert
-																size={12}
-																style={{ color: "#fbbf24", flexShrink: 0 }}
-															/>
+														<span className="chat-peer-dot" />
+														<span
+															style={{
+																flex: 1,
+																overflow: "hidden",
+																textOverflow: "ellipsis",
+																whiteSpace: "nowrap",
+															}}
+														>
+															{formatUser(peer.username, peer.instance)}
 														</span>
-													) : (
-														peer.pubkey && (
-															<span title="E2E ready">
-																<Lock
+														{chatKeyChanges[peer.username] ? (
+															<span title="Key changed — messages blocked">
+																<ShieldAlert
 																	size={12}
-																	style={{ color: "#4ade80", flexShrink: 0 }}
+																	style={{ color: "#fbbf24", flexShrink: 0 }}
 																/>
 															</span>
-														)
+														) : (
+															peer.pubkey && (
+																<span title="E2E ready">
+																	<Lock
+																		size={12}
+																		style={{ color: "#4ade80", flexShrink: 0 }}
+																	/>
+																</span>
+															)
+														)}
+														{unread > 0 && !isSelected && (
+															<span className="chat-unread-badge">
+																{unread}
+															</span>
+														)}
+													</button>
+													{!isContact && !isPendingOut && (
+														<button
+															type="button"
+															onClick={() => sendContactRequest(peer.username)}
+															title="Add contact"
+															style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+														>
+															<UserPlus size={12} />
+														</button>
 													)}
-													{unread > 0 && !isSelected && (
-														<span className="chat-unread-badge">
-															{unread}
-														</span>
-													)}
-												</button>
+													<button
+														type="button"
+														onClick={() => (isBlocked ? unblockUser(peer.username) : blockUser(peer.username))}
+														title={isBlocked ? "Unblock" : "Block"}
+														style={{ background: "transparent", border: "none", color: isBlocked ? "#f87171" : "var(--text-muted)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+													>
+														<Ban size={12} />
+													</button>
+												</div>
 											);
 										})}
 									</div>

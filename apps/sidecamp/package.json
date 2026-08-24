@@ -38,7 +38,7 @@
     "@capacitor/preferences": "^7.0.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
-    "@tunecamp/chat": "github:scobru/tunecamp-chat#v3.2.0",
+    "@tunecamp/chat": "github:scobru/tunecamp-chat#v3.2.2",
     "@types/fs-extra": "^11.0.4",
     "@types/ws": "^8.18.1",
     "andrade-soulseek-downloader": "^1.0.28",
