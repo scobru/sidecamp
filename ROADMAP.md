@@ -16,5 +16,4 @@ Sidecamp è il compagno desktop e mobile per TuneCamp, dedicato all'acquisizione
 - **P2P & Sharing**: Ottimizzazione del peering WebRTC DataChannels e gestione flessibile dei permessi per cartella.
 - **Library & Metadata**: Tagging automatico da Beatport e MusicBrainz, pulizia automatica dei nomi dei file, gestione ID3v2 avanzata.
 - **Mobile Experience**: Perfezionamento dell'interfaccia touch per Capacitor su Android e iOS.
-- **Chat & Moderazione**: Piena integrazione con `@tunecamp/chat` (E2EE con Zen SEA, stanze e comandi di moderazione).
 
