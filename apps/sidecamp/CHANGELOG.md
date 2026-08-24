@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.4] - 2026-08-24
+
+### Fixed
+
+- **Lockfile pin**: `package-lock.json` was still resolving `@tunecamp/chat` at an old commit despite the package.json bump in 0.27.3, so CI builds kept installing a version predating `contactsData`/`blocklist` and failing to compile.
+
+### Removed
+
+- **Graphofone**: dropped from the repo (was never actually committed to this project) and from the release workflow's build matrix.
+
 ## [0.27.3] - 2026-08-24
 
 ### Added
