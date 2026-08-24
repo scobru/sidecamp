@@ -4,21 +4,12 @@
 
 Sidecamp is an **Electron desktop application** that handles all P2P content acquisition and peer file-sharing for TuneCamp instances — keeping the core server clean and fully compliant.
 
-This repository is an **npm-workspaces monorepo** hosting two apps and their shared packages:
+This repository is an **npm-workspaces monorepo** hosting Sidecamp and its companion CLI:
 
 ```
 apps/sidecamp        # the TuneCamp companion app (this README's main subject)
-apps/graphofone      # standalone live-performance app built on the same graph engine
 apps/sidecamp-cli    # headless CLI client for Sidecamp (no Electron): search/download/upload/peer daemon
-packages/audio-engine # pure Web Audio DSP: crossfade player, time-warp, worklets
-packages/graph-ui     # React graph view: track graph, transitions, waveforms, recording
-
-*Note: `tunecamp-design-system` has been deprecated. Design tokens are now inlined directly in each app's styles.*
 ```
-
-## Graphofone
-
-**Graphofone** is a focused live-performance tool: import a music folder, arrange tracks as a graph, link them with beat-matched crossfade transitions, and perform — no P2P, no server, no network features. It ships with a first-run quick tour (reopen it anytime from the `?` button in the header). Sidecamp stays a lean player with classic playlists; the graph/mixing engine (`graph-ui`, `audio-engine`) lives in Graphofone only.
 
 ## Why Sidecamp?
 
@@ -47,7 +38,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 
 - **Node.js** 18+ and **npm**
 - **yt-dlp** — auto-downloaded on first rip (no manual install needed)
-- A running **TuneCamp** instance to connect to (Sidecamp only; Graphofone is fully offline)
+- A running **TuneCamp** instance to connect to
 
 ## Quick Start
 
@@ -59,9 +50,8 @@ cd sidecamp
 # Install all workspaces
 npm install
 
-# Run an app in development mode (Vite + Electron)
+# Run Sidecamp in development mode (Vite + Electron)
 npm run dev --workspace apps/sidecamp
-npm run dev --workspace apps/graphofone
 ```
 
 ### Running Tests
@@ -80,14 +70,11 @@ npm run test:watch --workspace apps/sidecamp   # watch mode
 ### Build for production
 
 ```bash
-# From the repo root: builds every app for the current host OS
-npm run build
-
-# Or a single app
-npm run build --workspace apps/graphofone
+# From the repo root: builds Sidecamp for the current host OS
+npm run build --workspace apps/sidecamp
 ```
 
-This compiles TypeScript, bundles the Vite frontend, and packages each Electron app via `electron-builder` into `apps/*/release/`.
+This compiles TypeScript, bundles the Vite frontend, and packages the Electron app via `electron-builder` into `apps/sidecamp/release/`.
 
 `npm run build` only produces installers for **the OS you run it on** (electron-builder + native modules build for the host). Per-platform scripts (Sidecamp):
 
@@ -102,7 +89,7 @@ npm run build:linux   # AppImage (.AppImage) + Debian (.deb)
 
 ### Cross-platform releases (CI)
 
-`.github/workflows/release.yml` builds **both apps** on Windows, macOS, and Linux runners in parallel. Push a version tag to publish a GitHub Release with every installer attached:
+`.github/workflows/release.yml` builds Sidecamp on Windows, macOS, and Linux runners in parallel. Push a version tag to publish a GitHub Release with every installer attached:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
@@ -138,9 +125,7 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
 - **Uploader** (`apps/sidecamp/electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
 - **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
-- **Frontends** (`apps/*/src/`): React + Vite UIs rendered inside each Electron window.
-- **Graph View** (`packages/graph-ui/`): Track graph, BPM/key/genre-based transition suggestions, waveform/cue UI, and set recording — shared by both apps.
-- **Audio Engine** (`packages/audio-engine/`): Crossfade playback engine, time-warp source, and audio worklets — pure Web Audio, no app logic.
+- **Frontend** (`apps/sidecamp/src/`): React + Vite UI rendered inside the Electron window and mobile Capacitor runtime.
 
 ## Ecosystem
 

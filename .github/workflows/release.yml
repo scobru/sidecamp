@@ -1,15 +1,14 @@
 name: Release
 
 # Builds native installers for every OS on their own runner (macOS installers
-# can't be produced on Windows/Linux). sidecamp and graphofone version and
-# release independently — push a `sidecamp-vX.Y.Z` or `graphofone-vX.Y.Z` tag
-# to build and publish only that app, or run manually to build both without publishing.
+# can't be produced on Windows/Linux). Push a `sidecamp-vX.Y.Z` tag to build
+# and publish, or run manually to build without publishing.
 permissions:
   contents: write
 
 on:
   push:
-    tags: ['sidecamp-v*', 'graphofone-v*']
+    tags: ['sidecamp-v*']
   workflow_dispatch:
 
 jobs:
@@ -18,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        app: [sidecamp, graphofone]
+        app: [sidecamp]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

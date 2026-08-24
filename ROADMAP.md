@@ -1,69 +1,20 @@
-# Sidecamp & Graph: Architectural Roadmap
+# Sidecamp: Architectural Roadmap
 
-Questo documento delinea la visione a lungo termine per lo sviluppo del motore di mixaggio visivo "Graph" e la sua evoluzione rispetto al client Sidecamp.
+Questo documento delinea la visione a lungo termine per lo sviluppo del client desktop e mobile Sidecamp e della CLI.
 
-> **Stato (v0.16.0):** Fase 1 e Fase 2 completate — il repo è un monorepo npm workspaces, `graphofone` esiste come app standalone. Fase 3 in avanzamento.
+## Visione & Obiettivi
 
-## La Sfida Architetturale
+Sidecamp è il compagno desktop e mobile per TuneCamp, dedicato all'acquisizione di contenuti P2P (Soulseek, torrent, YouTube/yt-dlp, Internet Archive), all'organizzazione della libreria locale e alla condivisione decentralizzata dei file tramite tunnel inverso WebSocket e WebRTC.
 
-Fino alla v0.11.0, il Grafo (ispirato al workflow di layering di Richie Hawtin) e il motore Web Audio a bassa latenza vivevano all'interno di Sidecamp.
+### Componenti Principali
 
-### Pro dell'approccio "Monolito" (Stato Attuale)
+1. **`apps/sidecamp`**: Applicazione Electron (Desktop Windows, macOS, Linux) e runtime mobile Capacitor (Android, iOS).
+2. **`apps/sidecamp-cli`**: Client da riga di comando per server e ambienti headless (daemon di condivisione `sidecamp share`, download, upload).
 
-* **Frictionless Workflow:** Una traccia scaricata è immediatamente utilizzabile nel Grafo, senza necessità di export o import manuale.
-* **Metadati Condivisi:** Sidecamp calcola già BPM, Camelot Key e genere. Il Grafo attinge direttamente a questi dati.
-* **Velocità di iterazione:** Un solo repository, una sola build, nessuna comunicazione IPC complessa tra app diverse.
+### Aree di Sviluppo
 
-### Contro
+- **P2P & Sharing**: Ottimizzazione del peering WebRTC DataChannels e gestione flessibile dei permessi per cartella.
+- **Library & Metadata**: Tagging automatico da Beatport e MusicBrainz, pulizia automatica dei nomi dei file, gestione ID3v2 avanzata.
+- **Mobile Experience**: Perfezionamento dell'interfaccia touch per Capacitor su Android e iOS.
+- **Chat & Moderazione**: Piena integrazione con `@tunecamp/chat` (E2EE con Zen SEA, stanze e comandi di moderazione).
 
-* **Risorse e Glitch Audio:** Il Web Audio API richiede un thread ininterrotto. Se il client P2P satura il disco, la rete o il main thread, l'audio rischia drop-out (inaccettabile in un live set).
-* **UX/UI Sovraccaricata:** Interfacce per il download e interfacce per la performance dal vivo hanno esigenze cognitive opposte.
-* **Target Differenti:** Il target P2P e il target "Pro DJ" spesso non coincide.
-
----
-
-## La Strategia: Da "Monolith First" a Ecosistema Modulare
-
-La roadmap segue il principio ingegneristico di massimizzare la velocità di scoperta iniziale, per poi stabilizzare e isolare i componenti critici.
-
-### Fase 1: Prototipazione nel Monolito ✅ (completata in v0.11.0)
-
-* **Obiettivo:** Convalidare l'idea, trovare il "fun factor" e consolidare le meccaniche del Grafo.
-* **Azione:** Mantenere tutto dentro Sidecamp.
-* **Regola Architetturale:** Scrivere il codice di `GraphView` e dell'Audio Engine in modo "ignorante". Devono ricevere solo dati audio (URL/Blob) ed essere totalmente disaccoppiati dalla logica di rete o dal concetto di P2P.
-
-### Fase 2: Transizione a Monorepo ✅ (completata in v0.12.0)
-
-* **Obiettivo:** Disaccoppiamento strutturale.
-* **Struttura realizzata (npm workspaces):**
-  * `packages/audio-engine`: Logica DSP pura (playback, warp, crossfade, worklets).
-  * `packages/graph-ui`: Componenti React visivi (GraphView, TransitionWave).
-  * `packages/graph-ui`: Componenti React visivi (GraphView, TransitionWave).
-  * `apps/sidecamp`: App principale, importa i pacchetti.
-  * `apps/graphofone`: App live standalone.
-
-### Fase 3: Stand-alone App per Live Performance 🚧 (in corso - v0.16.0)
-
-* **Obiettivo:** Rilasciare uno strumento professionale "club-ready" focalizzato sul live.
-* **Gia Implementato (v0.12.0 - v0.16.0):** ✅
-  * App `Graphofone` standalone: libreria locale, grafo, transizioni, recording — zero P2P/rete.
-  * Tema dark/light coerente, onboarding quick tour e integrazione tokens/componenti inlined.
-  * Layout mixer verticale in stile Ableton con selezioni strip/nodi sincronizzate.
-  * Routing audio con pre-ascolto cuffie (Cue Out vs Master Out con cue volume dedicato).
-  * Presets EQ per singolo nodo e strip mixer.
-  * Loop clip quantizzati, punti Cue-In/Out su ogni nodo e zoom forma d'onda al cursore.
-  * Animazioni audio-reattive dei nodi e playhead circolari/di crossfade.
-* **Feature previste da completare in Fase 3:** 🚧
-  * Analisi e importazione nativa da database esterni (Rekordbox, Traktor).
-  * Supporto completo controller fisici tramite Web MIDI API (MIDI learn & mapping).
-
-### Fase 4: Generazione & Synth Nodes (VST / WAM + Piano Roll) 🔮 (Pianificato)
-
-* **Obiettivo:** Trasformare il Grafo in un ambiente ibrido DJing/Live-Produzione, combinando tracce audio con sintesi in tempo reale.
-* **Nodi VST / Web Audio Modules (WAM):**
-  * Supporto per nodi strumentali/effetto con caricamento di plugin (standard WAM v2 / WASM / VST hosted).
-  * Gestione parametri e automazioni per nodo strumento.
-* **MIDI Clip Editor & Piano Roll:**
-  * Possibilità di creare e modificare MIDI clip direttamente nei nodi VST/Synth.
-  * Piano Roll integrato per la stesura di melodie, linee di basso e pattern ritmici quantizzati.
-  * Sincronizzazione al clock del Grafo/BPM master con supporto per trigger e loop di clip MIDI.

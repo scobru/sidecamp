@@ -607,8 +607,7 @@ ipcMain.handle('recordings:save', async (event, filename: string, data: Uint8Arr
 });
 
 // --- Update check against GitHub releases ---
-// Sidecamp and graphofone ship independent versions from one shared repo, tagged
-// `sidecamp-v*` / `graphofone-v*` — filter releases by prefix, not /releases/latest.
+// Releases are tagged `sidecamp-v*` — filter by prefix, not /releases/latest.
 const TAG_PREFIX = 'sidecamp-v';
 const FALLBACK_RELEASES_URL = 'https://github.com/scobru/sidecamp/releases';
 let releasesPageUrl = FALLBACK_RELEASES_URL;

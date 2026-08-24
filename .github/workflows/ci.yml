@@ -25,5 +25,5 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       # Runs `vitest run` in every workspace that defines a test script
-      # (apps/sidecamp, apps/graphofone, apps/sidecamp-cli).
+      # (apps/sidecamp, apps/sidecamp-cli).
       - run: npm test
