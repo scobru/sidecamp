@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.3] - 2026-08-24
+
+### Added
+
+- **Contacts and block/unblock UI**: peer sidebar now surfaces pending contact requests (accept/reject) and per-peer block/unblock — previously implemented in `@tunecamp/chat` but never wired into the app.
+
+### Changed
+
+- **Updated `@tunecamp/chat` to `v3.2.3`**.
+
 ## [0.27.2] - 2026-08-23
 
 ### Fixed
