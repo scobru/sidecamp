@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.5] - 2026-08-24
+
+### Fixed
+
+- **Chat now encrypts under the account's Zen identity, not a per-connection throwaway key.** The vault was already opened at login and stored, but it was only handed to the peer daemon — the in-app chat hook never received it, so it fell back to the library's random pair. That key changed on every connect, which every peer who had pinned the account's real key had to clear as a key-change warning. Bumped `@tunecamp/chat` to v3.3.0, which stops minting those keys altogether and refuses a DM rather than sending it under one; connecting with a bare token (no password, so no vault) therefore leaves DMs unavailable instead of silently unreadable.
+
 ## [0.27.4] - 2026-08-24
 
 ### Fixed

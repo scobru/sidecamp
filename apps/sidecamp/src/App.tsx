@@ -261,6 +261,16 @@ function App() {
 	const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
 	const [dlLogsExpanded, setDlLogsExpanded] = useState(false);
 	const [mobileChatView, setMobileChatView] = useState<"feed" | "peers" | "rooms">("feed");
+	// The chat client encrypts DMs under the account's Zen identity, the same
+	// key `GET /api/chat/pubkey` serves for this user. Without it the client
+	// holds no key at all and refuses to send rather than going out under one
+	// peers cannot verify. Re-read on login, which is when the vault is opened.
+	const chatKeyPair = useMemo(() => {
+		const identity = loadChatIdentity();
+		return identity?.publicKey && identity?.secretKey
+			? { pub: identity.publicKey, priv: identity.secretKey }
+			: undefined;
+	}, [token]);
 	const {
 		messages: chatMessages,
 		peers: rawChatPeers,
@@ -296,6 +306,7 @@ function App() {
 			serverUrl: server,
 			token: token,
 			autoConnect: false,
+			keyPair: chatKeyPair,
 		},
 		chatTo,
 		activeRoomId,
