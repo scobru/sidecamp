@@ -1948,10 +1948,6 @@ function App() {
 				.map((f) => f.trim())
 				.filter(Boolean),
 			allowDownloads: true,
-			// Encrypt DMs to the account's Zen identity when we have it. Without
-			// it the daemon falls back to its own local pair, which peers that
-			// already resolved the identity key will not accept.
-			zenPair: loadChatIdentity(),
 		});
 		connectChat();
 	};

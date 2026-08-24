@@ -117,20 +117,6 @@ export class NetworkService extends EventEmitter {
     return (await response.json()) as any;
   }
 
-  // Chat roster, not the sharing roster: /api/peers only lists daemon sessions
-  // on /ws/peer, so webapp users (who connect to /ws/chat) are invisible there.
-  // The lobby is shared by both transports, so the chat recipient list must come
-  // from the chat registry instead.
-  public async getChatPeers(server: string, token: string): Promise<any> {
-    const cleanServer = server.replace(/\/$/, '');
-    const response = await fetch(`${cleanServer}/api/chat/peers`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) return [];
-    const data: any = await response.json().catch(() => ({}));
-    return data?.clients ?? [];
-  }
-
   public async getPeerTracks(server: string, token: string, sessionId: string, origin?: string): Promise<any> {
     const cleanServer = server.replace(/\/$/, '');
     const url = origin

@@ -3,19 +3,11 @@ import { Preferences } from "@capacitor/preferences";
 import { CapacitorHttp, Capacitor } from "@capacitor/core";
 import { FolderPicker } from "./folderPickerPlugin";
 import { PeerSharing } from "./peerSharingPlugin";
-import { generateKeyPair, encryptFor, decryptFrom } from "../e2eCrypto";
 
 export function createCapacitorAdapter() {
 	const logListeners: ((msg: string) => void)[] = [];
 	const statusListeners: ((status: string) => void)[] = [];
 	const progressListeners: ((data: any) => void)[] = [];
-	const chatListeners: ((data: {
-		from: string;
-		text: string;
-		ts: number;
-		lobby?: boolean;
-		e2e?: boolean;
-	}) => void)[] = [];
 	const downloadLogListeners: ((msg: string) => void)[] = [];
 	const downloadProgressListeners: ((data: any) => void)[] = [];
 
@@ -24,19 +16,6 @@ export function createCapacitorAdapter() {
 		statusListeners.forEach((fn) => fn(status));
 	const emitDownloadLog = (msg: string) =>
 		downloadLogListeners.forEach((fn) => fn(msg));
-	const emitChat = (data: {
-		from: string;
-		text: string;
-		ts: number;
-		lobby?: boolean;
-		e2e?: boolean;
-	}) => chatListeners.forEach((fn) => fn(data));
-
-	// E2E chat: fresh identity per app run, exchanged with peers over
-	// the existing peer WS ('pubkey' messages) — the relay server never sees plaintext.
-	let myKeyPair: Awaited<ReturnType<typeof generateKeyPair>> | null = null;
-	const peerPublicKeys = new Map<string, string>();
-
 	// --- Peer Daemon (WS client to the TuneCamp server — same protocol as the
 	// Electron PeerDaemon, just run in the WebView instead of Node) ---
 	const AUDIO_EXT = new Set([".mp3", ".flac", ".ogg", ".m4a", ".wav"]);
@@ -257,8 +236,6 @@ export function createCapacitorAdapter() {
 		token: string;
 		folders: string[];
 		allowDownloads: boolean;
-		// The account's Zen identity, opened from its vault at login.
-		zenPair?: { publicKey: string; secretKey: string } | null;
 	}) => {
 		if (!peerRunning) return;
 		try {
@@ -274,13 +251,6 @@ export function createCapacitorAdapter() {
 			emitStatus("connecting");
 			ws = new WebSocket(wsUrl.toString());
 
-			// Prefer the account's Zen identity: it is what `GET /api/chat/pubkey`
-			// serves for this user, and peers that resolved it will not accept a
-			// session key announced over the socket instead.
-			myKeyPair =
-				config.zenPair?.publicKey && config.zenPair?.secretKey
-					? config.zenPair
-					: await generateKeyPair();
 			ws.onopen = () =>
 				emitLog("[Mobile] WebSocket connesso. In attesa di autorizzazione...");
 
@@ -292,36 +262,11 @@ export function createCapacitorAdapter() {
 						emitLog(
 							`[Mobile] Connesso a TuneCamp (Sessione: ${msg.sessionId}). Invio indice libreria...`,
 						);
-						ws?.send(
-							JSON.stringify({ type: "pubkey", pubkey: myKeyPair!.publicKey }),
-						);
 						const tracks = await scanFolders(
 							config.folders,
 							config.allowDownloads,
 						);
 						ws?.send(JSON.stringify({ type: "manifest", tracks }));
-					} else if (msg.type === "pubkey") {
-						peerPublicKeys.set(msg.from, msg.pubkey);
-					} else if (msg.type === "chat") {
-						if (msg.lobby) {
-							emitChat({
-								from: msg.from,
-								text: msg.text,
-								ts: msg.ts,
-								lobby: true,
-							});
-						} else {
-							const senderKey = peerPublicKeys.get(msg.from);
-							const plain = senderKey
-								? await decryptFrom(msg.text, senderKey, myKeyPair!.secretKey)
-								: null;
-							emitChat({
-								from: msg.from,
-								text: plain ?? "[Encrypted message — key exchange pending]",
-								ts: msg.ts,
-								e2e: true,
-							});
-						}
 					} else if (msg.type === "ping") {
 						ws?.send(JSON.stringify({ type: "pong" }));
 					} else if (
@@ -551,24 +496,6 @@ export function createCapacitorAdapter() {
 			return { success: true };
 		},
 
-		sendPeerChat: async (to: string, text: string) => {
-			if (ws?.readyState !== WebSocket.OPEN)
-				return { success: false, error: "Not connected" };
-			let payload = text;
-			let e2e = false;
-			if (to) {
-				const pubkey = peerPublicKeys.get(to);
-				if (pubkey) {
-					payload = await encryptFor(text, pubkey, myKeyPair!.secretKey);
-					e2e = true;
-				}
-				// no pubkey → send plaintext (peer on older version or key exchange pending)
-			}
-			ws.send(JSON.stringify({ type: "chat", to, text: payload }));
-			emitLog(`[Chat Mobile] Inviato a ${to || "Lobby"}${e2e ? " 🔒" : ""}`);
-			return { success: true, e2e };
-		},
-
 		// Shared Files Browser (backed by @capacitor/filesystem — root is an
 		// absolute file:// URI, e.g. from getDownloadsDir, so calls omit `directory`)
 		listSharedDir: async (root: string, subpath: string) => {
@@ -690,11 +617,6 @@ export function createCapacitorAdapter() {
 		onPeerProgress: (cb: (data: any) => void) => {
 			progressListeners.push(cb);
 		},
-		onPeerChat: (
-			cb: (data: { from: string; text: string; ts: number }) => void,
-		) => {
-			chatListeners.push(cb);
-		},
 		onDownloadLog: (cb: (msg: string) => void) => {
 			downloadLogListeners.push(cb);
 		},
@@ -773,16 +695,6 @@ export function createCapacitorAdapter() {
 				headers: { Authorization: `Bearer ${token}` },
 			});
 			return Array.isArray(res.data) ? res.data : [];
-		},
-
-		// See NetworkProvider.getChatPeers: the chat roster is the /ws/chat registry,
-		// which includes webapp users that /api/peers never lists.
-		getChatPeers: async (server: string, token: string) => {
-			const res = await CapacitorHttp.get({
-				url: `${server.replace(/\/$/, "")}/api/chat/peers`,
-				headers: { Authorization: `Bearer ${token}` },
-			});
-			return Array.isArray(res.data?.clients) ? res.data.clients : [];
 		},
 
 		getPeerTracks: async (

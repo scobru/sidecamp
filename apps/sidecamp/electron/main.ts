@@ -520,7 +520,6 @@ ipcMain.handle('peer:start', async (event, config: PeerConfig) => {
   daemon.on('log', (msg) => win?.webContents.send('peer:log', msg));
   daemon.on('status', (status) => win?.webContents.send('peer:status', status));
   daemon.on('progress', (current, total) => win?.webContents.send('peer:progress', { current, total }));
-  daemon.on('chat', (data) => win?.webContents.send('peer:chat', data));
 
   await daemon.start();
   return true;
@@ -532,10 +531,6 @@ ipcMain.handle('peer:stop', () => {
     daemon = null;
   }
   return true;
-});
-
-ipcMain.handle('peer:chat-send', (event, to: string, text: string) => {
-  return daemon?.sendChat(to, text) ?? { success: false, error: 'Peer sharing not running' };
 });
 
 // --- Shared-folder file browser IPC ---
@@ -771,10 +766,6 @@ ipcMain.handle('auth:connect', async (event, server, mode, username, password) =
 // --- Network Explorer IPC ---
 ipcMain.handle('network:peers', async (event, server, token) => {
   return await network.getPeers(server, token);
-});
-
-ipcMain.handle('network:chat-peers', async (event, server, token) => {
-  return await network.getChatPeers(server, token);
 });
 
 ipcMain.handle('network:tracks', async (event, server, token, sessionId, origin) => {

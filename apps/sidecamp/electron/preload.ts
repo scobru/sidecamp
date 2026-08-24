@@ -30,7 +30,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Peer Daemon
   startPeer: (config: any) => ipcRenderer.invoke('peer:start', config),
   stopPeer: () => ipcRenderer.invoke('peer:stop'),
-  sendPeerChat: (to: string, text: string) => ipcRenderer.invoke('peer:chat-send', to, text),
 
   // Shared-folder file browser
   listSharedDir: (root: string, subpath: string) => ipcRenderer.invoke('fs:list', root, subpath),
@@ -51,7 +50,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPeerLog: (callback: (msg: string) => void) => { ipcRenderer.removeAllListeners('peer:log'); ipcRenderer.on('peer:log', (_, msg) => callback(msg)); },
   onPeerStatus: (callback: (status: string) => void) => { ipcRenderer.removeAllListeners('peer:status'); ipcRenderer.on('peer:status', (_, status) => callback(status)); },
   onPeerProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('peer:progress'); ipcRenderer.on('peer:progress', (_, data) => callback(data)); },
-  onPeerChat: (callback: (data: { from: string; text: string; ts: number }) => void) => { ipcRenderer.removeAllListeners('peer:chat'); ipcRenderer.on('peer:chat', (_, data) => callback(data)); },
 
   onNavGoto: (callback: (tab: string) => void) => { ipcRenderer.removeAllListeners('nav:goto'); ipcRenderer.on('nav:goto', (_, tab) => callback(tab)); },
 
@@ -91,7 +89,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Network Explorer
   getNetworkPeers: (server: string, token: string) => ipcRenderer.invoke('network:peers', server, token),
-  getChatPeers: (server: string, token: string) => ipcRenderer.invoke('network:chat-peers', server, token),
   getPeerTracks: (server: string, token: string, sessionId: string, origin?: string) => ipcRenderer.invoke('network:tracks', server, token, sessionId, origin),
   downloadPeerTrack: (server: string, token: string, sessionId: string, trackId: string, artist: string, title: string, origin?: string, downloadId?: string) => ipcRenderer.invoke('network:download', server, token, sessionId, trackId, artist, title, origin, downloadId),
   getCatalogTracks: (server: string, token: string) => ipcRenderer.invoke('network:catalog-tracks', server, token),
