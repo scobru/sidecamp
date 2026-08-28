@@ -132,8 +132,6 @@ Sidecamp is part of the [TuneCamp ecosystem](https://github.com/scobru/tunecamp#
 
 - [**tunecamp**](https://github.com/scobru/tunecamp) — The core self-hosted music streaming server.
 - [**tunecamp-website**](https://github.com/scobru/tunecamp-website) — Landing page, community directory, and web-based community audio player.
-- [**tunecamp-4-track-recorder**](https://github.com/scobru/tunecamp-4-track-recorder) — Browser-based 4-track cassette recorder with overdub and mixer.
-- [**tunecamp-audiofabric**](https://github.com/scobru/tunecamp-audiofabric) — Real-time 3D WebGL music visualizer.
 - **Design System** — UI/design-token package has been deprecated; tokens are now inlined in app styles.
 - [**sidecamp-cli**](https://github.com/scobru/sidecamp/tree/main/apps/sidecamp-cli) — Headless CLI client for Sidecamp functionality without Electron.
 
