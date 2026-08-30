@@ -210,8 +210,76 @@ export async function searchTorrents(query: string): Promise<any[]> {
 // Search audio shared by connected Sidecamp peers on the TuneCamp network.
 // Every match is downloadable via the server tunnel (downloadPeerTrack), so we
 // no longer drop tracks that lack a magnet_uri.
+// /api/search/global only fans out to peer-daemon shares of federated instances,
+// never their actual catalogs — so a track just uploaded to another instance
+// (not P2P-shared) never showed up here. /api/community/sites and
+// /api/catalog/full are both public/unauthenticated, so we fan out to them
+// directly and filter client-side (the catalog endpoint has no ?q= of its own).
+const FEDERATED_SEARCH_TIMEOUT_MS = 3000;
+const FEDERATED_SITE_LIMIT = 8;
+const FEDERATED_RESULTS_PER_SITE = 20;
+
+async function searchFederatedInstances(query: string, server: string): Promise<any[]> {
+    const q = query.toLowerCase();
+    try {
+        const cleanServer = server.replace(/\/$/, '');
+        const sitesRes = await fetch(`${cleanServer}/api/community/sites`, {
+            headers: { "User-Agent": USER_AGENT },
+            signal: AbortSignal.timeout(FEDERATED_SEARCH_TIMEOUT_MS)
+        });
+        if (!sitesRes.ok) return [];
+        const sites = await sitesRes.json() as any[];
+        const origins = (Array.isArray(sites) ? sites : [])
+            .filter(s => s?.url && s.federation !== 'local')
+            .slice(0, FEDERATED_SITE_LIMIT);
+
+        const perSite = await Promise.allSettled(origins.map(async (site: any) => {
+            const origin = String(site.url).replace(/\/$/, '');
+            const res = await fetch(`${origin}/api/catalog/full`, {
+                headers: { "User-Agent": USER_AGENT },
+                signal: AbortSignal.timeout(FEDERATED_SEARCH_TIMEOUT_MS)
+            });
+            if (!res.ok) return [];
+            const catalog = await res.json() as any;
+            const out: any[] = [];
+            for (const release of catalog?.releases || []) {
+                for (const track of release?.tracks || []) {
+                    const title = String(track.title || '');
+                    const artist = String(track.artist_name || track.artistName || release.artist_name || '');
+                    if (!title.toLowerCase().includes(q) && !artist.toLowerCase().includes(q)) continue;
+                    out.push({
+                        id: 'instance_' + origin + '_' + track.id,
+                        title,
+                        artist: artist || 'Unknown Artist',
+                        album: release.title || 'Unknown Album',
+                        url: '',
+                        source: 'instance',
+                        origin,
+                        trackId: track.id,
+                        user: `Instance (${site.name || origin})`
+                    });
+                    if (out.length >= FEDERATED_RESULTS_PER_SITE) break;
+                }
+                if (out.length >= FEDERATED_RESULTS_PER_SITE) break;
+            }
+            return out;
+        }));
+
+        const results: any[] = [];
+        for (const r of perSite) if (r.status === 'fulfilled') results.push(...r.value);
+        return results;
+    } catch (e) {
+        console.error("Federated instance search error:", e);
+        return [];
+    }
+}
+
 export async function searchPeerNetwork(query: string, server?: string, token?: string): Promise<any[]> {
     if (!server || !token) return [];
+
+    const federatedPromise = searchFederatedInstances(query, server);
+    const results: any[] = [];
+
     try {
         const cleanServer = server.replace(/\/$/, '');
         const url = `${cleanServer}/api/search/global?q=${encodeURIComponent(query)}`;
@@ -223,11 +291,11 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
         });
         if (!res.ok) {
             console.error(`Peer network search returned error: ${res.status}`);
-            return [];
+            results.push(...await federatedPromise);
+            return results;
         }
-        
+
         const data = await res.json() as any;
-        const results: any[] = [];
 
         // 1. Map local catalog results (TuneCamp instance files, filtered by permissions)
         if (Array.isArray(data.local)) {
@@ -265,9 +333,11 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
             results.push(...peerTracks);
         }
 
+        results.push(...await federatedPromise);
         return results;
     } catch (e) {
         console.error("Peer network search error:", e);
-        return [];
+        results.push(...await federatedPromise);
+        return results;
     }
 }

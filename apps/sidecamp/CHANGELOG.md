@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.3] - 2026-08-30
+
+### Fixed
+
+- **Network search only covered peers, not other instances' own catalogs.** `/api/search/global`'s cross-instance fan-out only asks a federated instance what its connected peer daemons are sharing (`/api/peers/federated-search`) — it never touches that instance's own library, so a track uploaded directly to another TuneCamp instance (not P2P-shared) never showed up. Search now also fans out to `/api/community/sites` + each instance's public `/api/catalog/full` (both already unauthenticated, used elsewhere for the Network tab) and filters client-side, merged into results as `source: "instance"`. Downloads reuse the existing `downloadFederatedCatalogTrack` path.
+
 ## [0.28.2] - 2026-08-30
 
 ### Fixed

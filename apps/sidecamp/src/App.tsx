@@ -2005,6 +2005,14 @@ function App() {
 					result.title,
 					downloadId,
 				);
+			} else if (source === "instance") {
+				filePath = await window.electronAPI.downloadFederatedCatalogTrack(
+					result.origin,
+					result.trackId,
+					result.artist,
+					result.title,
+					downloadId,
+				);
 			} else {
 				filePath = await window.electronAPI.slskDownload(result);
 			}
