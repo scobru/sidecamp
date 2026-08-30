@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.2] - 2026-08-30
+
+### Fixed
+
+- **Custom library folder was ignored.** Settings only exposed "Music Folders to Share" (peer-sharing roots); the actual download/library location was hardcoded to the OS Music/Downloads folders regardless. Added a separate "Sidecamp Library Folder" setting — leave empty for the previous default, or point it anywhere and Sidecamp stores everything under `<folder>/Sidecamp`. Takes effect after restart.
+
 ## [0.28.1] - 2026-08-24
 
 ### Changed

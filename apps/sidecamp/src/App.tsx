@@ -402,6 +402,7 @@ function App() {
 	const [slskUser, setSlskUser] = useState("");
 	const [slskPass, setSlskPass] = useState("");
 	const [torrentPort, setTorrentPort] = useState<number>(0);
+	const [libraryDir, setLibraryDir] = useState<string>("");
 	const [activeDownloads, setActiveDownloads] = useState<any[]>(() => {
 		try {
 			const saved = localStorage.getItem("sidecamp_active_downloads");
@@ -554,7 +555,10 @@ function App() {
 	useEffect(() => {
 		window.electronAPI
 			.configGet()
-			.then((cfg: any) => setTorrentPort(cfg.torrentPort || 0));
+			.then((cfg: any) => {
+				setTorrentPort(cfg.torrentPort || 0);
+				setLibraryDir(cfg.libraryDir || "");
+			});
 	}, []);
 
 	useEffect(() => {
@@ -2323,6 +2327,7 @@ function App() {
 		);
 		localStorage.setItem("shared_folders", folder);
 		await window.electronAPI.configSet("torrentPort", torrentPort);
+		await window.electronAPI.configSet("libraryDir", libraryDir);
 
 		setDlLogs((prev) => [
 			...prev,
@@ -2480,6 +2485,11 @@ function App() {
 		if (dir) {
 			setFolder((prev) => (prev ? `${prev}, ${dir}` : dir));
 		}
+	};
+
+	const handleBrowseLibraryDir = async () => {
+		const dir = await window.electronAPI.pickFolder();
+		if (dir) setLibraryDir(dir);
 	};
 
 	const handleOrganizePickFolder = async () => {
@@ -4892,6 +4902,54 @@ function App() {
 										className="glass-input"
 										style={{ width: "120px" }}
 									/>
+								</div>
+							</div>
+
+							<div
+								className="settings-section"
+								style={{
+									marginBottom: "2rem",
+									borderTop: "1px solid var(--glass-border)",
+									paddingTop: "1.5rem",
+								}}
+							>
+								<h3 style={{ marginBottom: "1rem" }}>Sidecamp Library Folder</h3>
+								<div className="form-group">
+									<label>
+										Where downloaded music is stored. Leave empty to use the
+										default Music folder. Takes effect after restarting
+										Sidecamp.
+									</label>
+									<div style={{ display: "flex", gap: "8px" }}>
+										<input
+											type="text"
+											value={libraryDir}
+											onChange={(e) => setLibraryDir(e.target.value)}
+											placeholder="Default: Music folder"
+											className="glass-input"
+											style={{ flex: 1 }}
+										/>
+										<Button
+											variant="secondary"
+											onClick={handleBrowseLibraryDir}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+												whiteSpace: "nowrap",
+											}}
+										>
+											<Folder size={16} /> Browse
+										</Button>
+										{libraryDir && (
+											<Button
+												variant="secondary"
+												onClick={() => setLibraryDir("")}
+											>
+												Reset
+											</Button>
+										)}
+									</div>
 								</div>
 							</div>
 

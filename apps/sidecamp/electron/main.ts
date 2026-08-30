@@ -113,8 +113,26 @@ const AUDIO_MIME: Record<string, string> = {
 };
 
 let daemon: PeerDaemon | null = null;
-const musicDir = path.join(app.getPath('music'), 'Sidecamp');
-const downloadDir = path.join(app.getPath('downloads'), 'Sidecamp');
+
+// Simple JSON config persisted in userData. Used for settings that the
+// main process needs at startup (e.g. torrent port) — values the renderer
+// also keeps in localStorage for quick access.
+const configPath = join(app.getPath('userData'), 'config.json');
+function readConfig(): Record<string, any> {
+  try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { return {}; }
+}
+function writeConfig(cfg: Record<string, any>) {
+  fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+const config = readConfig();
+
+// User can point the whole Sidecamp library (music + downloads) at a custom
+// folder via Settings; otherwise it defaults to the OS Music/Downloads dirs.
+// This is distinct from config.folders, the extra shared-with-peers roots.
+const libraryBase = config.libraryDir ? path.join(config.libraryDir, 'Sidecamp') : null;
+const musicDir = libraryBase ? path.join(libraryBase, 'Music') : path.join(app.getPath('music'), 'Sidecamp');
+const downloadDir = libraryBase ? path.join(libraryBase, 'Downloads') : path.join(app.getPath('downloads'), 'Sidecamp');
 // Extra shared-folder roots (resolved) the user configured. Kept in sync from
 // peer:start and downloads:list so the media:// protocol can serve their files.
 let sharedRoots: string[] = [];
@@ -133,19 +151,6 @@ const isUnderAllowedRoot = (p: string) => {
   const abs = path.resolve(p);
   return allowedRoots().some(base => abs === base || abs.startsWith(base + path.sep));
 };
-
-// Simple JSON config persisted in userData. Used for settings that the
-// main process needs at startup (e.g. torrent port) — values the renderer
-// also keeps in localStorage for quick access.
-const configPath = join(app.getPath('userData'), 'config.json');
-function readConfig(): Record<string, any> {
-  try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { return {}; }
-}
-function writeConfig(cfg: Record<string, any>) {
-  fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
-}
-
-const config = readConfig();
 
 const slsk = new SoulseekService(musicDir, downloadDir);
 const torrent = new TorrentService(downloadDir, config.torrentPort);
