@@ -270,6 +270,14 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* A track the instance streams but does not hand over: "For sale",
+   "Stream only", "External" or "Sharing off" (see downloadPolicy.ts). */
+.track-card-badge-locked {
+  background: rgba(255, 176, 32, 0.12);
+  border-color: rgba(255, 176, 32, 0.32);
+  color: var(--accent, #ffb020);
+}
+
 .track-card-actions {
   display: flex;
   align-items: center;

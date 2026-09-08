@@ -38,6 +38,12 @@ import {
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
+import {
+	downloadBadgeLabel,
+	downloadRefusalHint,
+	resolveDownloadability,
+	type DownloadRefusal,
+} from "./downloadPolicy";
 import { guess } from "web-audio-beat-detector";
 import "./index.css";
 import logo from "./assets/logo.png";
@@ -790,6 +796,18 @@ function App() {
 					artist: t.artistName || "Unknown Artist",
 					album: t.albumName || "Unknown Album",
 					format: t.format || "mp3",
+					// A release the artist is selling (or publishes as streaming-only)
+					// still streams here, but its file is not ours to take.
+					...resolveDownloadability({
+						downloadable: t.downloadable,
+						releaseDownload: t.album_download,
+						releasePrice: t.album_price,
+						releasePriceUsdc: t.album_price_usdc,
+						releasePriceUsdt: t.album_price_usdt,
+						trackPrice: t.price,
+						trackPriceUsdc: t.price_usdc,
+						trackPriceUsdt: t.price_usdt,
+					}),
 				}));
 				setPeerTracks(mappedTracks);
 				setNetworkPeers((prev) =>
@@ -810,6 +828,16 @@ function App() {
 							artist: t.artist_name || r.artist_name || "Unknown Artist",
 							album: r.title || "Unknown Album",
 							format: t.format || "mp3",
+							...resolveDownloadability({
+								downloadable: t.downloadable ?? r.downloadable,
+								releaseDownload: r.download,
+								releasePrice: r.price,
+								releasePriceUsdc: r.price_usdc,
+								releasePriceUsdt: r.price_usdt,
+								trackPrice: t.price,
+								trackPriceUsdc: t.price_usdc,
+								trackPriceUsdt: t.price_usdt,
+							}),
 						});
 					}
 				}
@@ -826,7 +854,14 @@ function App() {
 					peer.id,
 					peer.origin,
 				);
-				setPeerTracks(res || []);
+				// The daemon sharing these folders can switch downloads off per
+				// track; the server refuses those anyway, so don't offer them.
+				setPeerTracks(
+					(res || []).map((t: any) => ({
+						...t,
+						...resolveDownloadability({ allowDownload: t.allow_download }),
+					})),
+				);
 			}
 		} catch (e: any) {
 			console.error(e);
@@ -838,6 +873,15 @@ function App() {
 
 	const handleDownloadPeerTrack = async (track: any) => {
 		if (!selectedPeer) return;
+		// Belt and braces: the row's button is disabled for these, and the server
+		// answers 402/403 regardless — this keeps a stray call from ever leaving.
+		if (track.downloadable === false) {
+			setDlLogs((prev) => [
+				...prev,
+				`[Network] ${track.artist} - ${track.title}: ${downloadRefusalHint(track.reason)}`,
+			]);
+			return;
+		}
 		const downloadId = track.id;
 		const filename = `${track.artist} - ${track.title}`;
 
@@ -1945,6 +1989,24 @@ function App() {
 	};
 
 	const handleDownload = async (result: any) => {
+		// Mirrors the Network tab's guard: a TuneCamp result whose release is on
+		// sale, streaming-only or sold elsewhere is not ours to fetch. The server
+		// refuses it too (402/403) — this keeps the attempt from being made.
+		if (
+			result.source === "catalog" ||
+			result.source === "instance" ||
+			result.source === "peer"
+		) {
+			const verdict = resolveDownloadability(result);
+			if (!verdict.downloadable) {
+				setDlLogs((prev) => [
+					...prev,
+					`[${String(result.source).toUpperCase()}] ${result.artist} - ${result.title}: ${downloadRefusalHint(verdict.reason)}`,
+				]);
+				return;
+			}
+		}
+
 		const downloadId = result.id;
 		const source = result.source || "soulseek";
 		const filename =
@@ -5466,6 +5528,10 @@ function App() {
 															currentPlayback?.name ===
 															`${t.artist} - ${t.title}`;
 														const isDownloading = downloadingTrackId === t.id;
+														// Streaming stays available either way; only the
+														// file transfer is withheld (see downloadPolicy.ts).
+														const blocked = (t as any).downloadable === false;
+														const refusal = (t as any).reason as DownloadRefusal | undefined;
 														return (
 															<div
 																key={t.id || i}
@@ -5488,17 +5554,33 @@ function App() {
 																		<span>{t.artist || "Unknown Artist"}</span>
 																		{t.album && <span style={{ opacity: 0.7 }}>• {t.album}</span>}
 																		{t.format && <span className="track-card-badge">{t.format}</span>}
+																		{blocked && (
+																			<span
+																				className="track-card-badge track-card-badge-locked"
+																				title={downloadRefusalHint(refusal)}
+																			>
+																				{downloadBadgeLabel(refusal)}
+																			</span>
+																		)}
 																	</div>
 																</div>
 																<div className="track-card-actions">
 																	<button
 																		type="button"
 																		className="track-card-action-btn"
-																		title={isDownloading ? "Downloading…" : "Download"}
-																		disabled={isDownloading}
+																		title={
+																			blocked
+																				? downloadRefusalHint(refusal)
+																				: isDownloading
+																					? "Downloading…"
+																					: "Download"
+																		}
+																		disabled={isDownloading || blocked}
 																		onClick={() => handleDownloadPeerTrack(t)}
 																		style={{
 																			color: isDownloading ? "var(--accent)" : "inherit",
+																			opacity: blocked ? 0.35 : undefined,
+																			cursor: blocked ? "not-allowed" : undefined,
 																		}}
 																	>
 																		<Download size={16} />
@@ -5694,11 +5776,22 @@ function App() {
 													res.title ||
 													(res.file && res.file.split(/[/\\]/).pop()) ||
 													"Unknown Track";
+												// TuneCamp-sourced results (this instance's catalog, a
+												// federated one, a peer share) carry their release's
+												// distribution mode; everything else is unrestricted.
+												const verdict =
+													res.source === "catalog" ||
+													res.source === "instance" ||
+													res.source === "peer"
+														? resolveDownloadability(res)
+														: { downloadable: true };
+												const blocked = verdict.downloadable === false;
+												const refusal = (verdict as any).reason as DownloadRefusal | undefined;
 												return (
 													<div
 														key={i}
 														className="mobile-track-card"
-														onDoubleClick={() => !busy && handleDownload(res)}
+														onDoubleClick={() => !busy && !blocked && handleDownload(res)}
 													>
 														<div className="track-card-main">
 															<div className="track-card-title" title={res.file || name}>
@@ -5708,6 +5801,14 @@ function App() {
 																{res.source && (
 																	<span className="track-card-badge">
 																		{res.source}
+																	</span>
+																)}
+																{blocked && (
+																	<span
+																		className="track-card-badge track-card-badge-locked"
+																		title={downloadRefusalHint(refusal)}
+																	>
+																		{downloadBadgeLabel(refusal)}
 																	</span>
 																)}
 																{res.bitrate && (
@@ -5738,8 +5839,13 @@ function App() {
 																<button
 																	type="button"
 																	className="track-card-action-btn"
-																	title="Download"
+																	title={blocked ? downloadRefusalHint(refusal) : "Download"}
+																	disabled={blocked}
 																	onClick={() => handleDownload(res)}
+																	style={{
+																		opacity: blocked ? 0.35 : undefined,
+																		cursor: blocked ? "not-allowed" : undefined,
+																	}}
 																>
 																	<Download size={16} />
 																</button>

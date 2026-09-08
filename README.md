@@ -25,7 +25,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🏛️ **Internet Archive** — Search and download free/public-domain audio from archive.org (ingestion moved here from the TuneCamp server).
 - 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop with live progress.
 - 🎬 **yt-dlp Audio Ripping** — Rip audio from YouTube, SoundCloud, Bandcamp, and other platforms.
-- 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel.
+- 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel. Downloads follow what each instance actually offers: a release on sale, one published as streaming-only, or one pointing at an external store still streams, but is marked (`For sale`, `Stream only`, `External`) and its download button stays disabled.
 - 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album) and rename files.
 - 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
