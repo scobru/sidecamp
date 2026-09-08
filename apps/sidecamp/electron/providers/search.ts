@@ -308,13 +308,26 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
 
         const data = await res.json() as any;
 
-        // 1. Map local catalog results (TuneCamp instance files, filtered by permissions)
-        if (Array.isArray(data.local)) {
-            const localTracks = data.local.map((track: any) => ({
+        // 1. Map local catalog results (TuneCamp instance files, filtered by permissions).
+        //
+        // `local` is an object — { artists, albums, tracks } — not a flat array;
+        // that is the shape TuneCamp's own webapp reads (`data.local.tracks`).
+        // Testing it with Array.isArray was always false, so the "catalog" source
+        // silently returned nothing and the unified search only ever showed peer
+        // and federated hits. The rows are raw `v_tracks` records, which name the
+        // artist `artist_name` and the album `album_title`; the old `track.artist`
+        // / `track.album` reads would have been undefined even if the branch had
+        // run. Both are kept as fallbacks in case a server ever sends the flat
+        // shape.
+        const localTrackRows: any[] = Array.isArray(data.local?.tracks)
+            ? data.local.tracks
+            : Array.isArray(data.local) ? data.local : [];
+        if (localTrackRows.length > 0) {
+            const localTracks = localTrackRows.map((track: any) => ({
                 id: 'catalog_' + track.id,
                 title: track.title,
-                artist: track.artist || 'Unknown Artist',
-                album: track.album || `Catalog: ${cleanServer}`,
+                artist: track.artist_name || track.artist || 'Unknown Artist',
+                album: track.album_title || track.album || `Catalog: ${cleanServer}`,
                 url: '',
                 source: 'catalog',
                 trackId: track.id,
@@ -328,7 +341,7 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
                 trackPrice: track.price,
                 trackPriceUsdc: track.price_usdc,
                 trackPriceUsdt: track.price_usdt,
-                user: `Catalog (${track.visibility || 'Public'})`
+                user: `Catalog (${track.album_visibility || track.visibility || 'Public'})`
             }));
             results.push(...localTracks);
         }

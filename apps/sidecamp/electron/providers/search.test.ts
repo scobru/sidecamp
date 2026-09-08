@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchBandcamp, searchSoundCloud } from './search';
+import { searchBandcamp, searchPeerNetwork, searchSoundCloud } from './search';
 
 describe('searchBandcamp', () => {
     let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -175,5 +175,134 @@ describe('searchSoundCloud', () => {
 
         expect(result).toEqual([]);
         expect(consoleErrorSpy).toHaveBeenCalledWith('SoundCloud search error:', expect.any(Error));
+    });
+});
+
+describe('searchPeerNetwork — catalog results', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    /** Routes the two calls searchPeerNetwork makes: community sites, then global search. */
+    const stubServer = (globalPayload: any) => {
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (String(url).includes('/api/community/sites')) {
+                return { ok: true, json: async () => [] };
+            }
+            return { ok: true, json: async () => globalPayload };
+        }));
+    };
+
+    // /api/search/global answers `local` as { artists, albums, tracks } — the
+    // shape TuneCamp's own webapp reads. Sidecamp tested it with Array.isArray,
+    // so the catalog source silently returned nothing.
+    it('reads catalog tracks out of the object shape the server actually sends', async () => {
+        stubServer({
+            local: {
+                artists: [],
+                albums: [],
+                tracks: [
+                    {
+                        id: 7,
+                        title: 'Amorevole Crollo',
+                        artist_name: 'Scobru',
+                        album_title: 'Orphan Release',
+                        album_visibility: 'public',
+                        file_size: 1234,
+                        bitrate: 320,
+                    },
+                ],
+            },
+            peers: [],
+        });
+
+        const results = await searchPeerNetwork('amorevole', 'https://tc.example.com', 'tok');
+
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+            id: 'catalog_7',
+            title: 'Amorevole Crollo',
+            artist: 'Scobru',
+            album: 'Orphan Release',
+            source: 'catalog',
+            trackId: 7,
+            size: 1234,
+            bitrate: 320,
+            user: 'Catalog (public)',
+        });
+    });
+
+    it('carries the release distribution mode through for the download policy', async () => {
+        stubServer({
+            local: {
+                tracks: [
+                    {
+                        id: 8,
+                        title: 'Sold',
+                        artist_name: 'Scobru',
+                        album_download: 'codes',
+                        album_price: 5,
+                        price: 0,
+                    },
+                ],
+            },
+            peers: [],
+        });
+
+        const results = await searchPeerNetwork('sold', 'https://tc.example.com', 'tok');
+
+        expect(results[0]).toMatchObject({
+            releaseDownload: 'codes',
+            releasePrice: 5,
+        });
+    });
+
+    it('still accepts a flat array, in case a server sends one', async () => {
+        stubServer({
+            local: [{ id: 9, title: 'Flat', artist: 'Legacy', album: 'Old Shape' }],
+            peers: [],
+        });
+
+        const results = await searchPeerNetwork('flat', 'https://tc.example.com', 'tok');
+
+        expect(results[0]).toMatchObject({ id: 'catalog_9', artist: 'Legacy', album: 'Old Shape' });
+    });
+
+    it('falls back to sane labels when the row names nothing', async () => {
+        stubServer({ local: { tracks: [{ id: 10, title: 'Bare' }] }, peers: [] });
+
+        const results = await searchPeerNetwork('bare', 'https://tc.example.com/', 'tok');
+
+        expect(results[0]).toMatchObject({
+            artist: 'Unknown Artist',
+            album: 'Catalog: https://tc.example.com',
+            user: 'Catalog (Public)',
+        });
+    });
+
+    it('returns no catalog results when the server sends none', async () => {
+        stubServer({ local: { artists: [], albums: [], tracks: [] }, peers: [] });
+
+        expect(await searchPeerNetwork('nothing', 'https://tc.example.com', 'tok')).toEqual([]);
+    });
+
+    it('carries a peer share\'s allow_download flag through', async () => {
+        stubServer({
+            local: { tracks: [] },
+            peers: [
+                { id: 'p1', session_id: 's1', title: 'Shared', artist: 'DJ', allow_download: false },
+            ],
+        });
+
+        const results = await searchPeerNetwork('shared', 'https://tc.example.com', 'tok');
+
+        expect(results[0]).toMatchObject({ source: 'peer', allowDownload: false });
     });
 });
