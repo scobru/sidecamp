@@ -256,6 +256,17 @@ async function searchFederatedInstances(query: string, server: string): Promise<
                         source: 'instance',
                         origin,
                         trackId: track.id,
+                        // Streaming is public; the file may not be. Carried raw so
+                        // the renderer can apply one policy (src/downloadPolicy.ts)
+                        // across every result source instead of duplicating it here.
+                        downloadable: track.downloadable ?? release.downloadable,
+                        releaseDownload: release.download,
+                        releasePrice: release.price,
+                        releasePriceUsdc: release.price_usdc,
+                        releasePriceUsdt: release.price_usdt,
+                        trackPrice: track.price,
+                        trackPriceUsdc: track.price_usdc,
+                        trackPriceUsdt: track.price_usdt,
                         user: `Instance (${site.name || origin})`
                     });
                     if (out.length >= FEDERATED_RESULTS_PER_SITE) break;
@@ -309,6 +320,14 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
                 trackId: track.id,
                 size: track.file_size || 0,
                 bitrate: track.bitrate || 0,
+                downloadable: track.downloadable,
+                releaseDownload: track.album_download,
+                releasePrice: track.album_price,
+                releasePriceUsdc: track.album_price_usdc,
+                releasePriceUsdt: track.album_price_usdt,
+                trackPrice: track.price,
+                trackPriceUsdc: track.price_usdc,
+                trackPriceUsdt: track.price_usdt,
                 user: `Catalog (${track.visibility || 'Public'})`
             }));
             results.push(...localTracks);
@@ -326,6 +345,7 @@ export async function searchPeerNetwork(query: string, server?: string, token?: 
                 sessionId: track.session_id,
                 trackId: track.id,
                 origin: track.origin, // passed for federated peer streams
+                allowDownload: track.allow_download,
                 size: track.file_size || 0,
                 bitrate: track.bitrate || 0,
                 user: track.origin ? `Federated Peer` : `Network (${track.username || 'Unknown'})`
