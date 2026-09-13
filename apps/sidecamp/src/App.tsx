@@ -6264,7 +6264,7 @@ function App() {
 								<span className="player-track-path">
 									{queue.length > 1
 										? `Track ${queueIndex + 1} of ${queue.length}`
-										: (currentPlayback.artist || "Local Audio")}
+										: "Local Media"}
 								</span>
 							</div>
 						</div>
