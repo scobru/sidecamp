@@ -823,12 +823,17 @@ app.whenReady().then(() => {
     const total = stat.size;
     const mime = AUDIO_MIME[path.extname(absolutePath).toLowerCase()] || 'application/octet-stream';
     const rangeHeader = request.headers.get('Range');
-    const m = rangeHeader && /bytes=(\d*)-(\d*)/.exec(rangeHeader);
-    // Chromium aborts the in-flight request on every seek; destroy the file
-    // stream then, or each seek leaks an open stream that keeps reading.
+    const m = rangeHeader && /bytes=\s*(\d*)\s*-\s*(\d*)/.exec(rangeHeader);
+    // Chromium aborts the in-flight request on every seek. Cleanly destroy the stream
+    // and suppress abort/close errors so Readable.toWeb doesn't bubble unhandled stream failures.
     const openStream = (opts?: { start: number; end: number }) => {
       const stream = fs.createReadStream(absolutePath, opts);
-      request.signal.addEventListener('abort', () => stream.destroy());
+      stream.on('error', () => {});
+      if (request.signal.aborted) {
+        stream.destroy();
+      } else {
+        request.signal.addEventListener('abort', () => stream.destroy(), { once: true });
+      }
       return Readable.toWeb(stream) as any;
     };
     if (m) {

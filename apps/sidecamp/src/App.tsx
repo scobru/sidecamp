@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
+import { UnifiedLogsViewer, type LogCategory } from "./components/UnifiedLogsViewer";
 import {
 	downloadBadgeLabel,
 	downloadRefusalHint,
@@ -1075,17 +1076,63 @@ function App() {
 		}
 	};
 
+	const handleClearCategoryLogs = (cat: LogCategory) => {
+		if (cat === "all") {
+			setDlLogs([]);
+			setLogs([]);
+		} else if (cat === "library") {
+			setDlLogs((prev) => prev.filter((l) => !l.includes("[Library]")));
+		} else if (cat === "downloads") {
+			setDlLogs((prev) => prev.filter((l) => l.includes("[Library]")));
+		} else if (cat === "peer") {
+			setLogs([]);
+		}
+	};
+
+	const commitSeek = (targetTime: number) => {
+		if (!audioRef.current || !isFinite(targetTime)) {
+			setIsSeeking(false);
+			return;
+		}
+		// Clamp safely within valid duration bounds.
+		// Leave a small buffer before duration so seeking to the very end
+		// doesn't trigger an instantaneous premature onEnded cut-off.
+		const maxSafe = duration > 1 ? duration - 0.2 : Math.max(0, duration);
+		const clamped = Math.max(0, Math.min(targetTime, maxSafe));
+		try {
+			audioRef.current.currentTime = clamped;
+		} catch (err) {
+			console.warn("Failed setting audio currentTime:", err);
+		}
+		setCurrentTime(clamped);
+		setIsSeeking(false);
+
+		if (isPlaying && audioRef.current.paused) {
+			audioRef.current.play().catch((e) => {
+				if (e.name !== "AbortError") console.error("Playback resume failed:", e);
+			});
+		}
+	};
+
 	const handleSeekChange = (time: number) => {
 		setCurrentTime(time);
 	};
 
 	// Commit from the slider's own value (not state) so a fast drag can't land
 	// on a stale position.
-	const handleSeekCommit = (e: React.PointerEvent<HTMLInputElement>) => {
-		if (!audioRef.current) return;
-		const t = parseFloat(e.currentTarget.value);
-		if (isFinite(t)) audioRef.current.currentTime = t;
-		setIsSeeking(false);
+	const handleSeekCommit = (e: React.SyntheticEvent<HTMLInputElement>) => {
+		const val = parseFloat((e.target as HTMLInputElement).value);
+		commitSeek(val);
+	};
+
+	const handlePlayerWheel = (e: React.WheelEvent) => {
+		if (!audioRef.current || !duration) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const delta = e.deltaY !== 0 ? -Math.sign(e.deltaY) : Math.sign(e.deltaX);
+		const step = 5;
+		const current = audioRef.current.currentTime || currentTime;
+		commitSeek(current + delta * step);
 	};
 
 	const handleVolumeChange = (vol: number) => {
@@ -4901,22 +4948,6 @@ function App() {
 											</div>
 										</div>
 									)}
-
-									<div className="terminal-log" style={{ marginTop: "2rem" }}>
-										<div className="terminal-header">Library Activity Logs</div>
-										<div className="terminal-body" style={{ height: "180px" }}>
-											{libraryLogs.map((log, i) => (
-												<div key={i} className="log-line">
-													{log}
-												</div>
-											))}
-											{libraryLogs.length === 0 && (
-												<div className="log-line dim">
-													No library activity logs...
-												</div>
-											)}
-										</div>
-									</div>
 								</div>
 							);
 						})()}
@@ -5112,6 +5143,22 @@ function App() {
 										✓ Configuration saved!
 									</span>
 								)}
+							</div>
+
+							<div
+								className="settings-section"
+								style={{
+									marginBottom: "2rem",
+									borderTop: "1px solid var(--glass-border)",
+									paddingTop: "1.5rem",
+								}}
+							>
+								<UnifiedLogsViewer
+									libraryLogs={libraryLogs}
+									dlLogs={dlLogs}
+									peerLogs={logs}
+									onClearCategory={handleClearCategoryLogs}
+								/>
 							</div>
 
 							<div className="btn-group" style={{ marginTop: "1rem" }}>
@@ -5720,20 +5767,6 @@ function App() {
 									</Button>
 								</div>
 							</div>
-
-							<div className="terminal-log">
-								<div className="terminal-header">Terminal Logs</div>
-								<div className="terminal-body">
-									{logs.map((log, i) => (
-										<div key={i} className="log-line">
-											{log}
-										</div>
-									))}
-									{logs.length === 0 && (
-										<div className="log-line dim">No logs available...</div>
-									)}
-								</div>
-							</div>
 						</div>
 					)}
 
@@ -5962,35 +5995,6 @@ function App() {
 									)}
 								</div>
 							)}
-
-							{/* Logs di Download (visibili sia per Soulseek che per Link Diretto, collapsible) */}
-							<div className="terminal-log" style={{ marginTop: "1.5rem" }}>
-								<div
-									className="terminal-header"
-									onClick={() => setDlLogsExpanded((x) => !x)}
-									title="Click to toggle download logs"
-									style={{ cursor: "pointer" }}
-								>
-									<span>Download Logs ({dlLogs.length})</span>
-									<span style={{ fontSize: "0.72rem", opacity: 0.8 }}>
-										{dlLogsExpanded ? "Collapse ▲" : "Expand ▼"}
-									</span>
-								</div>
-								{dlLogsExpanded && (
-									<div className="terminal-body" style={{ height: "180px" }}>
-										{dlLogs.map((log, i) => (
-											<div key={i} className="log-line">
-												{log}
-											</div>
-										))}
-										{dlLogs.length === 0 && (
-											<div className="log-line dim">
-												No active download logs...
-											</div>
-										)}
-									</div>
-								)}
-							</div>
 						</div>
 					)}
 
@@ -6304,7 +6308,7 @@ function App() {
 								)}
 							</div>
 
-							<div className="player-seeker">
+							<div className="player-seeker" onWheel={handlePlayerWheel}>
 								<span className="time-display">{formatTime(currentTime)}</span>
 								<input
 									type="range"
@@ -6312,24 +6316,15 @@ function App() {
 									max={duration || 100}
 									value={duration ? Math.min(currentTime, duration) : 0}
 									disabled={!duration}
-									// Explicit pointer capture guarantees onPointerUp fires on this
-									// element even if the drag ends outside the bar or the window
-									// loses focus mid-drag. Without it, isSeeking could get stuck
-									// true (no matching pointerup) and the bar would stop following
-									// playback until the next reload — onPointerCancel/LostPointerCapture
-									// are the fallback release for whatever interrupts the drag.
-									onPointerDown={(e) => {
-										try {
-											e.currentTarget.setPointerCapture(e.pointerId);
-										} catch {
-											/* ignore */
-										}
+									onPointerDown={() => {
 										setIsSeeking(true);
 									}}
-									onChange={(e) => handleSeekChange(parseFloat(e.target.value))}
+									onChange={(e) => {
+										handleSeekChange(parseFloat(e.target.value));
+									}}
 									onPointerUp={handleSeekCommit}
-									onPointerCancel={() => setIsSeeking(false)}
-									onLostPointerCapture={() => setIsSeeking(false)}
+									onPointerCancel={handleSeekCommit}
+									onLostPointerCapture={handleSeekCommit}
 									className="seeker-slider"
 								/>
 								<span className="time-display">{formatTime(duration)}</span>
@@ -6367,6 +6362,11 @@ function App() {
 				onError={() => {
 					const el = audioRef.current;
 					if (!el || !el.src) return;
+					// MEDIA_ERR_ABORTED (1) fires when seeking supersedes an in-flight fetch.
+					// This is normal browser behavior and must NOT reset or abort playback.
+					if (el.error && el.error.code === 1) {
+						return;
+					}
 					// Remote/network streams occasionally fail to load (transient blip) — retry
 					// once per track before giving up. Local media:// files don't hit this.
 					const retry = streamRetryRef.current;
@@ -6403,6 +6403,13 @@ function App() {
 					}
 				}}
 				onEnded={() => {
+					if (audioRef.current && duration > 0) {
+						const remaining = duration - audioRef.current.currentTime;
+						if (remaining > 2) {
+							// Premature end triggered (e.g. slight mismatch between file container and stream duration)
+							return;
+						}
+					}
 					if (queueIndex + 1 < queue.length) playNext();
 					else stopPlayback();
 				}}
