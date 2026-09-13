@@ -15,17 +15,41 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_STYLES: Record<Variant, CSSProperties> = {
-  primary:   { background: 'var(--primary, #6366f1)',   color: '#fff',                       border: 'none' },
-  secondary: { background: 'var(--glass-bg, rgba(255,255,255,0.08))', color: 'var(--text-main, #fff)', border: '1px solid var(--glass-border, rgba(255,255,255,0.15))' },
-  accent:    { background: 'var(--secondary, #8b5cf6)', color: '#fff',                       border: 'none' },
-  danger:    { background: 'var(--danger, #e5484d)',    color: '#fff',                       border: 'none' },
-  ghost:     { background: 'transparent',               color: 'var(--text-muted, #aaa)',    border: 'none' },
+  primary: {
+    background: 'linear-gradient(135deg, var(--primary, #a855f7) 0%, #ec4899 100%)',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    boxShadow: '0 2px 10px rgba(168, 85, 247, 0.25)',
+  },
+  secondary: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    color: 'var(--text-main, #ffffff)',
+    border: '1px solid var(--glass-border, rgba(255, 255, 255, 0.12))',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
+  },
+  accent: {
+    background: 'linear-gradient(135deg, var(--accent, #06b6d4) 0%, var(--primary, #a855f7) 100%)',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    boxShadow: '0 2px 10px rgba(6, 182, 212, 0.25)',
+  },
+  danger: {
+    background: 'var(--danger, #ef4444)',
+    color: '#ffffff',
+    border: 'none',
+    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+  },
+  ghost: {
+    background: 'transparent',
+    color: 'var(--text-muted, #94a3b8)',
+    border: '1px solid transparent',
+  },
 };
 
 const SIZE_STYLES: Record<Size, CSSProperties> = {
-  sm: { padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '6px' },
-  md: { padding: '0.5rem 1rem',   fontSize: '0.9rem', borderRadius: '8px' },
-  lg: { padding: '0.7rem 1.4rem', fontSize: '1rem',   borderRadius: '10px' },
+  sm: { padding: '0.4rem 0.8rem', fontSize: '0.82rem', borderRadius: '8px' },
+  md: { padding: '0.55rem 1.15rem', fontSize: '0.88rem', borderRadius: '10px' },
+  lg: { padding: '0.75rem 1.5rem', fontSize: '0.98rem', borderRadius: '12px' },
 };
 
 export function Button({
@@ -38,27 +62,31 @@ export function Button({
   children,
   style,
   disabled,
+  className = '',
   ...rest
 }: ButtonProps) {
   const leadingIcon = leftIcon || icon;
   const glowStyle: CSSProperties = glowColor
-    ? { boxShadow: `0 0 12px ${glowColor}` }
+    ? { boxShadow: `0 0 14px ${glowColor}` }
     : {};
 
   return (
     <button
       disabled={disabled}
+      className={`app-btn ${className}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '0.4rem',
+        gap: '0.45rem',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        transition: 'opacity 0.15s, filter 0.15s, box-shadow 0.15s',
+        opacity: disabled ? 0.45 : 1,
+        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
         fontFamily: 'inherit',
         fontWeight: 600,
         lineHeight: 1,
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
         ...VARIANT_STYLES[variant],
         ...SIZE_STYLES[size],
         ...glowStyle,

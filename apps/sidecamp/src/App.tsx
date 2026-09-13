@@ -228,6 +228,12 @@ function App() {
 	const [theme, setTheme] = useState(
 		() => localStorage.getItem("theme") || "dark",
 	);
+	const THEMES = ["dark", "nordic", "nordic-dark", "light", "grey"] as const;
+	const cycleTheme = () => {
+		const idx = THEMES.indexOf(theme as any);
+		const next = THEMES[(idx + 1) % THEMES.length];
+		setTheme(next);
+	};
 	// File browser (shared folders)
 	const [browserRoot, setBrowserRoot] = useState("");
 	const [browserPath, setBrowserPath] = useState("");
@@ -2717,42 +2723,82 @@ function App() {
 					</button>
 				</nav>
 
-				<label
-					className="nav-item"
-					title="Theme"
-					style={{ marginTop: "auto", cursor: "pointer" }}
+				<button
+					type="button"
+					className="theme-selector-btn"
+					onClick={cycleTheme}
+					title={`Theme: ${theme.toUpperCase()} (Click to cycle)`}
 				>
-					<span className="icon">
-						<Palette size={16} />
-					</span>
+					<Palette size={16} style={{ flexShrink: 0 }} />
 					{!sidebarCollapsed && (
-						<select
-							value={theme}
-							onChange={(e) => setTheme(e.target.value)}
-							style={{
-								background: "transparent",
-								color: "inherit",
-								border: "none",
-								font: "inherit",
-								flex: 1,
-							}}
-						>
-							<option value="dark">Dark</option>
-							<option value="light">Light</option>
-							<option value="grey">Grey</option>
-							<option value="nordic">Nordic</option>
-							<option value="nordic-dark">Nordic Dark</option>
-						</select>
+						<span className="theme-label" style={{ textTransform: "capitalize" }}>
+							{theme.replace("-", " ")}
+						</span>
 					)}
-				</label>
+				</button>
 
-				<div className="status-indicator" style={{ marginTop: "0.5rem" }}>
+				<div className="status-indicator">
 					<div className={`status-dot ${peerStatus}`}></div>
 					{!sidebarCollapsed && <span>{peerStatus.toUpperCase()}</span>}
 				</div>
 			</div>
 
 			<main className="main-content">
+				<header className="app-header">
+					<div className="app-header-left">
+						<h2 className="app-header-title">
+							{activeTab === "download" && (
+								<>
+									<Download size={20} style={{ color: "var(--primary)" }} />
+									<span>Search & Download</span>
+								</>
+							)}
+							{activeTab === "library" && (
+								<>
+									<Music size={20} style={{ color: "var(--primary)" }} />
+									<span>Audio Library</span>
+								</>
+							)}
+							{activeTab === "network" && (
+								<>
+									<Globe size={20} style={{ color: "var(--accent)" }} />
+									<span>P2P Network</span>
+								</>
+							)}
+							{activeTab === "peer" && (
+								<>
+									<Radio size={20} style={{ color: "var(--primary)" }} />
+									<span>Shared Files</span>
+								</>
+							)}
+							{activeTab === "settings" && (
+								<>
+									<Settings size={20} style={{ color: "var(--text-muted)" }} />
+									<span>Settings</span>
+								</>
+							)}
+						</h2>
+					</div>
+					<div className="app-header-right">
+						<button
+							type="button"
+							className="header-action-btn"
+							onClick={cycleTheme}
+							title="Switch color theme"
+						>
+							<Palette size={15} />
+							<span style={{ textTransform: "capitalize" }}>{theme.replace("-", " ")}</span>
+						</button>
+						<div
+							className="status-indicator"
+							style={{ padding: "0.35rem 0.75rem", fontSize: "0.74rem" }}
+						>
+							<div className={`status-dot ${peerStatus}`} />
+							<span>{peerStatus.toUpperCase()}</span>
+						</div>
+					</div>
+				</header>
+
 				<div className="content-area">
 					{currentPlayback &&
 						scrollWave &&
@@ -2812,17 +2858,7 @@ function App() {
 								}}
 							>
 								<h3 style={{ margin: 0, fontSize: "1.15rem", fontFamily: "var(--font-headings)" }}>
-									Shared Files{" "}
-									<span
-										style={{
-											fontSize: "0.82rem",
-											fontWeight: 400,
-											color: "var(--text-muted)",
-											marginLeft: "6px",
-										}}
-									>
-										browse, move & organize
-									</span>
+									Shared Files
 								</h3>
 							</div>
 							{browserRoots.length === 0 && (
@@ -5709,13 +5745,13 @@ function App() {
 									className={`subtab-btn ${downloadSource === "soulseek" ? "active" : ""}`}
 									onClick={() => setDownloadSource("soulseek")}
 								>
-									Search Platforms (Soulseek / Web)
+									Platforms
 								</button>
 								<button
 									className={`subtab-btn ${downloadSource === "direct" ? "active" : ""}`}
 									onClick={() => setDownloadSource("direct")}
 								>
-									Direct Link (Torrent / Web URL)
+									Direct Link / Torrent
 								</button>
 							</div>
 
@@ -6209,19 +6245,26 @@ function App() {
             scrolling flex column on Android WebView). */}
 				{currentPlayback && (
 					<div className="audio-player-bar">
+						<div className="player-top-progress">
+							<div
+								className="player-top-progress-fill"
+								style={{
+									width: `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
+								}}
+							/>
+						</div>
 						<div className="player-info">
 							<span className="player-track-icon">
 								<Music size={18} />
 							</span>
 							<div className="player-track-details">
-								<span className="player-track-title">
+								<span className="player-track-title" title={currentPlayback.name}>
 									{currentPlayback.name}
 								</span>
 								<span className="player-track-path">
 									{queue.length > 1
-										? `${queueIndex + 1}/${queue.length} — `
-										: ""}
-									{currentPlayback.path}
+										? `Track ${queueIndex + 1} of ${queue.length}`
+										: (currentPlayback.artist || "Local Audio")}
 								</span>
 							</div>
 						</div>

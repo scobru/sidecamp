@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.28.3] - 2026-08-30
+## [0.28.5] - 2026-09-13
+
+### Changed
+
+- **Desktop & Mobile UI/UX Refresh**:
+  - Cleaned up visual clutter: removed raw file paths from the audio player footer, replaced native unstyled theme select with an accessible cycle button, and simplified Downloader subtabs and subtitles.
+  - Revamped typography with standardized hierarchy (Outfit, Inter, JetBrains Mono) and eliminated illegible micro-fonts (< 11px).
+  - Modernized desktop sidebar (220px) with smooth active pills, unified app header, and mobile bottom navigation dock with safe-area support.
+  - Upgraded audio player bar on desktop (64px) and mobile (56px with slim 2px top edge progress line).
+  - Enhanced buttons, inputs, segmented controls, platform chips, and library table/cards (no row hover jitter).
+
+## [0.28.4] - 2026-08-30
 
 ### Fixed
 
