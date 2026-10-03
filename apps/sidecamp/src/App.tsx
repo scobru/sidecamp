@@ -222,7 +222,6 @@ function App() {
 	const [activeTab, setActiveTab] = useState(
 		isCapacitor ? "library" : "download",
 	);
-	const [dlLogsExpanded, setDlLogsExpanded] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<any[]>([]);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);

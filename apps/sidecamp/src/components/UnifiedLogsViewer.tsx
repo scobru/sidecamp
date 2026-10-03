@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Copy, Check, Trash2, Search, Terminal, ArrowDown } from "lucide-react";
 import { Button } from "./Button";
 
