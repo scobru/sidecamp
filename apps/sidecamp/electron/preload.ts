@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   saveFile: (filename: string, content: string) => ipcRenderer.invoke('dialog:save-file', filename, content),
-  openFile: () => ipcRenderer.invoke('dialog:open-file'),
+  openFile: (extensions?: string[]) => ipcRenderer.invoke('dialog:open-file', extensions),
   exportPlaylist: (destDir: string, folderName: string, items: { path: string; exportName: string }[]) => ipcRenderer.invoke('playlist:export', destDir, folderName, items),
 
   // Library Organizer & Tag Search
