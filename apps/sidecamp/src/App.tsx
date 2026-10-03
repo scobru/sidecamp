@@ -1610,6 +1610,68 @@ function App() {
 		}
 	};
 
+	// M3U/M3U8: #EXTINF line + absolute path per track.
+	const handleExportPlaylistM3u = async () => {
+		if (!activePlaylist) return;
+		const lines = ["#EXTM3U"];
+		for (const t of activePlaylist.tracks) {
+			lines.push(`#EXTINF:-1,${t.name}`, t.path);
+		}
+		const filename = `${activePlaylist.name.replace(/[<>:"/\\|?*]/g, "_")}.m3u8`;
+		try {
+			const saved = await window.electronAPI.saveFile(
+				filename,
+				lines.join("\r\n") + "\r\n",
+			);
+			if (saved) setExportMsg(`M3U exported to: ${saved}`);
+		} catch (e: any) {
+			setExportMsg(`Export failed: ${e.message || e}`);
+		}
+	};
+
+	const handleImportPlaylistM3u = async () => {
+		try {
+			const res = await window.electronAPI.openFile(["m3u", "m3u8"]);
+			if (!res) return;
+			const dir = res.filePath.replace(/[/\\][^/\\]*$/, "");
+			const sep = res.filePath.includes("\\") ? "\\" : "/";
+			const tracks: { path: string; name: string }[] = [];
+			let title = "";
+			for (const raw of res.content.split(/\r?\n/)) {
+				const line = raw.trim().replace(/^\uFEFF/, "");
+				if (!line) continue;
+				if (line.startsWith("#")) {
+					const m = /^#EXTINF:[^,]*,(.*)$/.exec(line);
+					if (m) title = m[1].trim();
+					continue;
+				}
+				// relative entries resolve against the m3u's own folder
+				const abs = /^([a-zA-Z]:[/\\]|[/\\])/.test(line)
+					? line
+					: `${dir}${sep}${line}`;
+				tracks.push({
+					path: abs,
+					name: title || (abs.split(/[/\\]/).pop() ?? abs),
+				});
+				title = "";
+			}
+			if (tracks.length === 0) {
+				alert("No tracks found in playlist file.");
+				return;
+			}
+			const base = (res.filePath.split(/[/\\]/).pop() ?? "Playlist").replace(
+				/\.m3u8?$/i,
+				"",
+			);
+			const id = crypto.randomUUID();
+			setPlaylists((prev) => [...prev, { id, name: base, tracks }]);
+			setActivePlaylistId(id);
+			setExportMsg(`Imported ${tracks.length} tracks from: ${res.filePath}`);
+		} catch (e: any) {
+			alert("Import failed: " + (e.message || e));
+		}
+	};
+
 	const handleImportPlaylistJson = async () => {
 		try {
 			const res = await window.electronAPI.openFile();
@@ -3328,6 +3390,23 @@ function App() {
 											>
 												<Share2 size={14} /> Import Playlist (JSON)
 											</Button>
+											<Button
+												variant="secondary"
+												onClick={handleImportPlaylistM3u}
+												title="Import M3U/M3U8 playlist"
+												style={{
+													width: "100%",
+													marginBottom: "1rem",
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "center",
+													gap: "6px",
+													padding: "0.45rem 0.8rem",
+													fontSize: "0.82rem",
+												}}
+											>
+												<Share2 size={14} /> Import Playlist (M3U)
+											</Button>
 											<div
 												style={{
 													display: "flex",
@@ -3504,6 +3583,20 @@ function App() {
 																}}
 															>
 																<Share2 size={14} /> Export Playlist (JSON)
+															</Button>
+															<Button
+																variant="secondary"
+																onClick={handleExportPlaylistM3u}
+																disabled={activePlaylist.tracks.length === 0}
+																style={{
+																	padding: "0.4rem 0.9rem",
+																	fontSize: "0.85rem",
+																	display: "flex",
+																	alignItems: "center",
+																	gap: "6px",
+																}}
+															>
+																<Share2 size={14} /> Export Playlist (M3U)
 															</Button>
 														</div>
 													</div>

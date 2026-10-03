@@ -462,19 +462,22 @@ ipcMain.handle('dialog:pick-folder', async () => {
 });
 
 ipcMain.handle('dialog:save-file', async (event, filename: string, content: string) => {
+  const ext = path.extname(filename).slice(1).toLowerCase() || 'json';
+  const filters = [{ name: ext.toUpperCase(), extensions: [ext] }];
   const result = win
-    ? await dialog.showSaveDialog(win, { defaultPath: filename, filters: [{ name: 'JSON', extensions: ['json'] }] })
-    : await dialog.showSaveDialog({ defaultPath: filename, filters: [{ name: 'JSON', extensions: ['json'] }] });
+    ? await dialog.showSaveDialog(win, { defaultPath: filename, filters })
+    : await dialog.showSaveDialog({ defaultPath: filename, filters });
   win?.webContents.focus();
   if (result.canceled || !result.filePath) return null;
   await fs.promises.writeFile(result.filePath, content, 'utf8');
   return result.filePath;
 });
 
-ipcMain.handle('dialog:open-file', async () => {
+ipcMain.handle('dialog:open-file', async (event, extensions: string[] = ['json']) => {
+  const filters = [{ name: extensions.join('/').toUpperCase(), extensions }];
   const result = win
-    ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
-    : await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+    ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters })
+    : await dialog.showOpenDialog({ properties: ['openFile'], filters });
   win?.webContents.focus();
   if (result.canceled || result.filePaths.length === 0) return null;
   const content = await fs.promises.readFile(result.filePaths[0], 'utf8');
