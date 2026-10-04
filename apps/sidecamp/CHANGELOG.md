@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.1] - 2026-10-04
+
+### Changed
+
+- **Playlists have their own sidebar tab.** The playlist builder no longer stacks above the library table inside the Library tab. "+ Playlist" in the Library still adds the selection to the active playlist (and opens the Playlists tab if none is active).
+
+### Fixed
+
+- Build: removed unused variables that failed `tsc -b` (TS6133).
+
+## [0.29.0] - 2026-10-03
+
+### Added
+
+- **Import/export M3U/M3U8 playlists.**
+
+### Fixed
+
+- Seeking no longer interrupts playback; logs unified in Settings.
+
 ## [0.28.5] - 2026-09-13
 
 ### Changed
