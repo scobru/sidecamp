@@ -367,18 +367,14 @@ function App() {
 			alert("Tag write failed: " + (e.message || e));
 		}
 	};
-	// Playlists (DJ set builder), a Library sub-view. Persisted in localStorage.
+	// Playlists (DJ set builder), own tab. Persisted in localStorage.
 	type Playlist = {
 		id: string;
 		name: string;
 		tracks: { path: string; name: string }[];
 	};
-	// Library sub-panels are mutually exclusive — one workspace at a time, not stacked overlays.
-	const [libraryPanel, setLibraryPanel] = useState<
-		"none" | "playlists" | "organize"
-	>("none");
-	const showPlaylists = libraryPanel === "playlists";
-	const togglePanel = (p: "playlists" | "organize") =>
+	const [libraryPanel, setLibraryPanel] = useState<"none" | "organize">("none");
+	const togglePanel = (p: "organize") =>
 		setLibraryPanel((v) => (v === p ? "none" : p));
 	const [showLibraryTable, setShowLibraryTable] = useState(true);
 	const [playlists, setPlaylists] = useState<Playlist[]>(() => {
@@ -730,7 +726,11 @@ function App() {
 	}, []);
 
 	useEffect(() => {
-		if (activeTab === "download" || activeTab === "library") {
+		if (
+			activeTab === "download" ||
+			activeTab === "library" ||
+			activeTab === "playlists"
+		) {
 			loadDownloadedFiles();
 		}
 	}, [activeTab, folder]);
@@ -1348,8 +1348,8 @@ function App() {
 
 	const addSelectedToPlaylist = () => {
 		if (!activePlaylist) {
-			setLibraryPanel("playlists");
-			alert("Select or create a playlist first (Playlists panel just opened).");
+			setActiveTab("playlists");
+			alert("Select or create a playlist first (Playlists tab just opened).");
 			return;
 		}
 		const byPath = new Map(downloadedFiles.map((f: any) => [f.path, f]));
@@ -2800,6 +2800,16 @@ function App() {
 						<span className="nav-label">Library</span>
 					</button>
 					<button
+						className={`nav-item ${activeTab === "playlists" ? "active" : ""}`}
+						onClick={() => setActiveTab("playlists")}
+						title="Playlists"
+					>
+						<span className="icon">
+							<Disc3 size={18} />
+						</span>
+						<span className="nav-label">Playlists</span>
+					</button>
+					<button
 						className={`nav-item ${activeTab === "network" ? "active" : ""}`}
 						onClick={() => setActiveTab("network")}
 						title="Network"
@@ -2865,6 +2875,12 @@ function App() {
 								<>
 									<Music size={20} style={{ color: "var(--primary)" }} />
 									<span>Audio Library</span>
+								</>
+							)}
+							{activeTab === "playlists" && (
+								<>
+									<Disc3 size={20} style={{ color: "var(--primary)" }} />
+									<span>Playlists</span>
 								</>
 							)}
 							{activeTab === "network" && (
@@ -3300,8 +3316,7 @@ function App() {
 						</div>
 					)}
 
-					{activeTab === "library" &&
-						showPlaylists &&
+					{activeTab === "playlists" &&
 						(() => {
 							const pickerFiltered = downloadedFiles.filter((f) =>
 								f.name
@@ -4444,16 +4459,6 @@ function App() {
 													▶ Play All
 												</Button>
 											)}
-											<Button
-												variant={showPlaylists ? "accent" : "secondary"}
-												onClick={() => togglePanel("playlists")}
-												style={{
-													padding: "0.4rem 0.8rem",
-													fontSize: "0.85rem",
-												}}
-											>
-												<Disc3 size={14} /> Playlists
-											</Button>
 											{!isCapacitor && (
 												<Button
 													variant={showOrganize ? "accent" : "secondary"}
