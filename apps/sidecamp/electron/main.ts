@@ -461,6 +461,15 @@ ipcMain.handle('dialog:pick-folder', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+// Native alert()/confirm() in the renderer leave Windows with a dead webContents
+// (inputs ignore clicks/typing). blur+focus on the window restores it.
+ipcMain.on('app:refocus', () => {
+  if (!win) return;
+  win.blur();
+  win.focus();
+  win.webContents.focus();
+});
+
 ipcMain.handle('dialog:save-file', async (event, filename: string, content: string) => {
   const ext = path.extname(filename).slice(1).toLowerCase() || 'json';
   const filters = [{ name: ext.toUpperCase(), extensions: [ext] }];

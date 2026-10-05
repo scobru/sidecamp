@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteShared: (root: string, subpath: string, name: string, isDir: boolean) => ipcRenderer.invoke('fs:delete', root, subpath, name, isDir),
   moveShared: (srcRoot: string, srcSub: string, name: string, destRoot: string, destSub: string) => ipcRenderer.invoke('fs:move', srcRoot, srcSub, name, destRoot, destSub),
   getDownloadsDir: () => ipcRenderer.invoke('app:downloads-dir'),
+  refocus: () => ipcRenderer.send('app:refocus'),
   setBackgroundThrottling: (throttle: boolean) => ipcRenderer.invoke('app:set-background-throttling', throttle),
 
   // Update check
