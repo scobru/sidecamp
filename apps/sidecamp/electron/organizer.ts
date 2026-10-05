@@ -1,3 +1,4 @@
+import { normalizeGenre } from './genre';
 import path from 'path';
 import fs from 'fs-extra';
 import { parseFile } from 'music-metadata';
@@ -56,7 +57,7 @@ async function scanOne(full: string): Promise<Track | null> {
       artist = meta.common.artist?.trim() || '';
       title = meta.common.title?.trim() || '';
       album = meta.common.album?.trim() || '';
-      genre = meta.common.genre?.[0]?.trim() || '';
+      genre = normalizeGenre(meta.common.genre);
       lossless = !!meta.format.lossless;
       bitrate = meta.format.bitrate || 0;
     } catch { /* unreadable tags → filename fallback below */ }
