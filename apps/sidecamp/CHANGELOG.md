@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0] - 2026-10-05
+
+### Changed
+
+- **Genres are normalized to a single canonical genre.** Multi-value tags ("House, Techno, Tech House") collapse to the first genre, minimal variants ("Minimal", "Minimal Techno", "Minimal, Techno") fold into "Minimal / Deep Tech", and the Library genre list and "By Genre" organizer folders no longer explode into hundreds of buckets. Existing metadata caches are corrected on read, no rescan needed.
+
 ## [0.29.2] - 2026-10-05
 
 ### Fixed

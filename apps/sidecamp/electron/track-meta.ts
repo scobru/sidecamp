@@ -1,3 +1,4 @@
+import { normalizeGenre } from './genre';
 import path from 'path';
 import fs from 'fs-extra';
 import os from 'os';
@@ -84,7 +85,7 @@ async function parseOne(filePath: string): Promise<TrackMeta> {
       title: m.common.title?.trim() || '',
       artist: m.common.artist?.trim() || '',
       album: m.common.album?.trim() || '',
-      genre: m.common.genre?.[0]?.trim() || '',
+      genre: normalizeGenre(m.common.genre),
       bpm: m.common.bpm ? Math.round(m.common.bpm * 100) / 100 : null,
       key: (m.common.key || '').trim(),
       duration: m.format.duration ? Math.round(m.format.duration) : 0,
@@ -141,7 +142,7 @@ export async function getTracksMeta(paths: string[]): Promise<Record<string, Tra
     try {
       const st = await fs.stat(p);
       const hit = c[p];
-      if (hit && hit.mtime === st.mtimeMs) out[p] = hit.meta;
+      if (hit && hit.mtime === st.mtimeMs) out[p] = { ...hit.meta, genre: normalizeGenre(hit.meta.genre) }; // old caches hold raw multi-genre tags
       else misses.push({ p, mtime: st.mtimeMs });
     } catch { /* file vanished — skip */ }
   }
