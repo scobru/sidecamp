@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.2] - 2026-10-05
+
+### Fixed
+
+- Text inputs no longer stop accepting clicks/typing after a native `alert()`/`confirm()` popup (window focus is restored on Windows).
+
 ## [0.29.1] - 2026-10-04
 
 ### Changed
