@@ -19,6 +19,7 @@ const mockIpcMain = {
 			listHandler = handler;
 		}
 	}),
+	on: vi.fn(),
 };
 
 const mockApp = {
