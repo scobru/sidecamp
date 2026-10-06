@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   configGet: () => ipcRenderer.invoke('config:get'),
   configSet: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
 
+  // Uploader
+  setUploadConfig: (server: string, token: string) => ipcRenderer.invoke('upload:config', server, token),
+  uploadTrack: (filePath: string, metadata: any) => ipcRenderer.invoke('upload:track', filePath, metadata),
+
   // Soulseek
   slskConnect: (user: string, pass: string) => ipcRenderer.invoke('slsk:connect', user, pass),
   slskSearch: (query: string) => ipcRenderer.invoke('slsk:search', query),

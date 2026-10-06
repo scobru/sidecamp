@@ -19,6 +19,7 @@ import {
 	ChevronRight,
 	PanelLeft,
 	Trash2,
+	Upload,
 	Palette,
 	ChevronUp,
 	ArrowUpCircle,
@@ -55,6 +56,19 @@ if (typeof window !== "undefined" && !window.electronAPI) {
 	window.electronAPI = platformAPI;
 }
 
+function cleanTrackMetadata(filename: string): { artist: string; title: string } {
+	let base = (filename.split(/[/\\]/).pop() || filename).replace(/\.[^/.]+$/, "");
+	base = base
+		.replace(/^\d{1,3}[\s._-]+(?=\D)/, "")
+		.replace(/_/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	const m = base.match(/^(.+?)\s*[-–—|~]\s*(.+)$/);
+	return m
+		? { artist: m[1].trim(), title: m[2].trim() }
+		: { artist: "", title: base };
+}
+
 function App() {
 	const [server, setServer] = useState(
 		() => localStorage.getItem("tc_server") || "",
@@ -69,6 +83,16 @@ function App() {
 		() => !!localStorage.getItem("tc_token"),
 	);
 	const [folder, setFolder] = useState("");
+	// Upload to TuneCamp (from the Sharing file browser)
+	const [uploadModal, setUploadModal] = useState<{
+		name: string;
+		path: string;
+		title: string;
+		artist: string;
+		album: string;
+	} | null>(null);
+	// Auto-upload every finished download (no UI toggle; set localStorage "auto_upload" = "true")
+	const autoUpload = localStorage.getItem("auto_upload") === "true";
 	const [peerStatus, setPeerStatus] = useState("offline");
 	const [logs, setLogs] = useState<string[]>([]);
 	const [activeTab, setActiveTab] = useState(
@@ -578,6 +602,7 @@ function App() {
 					d.id === downloadId ? { ...d, status: "completed" } : d,
 				),
 			);
+			if (autoUpload && filePath) handleUploadFileAuto(filePath);
 		} catch (e: any) {
 			setDlLogs((prev) => [
 				...prev,
@@ -865,6 +890,78 @@ function App() {
 		loadBrowser(browserRoot, browserPath);
 	};
 
+	const uploadFile = async (
+		filePath: string,
+		meta: { artist: string; title: string; album?: string },
+		tag: string,
+	) => {
+		if (!server || !token) {
+			setDlLogs((prev) => [
+				...prev,
+				`[${tag}] Server/Token not configured, skipping upload.`,
+			]);
+			return false;
+		}
+		setDlLogs((prev) => [...prev, `[${tag}] Uploading ${meta.title}...`]);
+		try {
+			await window.electronAPI.setUploadConfig(server, token);
+			await window.electronAPI.uploadTrack(filePath, meta);
+			setDlLogs((prev) => [...prev, `[${tag}] Upload completed successfully!`]);
+			return true;
+		} catch (e: any) {
+			setDlLogs((prev) => [
+				...prev,
+				`[${tag}] Upload failed: ${e.message || e}`,
+			]);
+			throw e;
+		}
+	};
+
+	const handleUploadFileAuto = (filePath: string) => {
+		const filename = filePath.split(/[/\\]/).pop() || "";
+		const { artist, title } = cleanTrackMetadata(filename);
+		uploadFile(filePath, { artist: artist || "Sidecamp", title }, "Auto-Upload").catch(
+			() => {},
+		);
+	};
+
+	const openUploadModal = (name: string) => {
+		const sep = browserRoot.includes("\\") ? "\\" : "/";
+		const filePath = [browserRoot, browserPath, name]
+			.filter(Boolean)
+			.join(sep);
+		const { artist, title } = cleanTrackMetadata(name);
+		setUploadModal({
+			name,
+			path: filePath,
+			title,
+			artist: artist || "Sidecamp",
+			album: "",
+		});
+	};
+
+	const confirmUpload = async () => {
+		if (!uploadModal) return;
+		if (!server || !token) {
+			alert(
+				"You must configure the Server URL and Token in the Configuration section to upload files!",
+			);
+			return;
+		}
+		const m = uploadModal;
+		setUploadModal(null);
+		try {
+			await uploadFile(
+				m.path,
+				{ artist: m.artist, title: m.title || m.name, album: m.album || undefined },
+				"Upload",
+			);
+			alert("Track successfully uploaded to TuneCamp!");
+		} catch (e: any) {
+			alert("Error uploading file: " + (e.message || e));
+		}
+	};
+
 	const handleMoveHere = async () => {
 		if (!movingItem) return;
 		const res = await window.electronAPI.moveShared(
@@ -1088,6 +1185,7 @@ function App() {
 					d.id === downloadId ? { ...d, status: "completed" } : d,
 				),
 			);
+			if (autoUpload && filePath) handleUploadFileAuto(filePath);
 		} catch (err: any) {
 			// The user cancelled; handleCancelTorrent already dropped the row.
 			if (isCancelledTorrent(err)) return;
@@ -1174,6 +1272,7 @@ function App() {
 						: d,
 				),
 			);
+			if (autoUpload) resultPaths.forEach((p) => p && handleUploadFileAuto(p));
 		} catch (err: any) {
 			// The user cancelled; handleCancelTorrent already dropped the row.
 			if (isCancelledTorrent(err)) return;
@@ -1864,6 +1963,17 @@ function App() {
 																)}
 															</div>
 															<div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+																{!en.isDir && (
+																	<button
+																		type="button"
+																		onClick={() => openUploadModal(en.name)}
+																		title="Upload to TuneCamp"
+																		className="track-card-action-btn"
+																		style={{ width: "34px", height: "34px" }}
+																	>
+																		<Upload size={15} />
+																	</button>
+																)}
 																<button
 																	type="button"
 																	onClick={() =>
@@ -3379,6 +3489,67 @@ function App() {
 				}}
 			/>
 
+			{uploadModal && (
+				<div className="modal-overlay" onClick={() => setUploadModal(null)}>
+					<div
+						className="modal-content glass-card"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3
+							style={{
+								fontFamily: "var(--font-headings)",
+								marginBottom: "1.2rem",
+								fontSize: "1.25rem",
+							}}
+						>
+							Upload Track to TuneCamp
+						</h3>
+						<p
+							style={{
+								fontSize: "0.85rem",
+								color: "var(--text-muted)",
+								marginBottom: "1.5rem",
+								wordBreak: "break-all",
+							}}
+						>
+							File:{" "}
+							<span style={{ fontFamily: "monospace", color: "var(--text-main)" }}>
+								{uploadModal.name}
+							</span>
+						</p>
+						{(["title", "artist", "album"] as const).map((k) => (
+							<div className="form-group" key={k}>
+								<label>
+									{k === "title"
+										? "Track Title"
+										: k === "artist"
+											? "Artist Name"
+											: "Album (Optional)"}
+								</label>
+								<input
+									type="text"
+									value={uploadModal[k]}
+									onChange={(e) =>
+										setUploadModal({ ...uploadModal, [k]: e.target.value })
+									}
+									className="glass-input"
+								/>
+							</div>
+						))}
+						<div
+							className="btn-group"
+							style={{ marginTop: "2rem", justifyContent: "flex-end" }}
+						>
+							<Button variant="secondary" onClick={() => setUploadModal(null)}>
+								Cancel
+							</Button>
+							<Button variant="primary" onClick={confirmUpload}>
+								Upload
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

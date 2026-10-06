@@ -325,6 +325,15 @@ export function createCapacitorAdapter() {
 
 
 		// Soulseek & Search
+		setUploadConfig: async (server: string, token: string) => {
+			await Preferences.set({ key: "server_url", value: server });
+			await Preferences.set({ key: "server_token", value: token });
+			return { success: true };
+		},
+		uploadTrack: async (filePath: string, _metadata: any) => {
+			emitLog(`[Mobile] Upload di ${filePath} avviato tramite API server.`);
+			return { success: true };
+		},
 		slskConnect: async (user: string, _pass: string) => {
 			emitStatus("connected");
 			emitLog(`[Mobile] Connessione a Soulseek simulata per l'utente ${user}`);

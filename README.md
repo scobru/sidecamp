@@ -29,6 +29,7 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
+- 📤 **Upload to TuneCamp** — Push a file from the Shared Files browser to your TuneCamp account with custom metadata.
 - 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with 5 themes (dark/light/grey/nordic/nordic-dark) and a collapsible sidebar.
 
 ## Prerequisites
@@ -120,6 +121,7 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 ```
 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
+- **Uploader** (`apps/sidecamp/electron/uploader/`): Uploads files to TuneCamp.
 - **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
 - **Frontend** (`apps/sidecamp/src/`): React + Vite UI rendered inside the Electron window and mobile Capacitor runtime.
 

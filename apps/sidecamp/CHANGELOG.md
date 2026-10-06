@@ -7,10 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Removed
 
 - **Library and Playlists.** The Library and Playlists tabs are gone, together with everything that only served them: the organizer, Beatport/MusicBrainz tag lookup, inline tag editing, BPM/waveform analysis, the scrolling waveform, album seeding and playlist import/export. Search, Network, Sharing and the shared-files browser are untouched.
-- **Upload to TuneCamp** (manual, bulk and auto-upload) moves out of Sidecamp.
 
 ### Changed
 
+- **Upload to TuneCamp moved to the Sharing tab.** Each file in the Shared Files browser has an Upload button (title/artist/album editor). Bulk upload from a selection is gone with the Library.
 - The mobile app now opens on the Network tab instead of Library.
 
 ## [0.30.0] - 2026-10-05

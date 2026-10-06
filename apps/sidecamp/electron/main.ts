@@ -99,6 +99,7 @@ import { SoulseekService } from './providers/soulseek';
 import { TorrentService } from './providers/torrent';
 import { YtdlpService } from './providers/ytdlp';
 import { NetworkService } from './providers/network';
+import { TuneCampUploader } from './uploader';
 import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork, searchArchiveOrg } from './providers/search';
 import path from 'path';
 import fs from 'fs';
@@ -153,6 +154,7 @@ const slsk = new SoulseekService(musicDir, downloadDir);
 const torrent = new TorrentService(downloadDir, config.torrentPort);
 const ytdlp = new YtdlpService(downloadDir, path.join(app.getPath('userData'), 'bin'));
 const network = new NetworkService(downloadDir);
+const uploader = new TuneCampUploader({ server: '', token: '' }); // Configured later via IPC
 
 // Forward torrent and ytdlp events to renderer
 torrent.on('log', (msg) => win?.webContents.send('download:log', `[Torrent] ${msg}`));
@@ -160,6 +162,15 @@ torrent.on('progress', (data) => win?.webContents.send('download:progress', data
 ytdlp.on('log', (msg) => win?.webContents.send('download:log', `[YT-DLP] ${msg}`));
 ytdlp.on('progress', (data) => win?.webContents.send('download:progress', data));
 network.on('progress', (data) => win?.webContents.send('download:progress', data));
+
+ipcMain.handle('upload:config', (event, server, token) => {
+  uploader.setConfig({ server, token });
+  return { success: true };
+});
+
+ipcMain.handle('upload:track', async (event, filePath, metadata) => {
+  return await uploader.uploadTrack(filePath, metadata);
+});
 
 ipcMain.handle('app:set-background-throttling', (_event, throttle: boolean) => {
   win?.webContents.setBackgroundThrottling(throttle);
