@@ -22,7 +22,7 @@ let win: BrowserWindow | null
 // Native menu mirrors the sidebar sections with Ctrl+1..9 accelerators.
 const NAV_SECTIONS: [string, string][] = [
   ['Search', 'download'],
-  ['Library', 'library'],
+  ['Upload', 'upload'],
   ['Graph', 'graph'],
   ['Network', 'network'],
   ['Sharing', 'peer'],
@@ -310,7 +310,7 @@ ipcMain.handle('fs:list', async (event, root: string, subpath: string) => {
   const resolvedRoot = path.resolve(root);
   if (!isUnderAllowedRoot(resolvedRoot)) return { error: 'Access denied: Path is outside allowed directories' };
   // Browsing a root also whitelists it for media:// playback, so clicking a
-  // track in Shared Files works even if the Library scan never ran.
+  // track in Shared Files works.
   addSharedRoot(root);
   const target = path.resolve(root, subpath || '');
   if (!insideRoot(root, target)) return { error: 'Invalid path' };

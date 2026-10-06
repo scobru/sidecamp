@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Upload to TuneCamp moved to the Sharing tab.** Each file in the Shared Files browser has an Upload button (title/artist/album editor). Bulk upload from a selection is gone with the Library.
+- **Upload to TuneCamp has its own Upload tab.** Drop or choose audio files, edit title/artist/album per file, upload one or all. It no longer lives in the Library.
 - The mobile app now opens on the Network tab instead of Library.
 
 ## [0.30.0] - 2026-10-05

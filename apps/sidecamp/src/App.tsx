@@ -83,14 +83,69 @@ function App() {
 		() => !!localStorage.getItem("tc_token"),
 	);
 	const [folder, setFolder] = useState("");
-	// Upload to TuneCamp (from the Sharing file browser)
-	const [uploadModal, setUploadModal] = useState<{
+	// Upload tab: queue of local files with editable metadata
+	type UploadItem = {
+		id: string;
 		name: string;
 		path: string;
 		title: string;
 		artist: string;
 		album: string;
-	} | null>(null);
+		status: "ready" | "uploading" | "done" | "error";
+		error?: string;
+	};
+	const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
+	const [uploadBusy, setUploadBusy] = useState(false);
+	const uploadInputRef = useRef<HTMLInputElement>(null);
+	const patchUpload = (id: string, patch: Partial<UploadItem>) =>
+		setUploadQueue((q) => q.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+	const addUploadFiles = (files: FileList | File[]) => {
+		const items: UploadItem[] = [];
+		for (const f of Array.from(files)) {
+			const filePath = window.electronAPI.getFilePath?.(f) || "";
+			if (!filePath) continue;
+			const { artist, title } = cleanTrackMetadata(f.name);
+			items.push({
+				id: crypto.randomUUID(),
+				name: f.name,
+				path: filePath,
+				title,
+				artist: artist || "Sidecamp",
+				album: "",
+				status: "ready",
+			});
+		}
+		setUploadQueue((q) => [
+			...q,
+			...items.filter((i) => !q.some((x) => x.path === i.path)),
+		]);
+	};
+	const runUpload = async (u: UploadItem) => {
+		patchUpload(u.id, { status: "uploading", error: undefined });
+		try {
+			await uploadFile(
+				u.path,
+				{ artist: u.artist, title: u.title || u.name, album: u.album || undefined },
+				"Upload",
+			);
+			patchUpload(u.id, { status: "done" });
+		} catch (e: any) {
+			patchUpload(u.id, { status: "error", error: e.message || String(e) });
+		}
+	};
+	const uploadAll = async () => {
+		if (!server || !token) {
+			alert(
+				"You must configure the Server URL and Token in the Configuration section to upload files!",
+			);
+			return;
+		}
+		setUploadBusy(true);
+		for (const u of uploadQueue.filter((x) => x.status !== "done")) {
+			await runUpload(u);
+		}
+		setUploadBusy(false);
+	};
 	// Auto-upload every finished download (no UI toggle; set localStorage "auto_upload" = "true")
 	const autoUpload = localStorage.getItem("auto_upload") === "true";
 	const [peerStatus, setPeerStatus] = useState("offline");
@@ -925,43 +980,6 @@ function App() {
 		);
 	};
 
-	const openUploadModal = (name: string) => {
-		const sep = browserRoot.includes("\\") ? "\\" : "/";
-		const filePath = [browserRoot, browserPath, name]
-			.filter(Boolean)
-			.join(sep);
-		const { artist, title } = cleanTrackMetadata(name);
-		setUploadModal({
-			name,
-			path: filePath,
-			title,
-			artist: artist || "Sidecamp",
-			album: "",
-		});
-	};
-
-	const confirmUpload = async () => {
-		if (!uploadModal) return;
-		if (!server || !token) {
-			alert(
-				"You must configure the Server URL and Token in the Configuration section to upload files!",
-			);
-			return;
-		}
-		const m = uploadModal;
-		setUploadModal(null);
-		try {
-			await uploadFile(
-				m.path,
-				{ artist: m.artist, title: m.title || m.name, album: m.album || undefined },
-				"Upload",
-			);
-			alert("Track successfully uploaded to TuneCamp!");
-		} catch (e: any) {
-			alert("Error uploading file: " + (e.message || e));
-		}
-	};
-
 	const handleMoveHere = async () => {
 		if (!movingItem) return;
 		const res = await window.electronAPI.moveShared(
@@ -1551,6 +1569,18 @@ function App() {
 						</span>
 						<span className="nav-label">Sharing</span>
 					</button>
+					{!isCapacitor && (
+						<button
+							className={`nav-item ${activeTab === "upload" ? "active" : ""}`}
+							onClick={() => setActiveTab("upload")}
+							title="Upload to TuneCamp"
+						>
+							<span className="icon">
+								<Upload size={18} />
+							</span>
+							<span className="nav-label">Upload</span>
+						</button>
+					)}
 					<button
 						className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
 						onClick={() => setActiveTab("settings")}
@@ -1603,6 +1633,12 @@ function App() {
 								<>
 									<Radio size={20} style={{ color: "var(--primary)" }} />
 									<span>Shared Files</span>
+								</>
+							)}
+							{activeTab === "upload" && (
+								<>
+									<Upload size={20} style={{ color: "var(--primary)" }} />
+									<span>Upload to TuneCamp</span>
 								</>
 							)}
 							{activeTab === "settings" && (
@@ -1963,17 +1999,6 @@ function App() {
 																)}
 															</div>
 															<div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-																{!en.isDir && (
-																	<button
-																		type="button"
-																		onClick={() => openUploadModal(en.name)}
-																		title="Upload to TuneCamp"
-																		className="track-card-action-btn"
-																		style={{ width: "34px", height: "34px" }}
-																	>
-																		<Upload size={15} />
-																	</button>
-																)}
 																<button
 																	type="button"
 																	onClick={() =>
@@ -2022,6 +2047,121 @@ function App() {
 										</>
 									)}
 								</>
+							)}
+						</div>
+					)}
+
+					{activeTab === "upload" && (
+						<div className="glass-card">
+							<div
+								onDragOver={(e) => e.preventDefault()}
+								onDrop={(e) => {
+									e.preventDefault();
+									addUploadFiles(e.dataTransfer.files);
+								}}
+								style={{
+									border: "2px dashed var(--glass-border)",
+									borderRadius: "var(--tc-radius-md)",
+									padding: "2rem",
+									textAlign: "center",
+									marginBottom: "1.5rem",
+								}}
+							>
+								<p style={{ color: "var(--text-muted)", marginBottom: "1rem" }}>
+									Drop audio files here or choose them from disk.
+								</p>
+								<Button
+									variant="secondary"
+									onClick={() => uploadInputRef.current?.click()}
+								>
+									Choose files
+								</Button>
+								<input
+									ref={uploadInputRef}
+									type="file"
+									multiple
+									accept="audio/*"
+									style={{ display: "none" }}
+									onChange={(e) => {
+										if (e.target.files) addUploadFiles(e.target.files);
+										e.target.value = "";
+									}}
+								/>
+							</div>
+							{uploadQueue.map((u) => (
+								<div
+									key={u.id}
+									className="glass-card"
+									style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}
+								>
+									<div
+										style={{
+											fontFamily: "monospace",
+											fontSize: "0.8rem",
+											color: "var(--text-muted)",
+											wordBreak: "break-all",
+											marginBottom: "0.5rem",
+										}}
+									>
+										{u.name}
+									</div>
+									<div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+										{(["title", "artist", "album"] as const).map((k) => (
+											<input
+												key={k}
+												type="text"
+												placeholder={k}
+												value={u[k]}
+												disabled={u.status === "uploading" || u.status === "done"}
+												onChange={(e) => patchUpload(u.id, { [k]: e.target.value })}
+												className="glass-input"
+												style={{ flex: "1 1 160px" }}
+											/>
+										))}
+										<Button
+											variant="primary"
+											disabled={u.status === "uploading" || u.status === "done"}
+											onClick={() => runUpload(u)}
+										>
+											{u.status === "uploading"
+												? "Uploading…"
+												: u.status === "done"
+													? "Done"
+													: u.status === "error"
+														? "Retry"
+														: "Upload"}
+										</Button>
+										<Button
+											variant="secondary"
+											disabled={u.status === "uploading"}
+											onClick={() =>
+												setUploadQueue((q) => q.filter((x) => x.id !== u.id))
+											}
+											title="Remove"
+										>
+											<X size={14} />
+										</Button>
+									</div>
+									{u.error && (
+										<div style={{ color: "var(--danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+											{u.error}
+										</div>
+									)}
+								</div>
+							))}
+							{uploadQueue.length > 0 && (
+								<div className="btn-group" style={{ justifyContent: "flex-end" }}>
+									<Button
+										variant="secondary"
+										disabled={uploadBusy}
+										onClick={() => setUploadQueue((q) => q.filter((x) => x.status !== "done"))}
+									>
+										Clear done
+									</Button>
+									<Button variant="primary" disabled={uploadBusy} onClick={uploadAll}>
+										Upload all
+									</Button>
+								</div>
 							)}
 						</div>
 					)}
@@ -3489,67 +3629,6 @@ function App() {
 				}}
 			/>
 
-			{uploadModal && (
-				<div className="modal-overlay" onClick={() => setUploadModal(null)}>
-					<div
-						className="modal-content glass-card"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h3
-							style={{
-								fontFamily: "var(--font-headings)",
-								marginBottom: "1.2rem",
-								fontSize: "1.25rem",
-							}}
-						>
-							Upload Track to TuneCamp
-						</h3>
-						<p
-							style={{
-								fontSize: "0.85rem",
-								color: "var(--text-muted)",
-								marginBottom: "1.5rem",
-								wordBreak: "break-all",
-							}}
-						>
-							File:{" "}
-							<span style={{ fontFamily: "monospace", color: "var(--text-main)" }}>
-								{uploadModal.name}
-							</span>
-						</p>
-						{(["title", "artist", "album"] as const).map((k) => (
-							<div className="form-group" key={k}>
-								<label>
-									{k === "title"
-										? "Track Title"
-										: k === "artist"
-											? "Artist Name"
-											: "Album (Optional)"}
-								</label>
-								<input
-									type="text"
-									value={uploadModal[k]}
-									onChange={(e) =>
-										setUploadModal({ ...uploadModal, [k]: e.target.value })
-									}
-									className="glass-input"
-								/>
-							</div>
-						))}
-						<div
-							className="btn-group"
-							style={{ marginTop: "2rem", justifyContent: "flex-end" }}
-						>
-							<Button variant="secondary" onClick={() => setUploadModal(null)}>
-								Cancel
-							</Button>
-							<Button variant="primary" onClick={confirmUpload}>
-								Upload
-							</Button>
-						</div>
-					</div>
-				</div>
-			)}
 		</div>
 	);
 }

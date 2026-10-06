@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Config
@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Uploader
   setUploadConfig: (server: string, token: string) => ipcRenderer.invoke('upload:config', server, token),
+  getFilePath: (file: File) => webUtils.getPathForFile(file),
   uploadTrack: (filePath: string, metadata: any) => ipcRenderer.invoke('upload:track', filePath, metadata),
 
   // Soulseek
