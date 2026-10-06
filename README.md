@@ -26,11 +26,9 @@ TuneCamp's core server is a legitimate streaming platform. Features like Soulsee
 - 🧲 **BitTorrent / WebTorrent** — Add magnet links or torrent files; download and seed from your desktop with live progress.
 - 🎬 **yt-dlp Audio Ripping** — Rip audio from YouTube, SoundCloud, Bandcamp, and other platforms.
 - 🌐 **Network Explorer** — Browse and download tracks shared by TuneCamp peers and the server catalog. Peer tracks also surface in the unified search and download through the server tunnel. Downloads follow what each instance actually offers: a release on sale, one published as streaming-only, or one pointing at an external store still streams, but is marked (`For sale`, `Stream only`, `External`) and its download button stays disabled.
-- 🎵 **Local Library** — Browse your downloaded files with an in-app audio player; edit ID3 tags (title/artist/album) and rename files.
 - 📂 **Shared Files Browser** — Navigate your Downloads and shared folders, create subfolders, and move or delete files/folders — the single place to organize what you keep and share.
 - 📁 **Peer File Sharing** — Share local music folders with any TuneCamp instance via a secure reverse WebSocket tunnel. Listeners can stream or download files relayed through the server.
 - 🔒 **Granular Permissions** — Allow or restrict downloads per-folder. Toggle permissions in real-time.
-- 📤 **Upload to TuneCamp** — Push tracks from your local library to your TuneCamp account with custom metadata.
 - 🖥️ **Desktop GUI** — A modern, responsive React-based interface running inside Electron, with 5 themes (dark/light/grey/nordic/nordic-dark) and a collapsible sidebar.
 
 ## Prerequisites
@@ -122,7 +120,6 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 ```
 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
-- **Uploader** (`apps/sidecamp/electron/uploader/`): Handles auto-uploading downloaded files to TuneCamp.
 - **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
 - **Frontend** (`apps/sidecamp/src/`): React + Vite UI rendered inside the Electron window and mobile Capacitor runtime.
 
