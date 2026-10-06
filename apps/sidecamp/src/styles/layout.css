@@ -325,24 +325,6 @@
   gap: 1.25rem;
 }
 
-/* Waveform Visualizer Wrap */
-.scrollwave-wrap {
-  width: 100%;
-  height: 60px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--tc-radius-md);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.scrollwave-wrap canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-  cursor: pointer;
-}
-
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
   width: 6px;

@@ -3,18 +3,12 @@ import path from "path";
 import fs from "fs";
 
 // Define a variable to store the captured handlers
-let openHandler: (event: any, filePath: string) => Promise<boolean>;
 let listHandler: (event: any, root: string, subpath: string) => Promise<any>;
 
-const mockShell = {
-	showItemInFolder: vi.fn(),
-};
+const mockShell = {};
 
 const mockIpcMain = {
 	handle: vi.fn((event, handler) => {
-		if (event === "downloads:open") {
-			openHandler = handler;
-		}
 		if (event === "fs:list") {
 			listHandler = handler;
 		}
@@ -75,45 +69,7 @@ describe("Downloads IPC Handlers", () => {
 		// Import main.ts to register handlers
 		await import("./main");
 
-		if (!openHandler) throw new Error("Handler not registered");
 		if (!listHandler) throw new Error("List Handler not registered");
-	});
-
-	it("should allow opening a file inside the download directory", async () => {
-		const safePath = path.join("/test/downloads/Sidecamp", "safe.txt");
-		const result = await openHandler({}, safePath);
-		expect(result).toBe(true);
-		expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
-			path.resolve(safePath),
-		);
-	});
-
-	it("should block opening a file outside the download directory (directory traversal)", async () => {
-		const maliciousPath = path.join(
-			"/test/downloads/Sidecamp",
-			"../../etc/passwd",
-		);
-		await expect(openHandler({}, maliciousPath)).rejects.toThrow(
-			"Access denied: Path is outside the download directory",
-		);
-		expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
-	});
-
-	it("should block opening a file outside the download directory (absolute path)", async () => {
-		const maliciousPath = "/etc/passwd";
-		await expect(openHandler({}, maliciousPath)).rejects.toThrow(
-			"Access denied: Path is outside the download directory",
-		);
-		expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
-	});
-
-	it("should block opening a file in a sibling directory (prefix attack)", async () => {
-		// A path like /test/downloads/Sidecamp-Malicious/file.txt
-		const siblingPath = "/test/downloads/Sidecamp-Malicious/file.txt";
-		await expect(openHandler({}, siblingPath)).rejects.toThrow(
-			"Access denied: Path is outside the download directory",
-		);
-		expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
 	});
 
 	it("should allow listing files inside the download directory", async () => {

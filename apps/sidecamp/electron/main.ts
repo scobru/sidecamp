@@ -22,7 +22,7 @@ let win: BrowserWindow | null
 // Native menu mirrors the sidebar sections with Ctrl+1..9 accelerators.
 const NAV_SECTIONS: [string, string][] = [
   ['Search', 'download'],
-  ['Library', 'library'],
+  ['Upload', 'upload'],
   ['Graph', 'graph'],
   ['Network', 'network'],
   ['Sharing', 'peer'],
@@ -104,8 +104,6 @@ import { searchSoundCloud, searchBandcamp, searchTorrents, searchPeerNetwork, se
 import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
-import NodeID3 from 'node-id3';
-import { getTracksMeta, setCachedAnalysis } from './track-meta';
 
 const AUDIO_MIME: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
@@ -165,10 +163,9 @@ ytdlp.on('log', (msg) => win?.webContents.send('download:log', `[YT-DLP] ${msg}`
 ytdlp.on('progress', (data) => win?.webContents.send('download:progress', data));
 network.on('progress', (data) => win?.webContents.send('download:progress', data));
 
-// --- Uploader IPC ---
 ipcMain.handle('upload:config', (event, server, token) => {
   uploader.setConfig({ server, token });
-  return true;
+  return { success: true };
 });
 
 ipcMain.handle('upload:track', async (event, filePath, metadata) => {
@@ -213,178 +210,6 @@ ipcMain.handle('slsk:status', async () => {
   return await slsk.checkStatus();
 });
 
-// --- Local Downloads Library IPC ---
-const AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.mp4', '.webm']);
-
-async function scanAudioFiles(dir: string, baseDir: string): Promise<{ name: string; path: string; size: number; ctime: number; magnetUri: string }[]> {
-  const result: { name: string; path: string; size: number; ctime: number; magnetUri: string }[] = [];
-  try {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-
-    const MAX_CONCURRENT = 50;
-    for (let i = 0; i < entries.length; i += MAX_CONCURRENT) {
-      const chunk = entries.slice(i, i + MAX_CONCURRENT);
-      await Promise.all(chunk.map(async (f) => {
-        const full = path.join(dir, f.name);
-        if (f.isDirectory()) {
-          const subResult = await scanAudioFiles(full, baseDir);
-          result.push(...subResult);
-        } else if (f.isFile() && AUDIO_EXTS.has(path.extname(f.name).toLowerCase())) {
-          try {
-            const stat = await fs.promises.stat(full);
-            if (stat.size > 0) {
-              result.push({
-                name: path.relative(baseDir, full),
-                path: full,
-                size: stat.size,
-                ctime: stat.ctimeMs,
-                magnetUri: torrent.getMagnetUriForFile(full)
-              });
-            }
-          } catch (err) {
-            // ignore stat errors (e.g., file deleted during scan)
-          }
-        }
-      }));
-    }
-  } catch (err) {
-    console.error(`Error scanning directory ${dir}:`, err);
-  }
-  return result;
-}
-
-ipcMain.handle('downloads:list', async (event, extraRoots?: string[]) => {
-  try {
-    // Scan the download dir plus any configured shared folders, deduped by
-    // resolved path so a shared folder that equals downloadDir isn't double-scanned.
-    if (extraRoots) setSharedRoots(extraRoots);
-    const roots = [downloadDir, ...(Array.isArray(extraRoots) ? extraRoots : [])]
-      .map(r => path.resolve(r))
-      .filter((r, i, a) => a.indexOf(r) === i);
-
-    const seen = new Set<string>();
-    const merged: Awaited<ReturnType<typeof scanAudioFiles>> = [];
-    for (const root of roots) {
-      try {
-        await fs.promises.access(root, fs.constants.F_OK);
-      } catch {
-        continue;
-      }
-      const files = await scanAudioFiles(root, root);
-      for (const f of files) {
-        if (seen.has(f.path)) continue;
-        seen.add(f.path);
-        merged.push(f);
-      }
-    }
-    return merged.sort((a, b) => b.ctime - a.ctime);
-  } catch (e) {
-    console.error("Error reading downloads directory:", e);
-    return [];
-  }
-});
-
-ipcMain.handle('downloads:delete', async (event, filePath) => {
-  try {
-    const normalizedPath = path.resolve(filePath);
-    if (!isUnderAllowedRoot(normalizedPath) || allowedRoots().includes(normalizedPath)) {
-      throw new Error("Access denied: invalid path");
-    }
-
-    const exists = await fs.promises.access(normalizedPath).then(() => true).catch(() => false);
-    if (exists) {
-      await fs.promises.unlink(normalizedPath);
-      // Clean up empty directories, but never remove an allowed root itself.
-      const dir = path.dirname(normalizedPath);
-      if (!allowedRoots().includes(dir)) {
-        const dirExists = await fs.promises.access(dir).then(() => true).catch(() => false);
-        if (dirExists) {
-          const files = await fs.promises.readdir(dir);
-          if (files.length === 0) {
-            await fs.promises.rmdir(dir);
-          }
-        }
-      }
-      return true;
-    }
-    return false;
-  } catch (e) {
-    console.error("Error deleting file:", e);
-    throw e;
-  }
-});
-
-ipcMain.handle('downloads:open', async (event, filePath) => {
-  try {
-    const resolvedPath = path.resolve(filePath);
-    if (!isUnderAllowedRoot(resolvedPath)) {
-      throw new Error("Access denied: Path is outside the download directory");
-    }
-    shell.showItemInFolder(resolvedPath);
-    return true;
-  } catch (e) {
-    console.error("Error opening file:", e);
-    throw e;
-  }
-});
-
-ipcMain.handle('downloads:read-tags', async (event, filePath) => {
-  const tags = NodeID3.read(filePath);
-  return { title: tags.title || '', artist: tags.artist || '', album: tags.album || '' };
-});
-
-// Batch tag metadata for the Library table (title/artist/BPM/key/duration…), disk-cached per file.
-ipcMain.handle('downloads:tracks-meta', async (event, paths: string[]) => {
-  if (!Array.isArray(paths)) return {};
-  return getTracksMeta(paths.filter(p => typeof p === 'string' && isUnderAllowedRoot(p)));
-});
-
-// Raw audio bytes for the renderer's Web Audio analysis. fetch('media://…') is CORS-blocked
-// for non-standard schemes, so the renderer gets the bytes over IPC instead.
-ipcMain.handle('downloads:read-file', async (event, filePath: string) => {
-  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath)) throw new Error('Access denied: invalid path');
-  return fs.promises.readFile(filePath);
-});
-
-// Persist renderer Web Audio analysis (BPM and/or waveform peaks): TBPM tag for mp3, cache for all.
-ipcMain.handle('downloads:set-analysis', async (event, filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number | null; cueOutPoint?: number | null }) => {
-  if (typeof filePath !== 'string' || !isUnderAllowedRoot(filePath) || !data || typeof data !== 'object') return false;
-  const bpm = typeof data.bpm === 'number' && Number.isFinite(data.bpm) && data.bpm >= 40 && data.bpm <= 300 ? data.bpm : undefined;
-  const peaks = Array.isArray(data.peaks) && data.peaks.length > 0 && data.peaks.length <= 400 ? data.peaks : undefined;
-  const beatOffset = typeof data.beatOffset === 'number' && Number.isFinite(data.beatOffset) && data.beatOffset >= 0 && data.beatOffset < 3 ? data.beatOffset : undefined;
-  const cuePoint = data.cuePoint === null ? null : (typeof data.cuePoint === 'number' && Number.isFinite(data.cuePoint) && data.cuePoint >= 0 ? data.cuePoint : undefined);
-  const cueOutPoint = data.cueOutPoint === null ? null : (typeof data.cueOutPoint === 'number' && Number.isFinite(data.cueOutPoint) && data.cueOutPoint >= 0 ? data.cueOutPoint : undefined);
-  if (!bpm && !peaks && beatOffset === undefined && cuePoint === undefined && cueOutPoint === undefined) return false;
-  if (bpm && path.extname(filePath).toLowerCase() === '.mp3') {
-    try { await NodeID3.Promise.update({ bpm: String(Math.round(bpm)) }, filePath); } catch { /* tag write is best-effort */ }
-  }
-  await setCachedAnalysis(filePath, { bpm, peaks, beatOffset, cuePoint, cueOutPoint });
-  return true;
-});
-
-ipcMain.handle('downloads:write-tags', async (event, filePath, tags) => {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext !== '.mp3') throw new Error(`Tag writing only supported for MP3 (got ${ext})`);
-  // update (merge) instead of write (replace): keeps tags we don't edit, e.g. TBPM/genre.
-  const id3Tags: Record<string, any> = {};
-  if (tags.title !== undefined) id3Tags.title = String(tags.title);
-  if (tags.artist !== undefined) id3Tags.artist = String(tags.artist);
-  if (tags.album !== undefined) id3Tags.album = String(tags.album);
-  if (tags.genre !== undefined) id3Tags.genre = String(tags.genre);
-  if (tags.year !== undefined && tags.year !== null && tags.year !== '') id3Tags.year = String(tags.year);
-  if (tags.bpm !== undefined && tags.bpm !== null && tags.bpm !== '') id3Tags.bpm = String(tags.bpm);
-  if (tags.key !== undefined && tags.key) id3Tags.initialKey = String(tags.key);
-  if (tags.initialKey !== undefined && tags.initialKey) id3Tags.initialKey = String(tags.initialKey);
-  if (tags.trackNumber !== undefined && tags.trackNumber !== null && tags.trackNumber !== '') id3Tags.trackNumber = String(tags.trackNumber);
-
-  try {
-    await NodeID3.Promise.update(id3Tags, filePath);
-  } catch (err: any) {
-    throw new Error(`NodeID3.update failed: ${err.message || err}`);
-  }
-  return true;
-});
-
 // Secrets at rest: renderer stores credentials encrypted with the OS keychain.
 // decrypt falls back to returning the input so legacy plaintext values keep working
 // (they get re-encrypted on the next settings save).
@@ -400,54 +225,6 @@ ipcMain.handle('secure:decrypt', (_event, stored) => {
   } catch {
     return stored; // legacy plaintext value
   }
-});
-
-ipcMain.handle('downloads:rename', async (event, filePath, newFilename) => {
-  if (typeof filePath !== 'string' || !isUnderAllowedRoot(path.resolve(filePath)))
-    throw new Error('Access denied: invalid path');
-  const dir = path.dirname(path.resolve(filePath));
-  // basename strips any path separators smuggled into the new filename
-  const destPath = path.join(dir, path.basename(String(newFilename)));
-  if (!isUnderAllowedRoot(destPath)) throw new Error('Access denied: invalid destination');
-  await fs.promises.rename(filePath, destPath);
-  return destPath;
-});
-
-ipcMain.handle('downloads:move', async (event, filePath, destFolder) => {
-  if (typeof filePath !== 'string' || !isUnderAllowedRoot(path.resolve(filePath)))
-    throw new Error('Access denied: invalid path');
-  if (typeof destFolder !== 'string' || !isUnderAllowedRoot(path.resolve(destFolder)))
-    throw new Error('Access denied: invalid destination');
-  const fileName = path.basename(filePath);
-  const destPath = path.join(destFolder, fileName);
-  await fs.promises.mkdir(destFolder, { recursive: true });
-  await fs.promises.rename(filePath, destPath);
-  return destPath;
-});
-
-// Copy a playlist's tracks into a flat, CDJ-friendly folder: files renamed
-// with a numeric order prefix plus a playlist.m3u8 listing them in order.
-ipcMain.handle('playlist:export', async (event, destDir: string, folderName: string, items: { path: string; exportName: string }[]) => {
-  if (!destDir || !Array.isArray(items)) return { error: 'Nothing to export' };
-  const clean = String(folderName || 'Playlist').replace(/[<>:"/\\|?*]/g, '').trim() || 'Playlist';
-  const target = path.join(path.resolve(destDir), clean);
-  await fs.promises.mkdir(target, { recursive: true });
-  const m3u = ['#EXTM3U'];
-  let copied = 0;
-  const errors: string[] = [];
-  for (const it of items) {
-    try {
-      if (!isUnderAllowedRoot(it.path)) throw new Error('source outside library');
-      await fs.promises.copyFile(it.path, path.join(target, it.exportName));
-      m3u.push(it.exportName);
-      copied++;
-    } catch (e: any) {
-      errors.push(`${it.exportName}: ${e.message}`);
-    }
-  }
-  // CRLF + UTF-8 for maximum USB/CDJ compatibility.
-  await fs.promises.writeFile(path.join(target, 'playlist.m3u8'), m3u.join('\r\n') + '\r\n', 'utf8');
-  return { target, copied, total: items.length, errors };
 });
 
 ipcMain.handle('dialog:pick-folder', async () => {
@@ -470,40 +247,9 @@ ipcMain.on('app:refocus', () => {
   win.webContents.focus();
 });
 
-ipcMain.handle('dialog:save-file', async (event, filename: string, content: string) => {
-  const ext = path.extname(filename).slice(1).toLowerCase() || 'json';
-  const filters = [{ name: ext.toUpperCase(), extensions: [ext] }];
-  const result = win
-    ? await dialog.showSaveDialog(win, { defaultPath: filename, filters })
-    : await dialog.showSaveDialog({ defaultPath: filename, filters });
-  win?.webContents.focus();
-  if (result.canceled || !result.filePath) return null;
-  await fs.promises.writeFile(result.filePath, content, 'utf8');
-  return result.filePath;
-});
-
-ipcMain.handle('dialog:open-file', async (event, extensions: string[] = ['json']) => {
-  const filters = [{ name: extensions.join('/').toUpperCase(), extensions }];
-  const result = win
-    ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters })
-    : await dialog.showOpenDialog({ properties: ['openFile'], filters });
-  win?.webContents.focus();
-  if (result.canceled || result.filePaths.length === 0) return null;
-  const content = await fs.promises.readFile(result.filePaths[0], 'utf8');
-  return { filePath: result.filePaths[0], content };
-});
-
 // --- Torrent IPC ---
 ipcMain.handle('torrent:download', async (event, magnetUri, downloadId) => {
   return await torrent.download(magnetUri, downloadId);
-});
-
-ipcMain.handle('torrent:seed', async (event, input, torrentName) => {
-  const magnetUri = await torrent.seed(input, torrentName);
-  if (daemon) {
-    daemon.refreshAndSendManifest();
-  }
-  return magnetUri;
 });
 
 ipcMain.handle('torrent:remove', async (event, infoHash, deleteFiles = false) => {
@@ -564,7 +310,7 @@ ipcMain.handle('fs:list', async (event, root: string, subpath: string) => {
   const resolvedRoot = path.resolve(root);
   if (!isUnderAllowedRoot(resolvedRoot)) return { error: 'Access denied: Path is outside allowed directories' };
   // Browsing a root also whitelists it for media:// playback, so clicking a
-  // track in Shared Files works even if the Library scan never ran.
+  // track in Shared Files works.
   addSharedRoot(root);
   const target = path.resolve(root, subpath || '');
   if (!insideRoot(root, target)) return { error: 'Invalid path' };
@@ -679,97 +425,6 @@ ipcMain.handle('fs:move', async (event, srcRoot: string, srcSub: string, name: s
       } else throw err;
     }
     return { ok: true };
-  } catch (err: any) {
-    return { error: err.message };
-  }
-});
-
-// --- Library Organizer IPC & Tag Lookup ---
-import { scanDir, buildPlan, applyPlan, OrganizeMode, Track } from './organizer';
-import { cacheGet, cachePut } from './organizer-cache';
-import { lookupGenre, searchTracksBeatport } from './beatport';
-import { lookupGenre as lookupGenreMB, searchRecordingsMB } from './musicbrainz';
-
-ipcMain.handle('tag:search-beatport', async (_event, artist: string, title: string) => {
-  try {
-    return await searchTracksBeatport(artist || '', title || '', net.fetch);
-  } catch (err: any) {
-    return [];
-  }
-});
-
-ipcMain.handle('tag:search-musicbrainz', async (_event, artist: string, title: string) => {
-  try {
-    return await searchRecordingsMB(artist || '', title || '', net.fetch);
-  } catch (err: any) {
-    return [];
-  }
-});
-
-ipcMain.handle('organize:scan', async (event, root: string, mode: OrganizeMode) => {
-  if (!root) return { error: 'No folder selected' };
-  try {
-    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
-    let tracks = await cacheGet(root, dirMtime);
-    if (!tracks) {
-      tracks = await scanDir(root);
-      await cachePut(root, dirMtime, tracks);
-    }
-    return buildPlan(tracks, root, mode);
-  } catch (err: any) {
-    return { error: err.message };
-  }
-});
-
-ipcMain.handle('organize:apply', async (event, root: string, actions: any[]) => {
-  if (!root || !Array.isArray(actions)) return { error: 'Invalid request' };
-  try {
-    const result = await applyPlan(root, actions);
-    // layout changed → cached scan is stale
-    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
-    await cachePut(root, dirMtime, await scanDir(root));
-    return result;
-  } catch (err: any) {
-    return { error: err.message };
-  }
-});
-
-// Beatport genre fill: long-running (~1.4s/track, polite rate limit), so it
-// streams progress events and supports cancellation via a simple flag.
-let genreFillCancelled = false;
-
-ipcMain.handle('organize:fill-genres-cancel', () => { genreFillCancelled = true; return true; });
-
-ipcMain.handle('organize:fill-genres', async (event, root: string) => {
-  if (!root) return { error: 'No folder selected' };
-  genreFillCancelled = false;
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-  try {
-    const dirMtime = (await fs.promises.stat(root)).mtimeMs;
-    const tracks: Track[] = (await cacheGet(root, dirMtime)) ?? await scanDir(root);
-    const missing = tracks.filter(t => !t.genre && t.title);
-    let found = 0, written = 0;
-    for (let i = 0; i < missing.length; i++) {
-      if (genreFillCancelled) break;
-      const t = missing[i];
-      // Beatport is authoritative for electronic/DJ tracks; anything it can't
-      // classify (rock/pop/jazz/classical) falls back to MusicBrainz.
-      const genre = await lookupGenre(t.artist, t.title, net.fetch)
-        ?? await lookupGenreMB(t.artist, t.title, net.fetch);
-      if (genre) {
-        found++;
-        t.genre = genre;
-        // node-id3 only writes mp3; other formats keep the genre in the scan
-        // cache so genre-mode organizing still works this session.
-        if (t.ext === '.mp3') {
-          try { await NodeID3.Promise.update({ genre }, t.path); written++; } catch { /* tag write is best-effort */ }
-        }
-      }
-      win?.webContents.send('organize:genre-progress', { current: i + 1, total: missing.length, file: path.basename(t.path), genre: genre || null });
-      await sleep(1400);
-    }
-    await cachePut(root, dirMtime, tracks);
-    return { missing: missing.length, found, written, cancelled: genreFillCancelled };
   } catch (err: any) {
     return { error: err.message };
   }

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Config
@@ -7,8 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Uploader
   setUploadConfig: (server: string, token: string) => ipcRenderer.invoke('upload:config', server, token),
+  getFilePath: (file: File) => webUtils.getPathForFile(file),
   uploadTrack: (filePath: string, metadata: any) => ipcRenderer.invoke('upload:track', filePath, metadata),
-  
+
   // Soulseek
   slskConnect: (user: string, pass: string) => ipcRenderer.invoke('slsk:connect', user, pass),
   slskSearch: (query: string) => ipcRenderer.invoke('slsk:search', query),
@@ -18,14 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Torrent
   torrentDownload: (magnetUri: string, downloadId?: string) => ipcRenderer.invoke('torrent:download', magnetUri, downloadId),
-  torrentSeed: (input: string | string[], torrentName?: string) => ipcRenderer.invoke('torrent:seed', input, torrentName),
   
   // Ytdlp
   ytdlpDownload: (url: string, downloadId?: string) => ipcRenderer.invoke('ytdlp:download', url, downloadId),
-  
-  // Local downloads library
-  listDownloads: (extraRoots?: string[]) => ipcRenderer.invoke('downloads:list', extraRoots),
-  deleteDownload: (filePath: string) => ipcRenderer.invoke('downloads:delete', filePath),
   
   // Peer Daemon
   startPeer: (config: any) => ipcRenderer.invoke('peer:start', config),
@@ -57,29 +53,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDownloadLog: (callback: (msg: string) => void) => { ipcRenderer.removeAllListeners('download:log'); ipcRenderer.on('download:log', (_, msg) => callback(msg)); },
   onDownloadProgress: (callback: (data: any) => void) => { ipcRenderer.removeAllListeners('download:progress'); ipcRenderer.on('download:progress', (_, data) => callback(data)); },
   
-  openDownload: (filePath: string) => ipcRenderer.invoke('downloads:open', filePath),
   removeTorrent: (infoHash: string, deleteFiles?: boolean) => ipcRenderer.invoke('torrent:remove', infoHash, deleteFiles),
-  readTags: (filePath: string) => ipcRenderer.invoke('downloads:read-tags', filePath),
-  getTracksMeta: (paths: string[]) => ipcRenderer.invoke('downloads:tracks-meta', paths),
-  setTrackAnalysis: (filePath: string, data: { bpm?: number; peaks?: number[]; beatOffset?: number; cuePoint?: number | null; cueOutPoint?: number | null }) => ipcRenderer.invoke('downloads:set-analysis', filePath, data),
   saveRecording: (filename: string, data: Uint8Array) => ipcRenderer.invoke('recordings:save', filename, data),
-  readAudioFile: (filePath: string) => ipcRenderer.invoke('downloads:read-file', filePath),
-  writeTags: (filePath: string, tags: any) => ipcRenderer.invoke('downloads:write-tags', filePath, tags),
-  renameDownload: (filePath: string, newFilename: string) => ipcRenderer.invoke('downloads:rename', filePath, newFilename),
-  moveDownload: (filePath: string, destFolder: string) => ipcRenderer.invoke('downloads:move', filePath, destFolder),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-  saveFile: (filename: string, content: string) => ipcRenderer.invoke('dialog:save-file', filename, content),
-  openFile: (extensions?: string[]) => ipcRenderer.invoke('dialog:open-file', extensions),
-  exportPlaylist: (destDir: string, folderName: string, items: { path: string; exportName: string }[]) => ipcRenderer.invoke('playlist:export', destDir, folderName, items),
 
-  // Library Organizer & Tag Search
-  searchBeatport: (artist: string, title: string) => ipcRenderer.invoke('tag:search-beatport', artist, title),
-  searchMusicBrainz: (artist: string, title: string) => ipcRenderer.invoke('tag:search-musicbrainz', artist, title),
-  organizeScan: (root: string, mode: string) => ipcRenderer.invoke('organize:scan', root, mode),
-  organizeApply: (root: string, actions: any[]) => ipcRenderer.invoke('organize:apply', root, actions),
-  organizeFillGenres: (root: string) => ipcRenderer.invoke('organize:fill-genres', root),
-  organizeFillGenresCancel: () => ipcRenderer.invoke('organize:fill-genres-cancel'),
-  onGenreProgress: (callback: (data: { current: number; total: number; file: string; genre: string | null }) => void) => { ipcRenderer.removeAllListeners('organize:genre-progress'); ipcRenderer.on('organize:genre-progress', (_, data) => callback(data)); },
 
   encryptString: (plain: string) => ipcRenderer.invoke('secure:encrypt', plain),
   decryptString: (stored: string) => ipcRenderer.invoke('secure:decrypt', stored),

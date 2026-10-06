@@ -322,18 +322,18 @@ export function createCapacitorAdapter() {
 			await Preferences.set({ key: "app_config", value: JSON.stringify(cfg) });
 			return true;
 		},
+
+
+		// Soulseek & Search
 		setUploadConfig: async (server: string, token: string) => {
 			await Preferences.set({ key: "server_url", value: server });
 			await Preferences.set({ key: "server_token", value: token });
 			return { success: true };
 		},
-
 		uploadTrack: async (filePath: string, _metadata: any) => {
 			emitLog(`[Mobile] Upload di ${filePath} avviato tramite API server.`);
 			return { success: true };
 		},
-
-		// Soulseek & Search
 		slskConnect: async (user: string, _pass: string) => {
 			emitStatus("connected");
 			emitLog(`[Mobile] Connessione a Soulseek simulata per l'utente ${user}`);
@@ -396,12 +396,6 @@ export function createCapacitorAdapter() {
 			return { success: true };
 		},
 
-		torrentSeed: async (_input: string | string[], _torrentName?: string) => {
-			emitLog(
-				`[Mobile] Seeding di torrent non supportato in background su mobile.`,
-			);
-			return { success: false };
-		},
 
 		// Ytdlp
 		ytdlpDownload: async (url: string) => {
@@ -411,41 +405,7 @@ export function createCapacitorAdapter() {
 			return { success: true };
 		},
 
-		// Local Files & Storage — same folders configured for peer sharing
-		// (scanFolders), not a separate app-private download dir: on mobile
-		// there is no local downloader, so the Library IS the shared folders.
-		listDownloads: async (extraRoots?: string[]) => {
-			const roots = (extraRoots || []).filter(Boolean);
-			const out: {
-				name: string;
-				path: string;
-				size: number;
-				isDir: boolean;
-			}[] = [];
-			for (const root of roots) {
-				try {
-					const found: { uri: string; name: string }[] = [];
-					await walkAudioFiles(root, "", found);
-					for (const f of found) {
-						let size = 0;
-						try {
-							size = (await Filesystem.stat({ path: f.uri })).size;
-						} catch {
-							/* ignore */
-						}
-						out.push({ name: f.name, path: f.uri, size, isDir: false });
-					}
-				} catch (e: any) {
-					emitLog(`[Mobile] Errore scansione libreria ${root}: ${e.message}`);
-				}
-			}
-			return out;
-		},
 
-		deleteDownload: async (filePath: string) => {
-			await Filesystem.deleteFile({ path: filePath });
-			return { success: true };
-		},
 
 		// Peer Daemon & Reverse Sockets
 		startPeer: async (config: {
@@ -624,20 +584,8 @@ export function createCapacitorAdapter() {
 			downloadProgressListeners.push(cb);
 		},
 
-		openDownload: async (_filePath: string) => {},
 		removeTorrent: async (_infoHash: string, _deleteFiles?: boolean) => {},
-		readTags: async (_filePath: string) => ({
-			title: "",
-			artist: "",
-			album: "",
-		}),
-		getTracksMeta: async (_paths: string[]) => ({}),
-		setTrackAnalysis: async (_filePath: string, _data: any) => {},
 		saveRecording: async (_filename: string, _data: Uint8Array) => {},
-		readAudioFile: async (_filePath: string) => new Uint8Array(),
-		writeTags: async (_filePath: string, _tags: any) => {},
-		renameDownload: async (_filePath: string, _newFilename: string) => {},
-		moveDownload: async (_filePath: string, _destFolder: string) => {},
 		pickFolder: async () => {
 			try {
 				const { uri } = await FolderPicker.pick();
@@ -646,24 +594,7 @@ export function createCapacitorAdapter() {
 				return "";
 			}
 		},
-		saveFile: async (_filename: string, _content: string) => "",
-		openFile: async () => "",
-		exportPlaylist: async (
-			_destDir: string,
-			_folderName: string,
-			_items: any[],
-		) => {},
 
-		// Library Organizer & Tag Search
-		searchBeatport: async (_artist: string, _title: string) => [],
-		searchMusicBrainz: async (_artist: string, _title: string) => [],
-		organizeScan: async (_root: string, _mode: string) => ({ actions: [] }),
-		organizeApply: async (_root: string, _actions: any[]) => ({
-			success: true,
-		}),
-		organizeFillGenres: async (_root: string) => {},
-		organizeFillGenresCancel: async () => {},
-		onGenreProgress: (_cb: any) => {},
 
 		encryptString: async (plain: string) => plain,
 		decryptString: async (stored: string) => stored,
