@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.31.1] - 2026-11-20
+
+### Changed
+
+- **Performance Optimizations**:
+  - **Peer Daemon (`electron/peer/daemon.ts`)**: Added an in-memory metadata cache keyed by file path, `mtimeMs`, and file size; enabled `skipCovers: true` in `music-metadata` to avoid decoding multi-megabyte embedded album art buffers during folder scans; parallelized recursive subfolder traversal in `walkDir`; and prevented duplicate backpressure timers when a read stream is already paused.
+  - **Network Explorer & Search (`src/App.tsx`, `electron/providers/search.ts`)**: Parallelized `getNetworkPeers` and `getCommunitySites` requests on Network tab load; avoided wiping and re-fetching the peer list on every tab switch when already loaded; deduplicated concurrent SoundCloud `client_id` scrapes; and memoized `filteredPeerTracks`, `browserView` ($O(1)$ audio queue index lookup instead of $O(N^2)$ `indexOf`), and `activeDownloadsById` ($O(1)$ `Map` lookup instead of $O(N \times M)$ `.find()`) so 1Hz playback `timeupdate` ticks don't re-run list filtering.
+
 ## [0.31.0] - 2026-10-06
 
 ### Removed

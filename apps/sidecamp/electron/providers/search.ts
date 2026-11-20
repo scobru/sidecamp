@@ -5,40 +5,47 @@ const CLIENT_ID_REGEX = /[{,]client_id:"(\w+)"/;
 const SNDCDN_SCRIPT_URL_REGEX = /https?:\/\/[^\s"]*sndcdn\.com[^\s"]*\.js/g;
 
 let cachedClientId: string | null = null;
+let clientIdPromise: Promise<string> | null = null;
 
 async function getSoundCloudClientId(): Promise<string> {
     if (cachedClientId) return cachedClientId;
-    try {
-        const homeRes = await fetch(SOUNDCLOUD_URL, {
-            headers: { "User-Agent": USER_AGENT }
-        });
-        if (!homeRes.ok) throw new Error(`SC home fetch failed: ${homeRes.status}`);
-        const html = await homeRes.text();
-        
-        const scriptUrls = html.match(SNDCDN_SCRIPT_URL_REGEX) || [];
-        
-        for (const url of [...scriptUrls].reverse()) {
-            try {
-                const scriptRes = await fetch(url, {
-                    headers: { "User-Agent": USER_AGENT }
-                });
-                if (!scriptRes.ok) continue;
-                const body = await scriptRes.text();
-                const match = body.match(CLIENT_ID_REGEX);
-                if (match?.[1]) {
-                    cachedClientId = match[1];
-                    return match[1];
-                }
-            } catch { /* try next */ }
+    if (clientIdPromise) return clientIdPromise;
+    clientIdPromise = (async () => {
+        try {
+            const homeRes = await fetch(SOUNDCLOUD_URL, {
+                headers: { "User-Agent": USER_AGENT }
+            });
+            if (!homeRes.ok) throw new Error(`SC home fetch failed: ${homeRes.status}`);
+            const html = await homeRes.text();
+            
+            const scriptUrls = html.match(SNDCDN_SCRIPT_URL_REGEX) || [];
+            
+            for (const url of [...scriptUrls].reverse()) {
+                try {
+                    const scriptRes = await fetch(url, {
+                        headers: { "User-Agent": USER_AGENT }
+                    });
+                    if (!scriptRes.ok) continue;
+                    const body = await scriptRes.text();
+                    const match = body.match(CLIENT_ID_REGEX);
+                    if (match?.[1]) {
+                        cachedClientId = match[1];
+                        return match[1];
+                    }
+                } catch { /* try next */ }
+            }
+            throw new Error("Could not find client_id in script assets");
+        } catch (err) {
+            console.warn("SoundCloud Client ID scrape failed, checking environment variable:", err);
+            if (process.env.SOUNDCLOUD_CLIENT_ID) {
+                return process.env.SOUNDCLOUD_CLIENT_ID;
+            }
+            throw new Error("SoundCloud Client ID scrape failed and no SOUNDCLOUD_CLIENT_ID environment variable set");
+        } finally {
+            clientIdPromise = null;
         }
-        throw new Error("Could not find client_id in script assets");
-    } catch (err) {
-        console.warn("SoundCloud Client ID scrape failed, checking environment variable:", err);
-        if (process.env.SOUNDCLOUD_CLIENT_ID) {
-            return process.env.SOUNDCLOUD_CLIENT_ID;
-        }
-        throw new Error("SoundCloud Client ID scrape failed and no SOUNDCLOUD_CLIENT_ID environment variable set");
-    }
+    })();
+    return clientIdPromise;
 }
 
 export async function searchSoundCloud(query: string): Promise<any[]> {

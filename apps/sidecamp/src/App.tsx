@@ -441,7 +441,7 @@ function App() {
 	}, []);
 
 	useEffect(() => {
-		if (activeTab === "network") {
+		if (activeTab === "network" && networkPeers.length === 0 && !isLoadingPeers) {
 			loadNetworkPeers();
 		}
 	}, [activeTab]);
@@ -459,7 +459,13 @@ function App() {
 		setSelectedPeer(null);
 		setPeerTracks([]);
 		try {
-			const res = await window.electronAPI.getNetworkPeers(server, token);
+			const [res, sites] = await Promise.all([
+				window.electronAPI.getNetworkPeers(server, token),
+				window.electronAPI.getCommunitySites(server).catch((e: any) => {
+					console.error("Failed to load community sites:", e);
+					return [];
+				}),
+			]);
 			const serverPeer = {
 				id: "server",
 				username: "TuneCamp Server (Catalog)",
@@ -467,21 +473,15 @@ function App() {
 			};
 			// Federated instances' public catalogs (/api/catalog/full) — separate from
 			// peer-daemon sessions above, and not gated by any admin opt-in.
-			let federatedPeers: any[] = [];
-			try {
-				const sites = await window.electronAPI.getCommunitySites(server);
-				federatedPeers = (sites || [])
-					.filter((s: any) => s.federation !== "local")
-					.map((s: any) => ({
-						id: `fed_${s.url}`,
-						username: s.name || s.url,
-						origin: s.url,
-						isCatalog: true,
-						trackCount: 0,
-					}));
-			} catch (e: any) {
-				console.error("Failed to load community sites:", e);
-			}
+			const federatedPeers: any[] = (sites || [])
+				.filter((s: any) => s.federation !== "local")
+				.map((s: any) => ({
+					id: `fed_${s.url}`,
+					username: s.name || s.url,
+					origin: s.url,
+					isCatalog: true,
+					trackCount: 0,
+				}));
 			const allPeers = [serverPeer, ...federatedPeers, ...(res || [])];
 			setNetworkPeers(allPeers);
 			selectPeer(serverPeer);
@@ -1471,6 +1471,40 @@ function App() {
 		[dlLogs],
 	);
 
+	const activeDownloadsById = useMemo(
+		() => new Map(activeDownloads.map((d) => [d.id, d])),
+		[activeDownloads],
+	);
+
+	const browserView = useMemo(() => {
+		const q = browserSearch.toLowerCase().trim();
+		const visible = q
+			? browserEntries.filter((en) => en.name.toLowerCase().includes(q))
+			: browserEntries;
+		const isAudio = (n: string) =>
+			/\.(mp3|flac|wav|ogg|m4a|mp4|webm)$/i.test(n);
+		const audio = visible.filter((en) => !en.isDir && isAudio(en.name));
+		const audioIndexMap = new Map<string, number>();
+		const browserQueue = audio.map((en, idx) => {
+			audioIndexMap.set(en.name, idx);
+			return libraryQueueItem({
+				name: en.name,
+				path: `${browserRoot}${browserPath ? "/" + browserPath : ""}/${en.name}`,
+			});
+		});
+		return { visible, browserQueue, audioIndexMap };
+	}, [browserEntries, browserSearch, browserRoot, browserPath]);
+
+	const filteredPeerTracks = useMemo(() => {
+		const q = networkQuery.trim().toLowerCase();
+		if (!q) return peerTracks;
+		return peerTracks.filter((t) =>
+			`${t.title || ""} ${t.artist || ""} ${t.album || ""}`
+				.toLowerCase()
+				.includes(q),
+		);
+	}, [peerTracks, networkQuery]);
+
 	const browserRoots = [
 		...(downloadsDir ? [{ label: "Downloads", path: downloadsDir }] : []),
 		...validFolders.map((f) => ({
@@ -1902,23 +1936,11 @@ function App() {
 												}}
 											>
 												{(() => {
-													const visible = browserEntries.filter((en) =>
-														en.name
-															.toLowerCase()
-															.includes(browserSearch.toLowerCase().trim()),
-													);
-													const isAudio = (n: string) =>
-														/\.(mp3|flac|wav|ogg|m4a|mp4|webm)$/i.test(n);
-													const audio = visible.filter(
-														(en) => !en.isDir && isAudio(en.name),
-													);
-													const browserQueue = audio.map((en) =>
-														libraryQueueItem({
-															name: en.name,
-															path: `${browserRoot}${browserPath ? "/" + browserPath : ""}/${en.name}`,
-														}),
-													);
-													return visible.map((en, i) => (
+													const { visible, browserQueue, audioIndexMap } = browserView;
+													return visible.map((en, i) => {
+														const audioIdx = !en.isDir ? audioIndexMap.get(en.name) : undefined;
+														const canPlay = audioIdx !== undefined;
+														return (
 														<div
 															key={i}
 															style={{
@@ -1937,13 +1959,13 @@ function App() {
 																onClick={() =>
 																	en.isDir
 																		? openBrowserFolder(en.name)
-																		: isAudio(en.name) &&
-																			playAt(browserQueue, audio.indexOf(en))
+																		: canPlay &&
+																			playAt(browserQueue, audioIdx)
 																}
 																title={
 																	en.isDir
 																		? "Open folder"
-																		: isAudio(en.name)
+																		: canPlay
 																			? "Play"
 																			: undefined
 																}
@@ -1955,7 +1977,7 @@ function App() {
 																	minWidth: 0,
 																	minHeight: "36px",
 																	cursor:
-																		en.isDir || isAudio(en.name)
+																		en.isDir || canPlay
 																			? "pointer"
 																			: "default",
 																}}
@@ -2028,7 +2050,8 @@ function App() {
 																</button>
 															</div>
 														</div>
-													));
+														);
+													});
 												})()}
 												{browserEntries.length === 0 && (
 													<div
@@ -2798,14 +2821,7 @@ function App() {
 									</div>
 								) : (
 									(() => {
-										const q = networkQuery.trim().toLowerCase();
-										const filtered = q
-											? peerTracks.filter((t) =>
-													`${t.title || ""} ${t.artist || ""} ${t.album || ""}`
-														.toLowerCase()
-														.includes(q),
-												)
-											: peerTracks;
+										const filtered = filteredPeerTracks;
 										return (
 											<>
 												<input
@@ -3051,9 +3067,7 @@ function App() {
 									) : (
 										<div className="mobile-track-list" style={{ maxHeight: "55vh", overflowY: "auto", paddingRight: "4px" }}>
 											{searchResults.map((res, i) => {
-												const dl = activeDownloads.find(
-													(d) => d.id === res.id,
-												);
+												const dl = activeDownloadsById.get(res.id);
 												const busy = dl && dl.status === "downloading";
 												const name =
 													res.title ||

@@ -12,6 +12,7 @@ export interface PeerConfig {
 }
 
 export class PeerDaemon extends EventEmitter {
+    private static metadataCache: Map<string, { mtimeMs: number; size: number; title: string; artist: string; album: string; duration: number; mimeType: string; bitrate: number }> = new Map();
     private config: PeerConfig;
     private ws: WebSocket | null = null;
     private fileIndex: Map<string, any> = new Map();
@@ -60,28 +61,41 @@ export class PeerDaemon extends EventEmitter {
         let processed = 0;
 
         const musicMetadata = await import("music-metadata");
-        const CONCURRENCY = 8;
+        const CONCURRENCY = 12;
         for (let i = 0; i < files.length; i += CONCURRENCY) {
             const batch = files.slice(i, i + CONCURRENCY);
             await Promise.all(batch.map(async (file) => {
                 try {
-                    const [metadata, stat] = await Promise.all([
-                        musicMetadata.parseFile(file),
-                        fs.promises.stat(file)
-                    ]);
+                    const stat = await fs.promises.stat(file);
+                    const ext = path.extname(file).substring(1).toLowerCase();
+                    let cached = PeerDaemon.metadataCache.get(file);
+                    if (!cached || cached.mtimeMs !== stat.mtimeMs || cached.size !== stat.size) {
+                        const metadata = await musicMetadata.parseFile(file, { duration: true, skipCovers: true });
+                        cached = {
+                            mtimeMs: stat.mtimeMs,
+                            size: stat.size,
+                            title: metadata.common.title || path.basename(file, path.extname(file)),
+                            artist: metadata.common.artist || 'Unknown Artist',
+                            album: metadata.common.album || 'Unknown Album',
+                            duration: metadata.format.duration || 0,
+                            mimeType: metadata.format.container || ext,
+                            bitrate: metadata.format.bitrate || 0,
+                        };
+                        PeerDaemon.metadataCache.set(file, cached);
+                    }
 
                     const trackData = {
                         id: crypto.createHash('md5').update(file).digest('hex'),
                         path: file,
-                        title: metadata.common.title || path.basename(file, path.extname(file)),
-                        artist: metadata.common.artist || 'Unknown Artist',
-                        album: metadata.common.album || 'Unknown Album',
-                        duration: metadata.format.duration || 0,
+                        title: cached.title,
+                        artist: cached.artist,
+                        album: cached.album,
+                        duration: cached.duration,
                         sizeBytes: stat.size,
                         fileSizeBytes: stat.size,
-                        format: path.extname(file).substring(1).toLowerCase(),
-                        mimeType: metadata.format.container || path.extname(file).substring(1).toLowerCase(),
-                        bitrate: metadata.format.bitrate || 0,
+                        format: ext,
+                        mimeType: cached.mimeType,
+                        bitrate: cached.bitrate,
                         allowDownload: this.config.allowDownloads,
                         magnetUri: this.getMagnetUriForFile ? this.getMagnetUriForFile(file) : undefined
                     };
@@ -104,13 +118,17 @@ export class PeerDaemon extends EventEmitter {
     private async walkDir(dir: string, files: string[] = []) {
         try {
             const list = await fs.promises.readdir(dir, { withFileTypes: true });
+            const subDirs: string[] = [];
             for (const item of list) {
                 const itemPath = path.join(dir, item.name);
                 if (item.isDirectory()) {
-                    await this.walkDir(itemPath, files);
+                    subDirs.push(itemPath);
                 } else {
                     files.push(itemPath);
                 }
+            }
+            if (subDirs.length > 0) {
+                await Promise.all(subDirs.map(d => this.walkDir(d, files)));
             }
         } catch (e) {}
     }
@@ -462,7 +480,7 @@ export class PeerDaemon extends EventEmitter {
     private static readonly BACKPRESSURE_THRESHOLD = 4 * 1024 * 1024;
 
     private applyBackpressure(stream: fs.ReadStream, getBufferedAmount: () => number) {
-        if (getBufferedAmount() <= PeerDaemon.BACKPRESSURE_THRESHOLD) return;
+        if (stream.isPaused() || getBufferedAmount() <= PeerDaemon.BACKPRESSURE_THRESHOLD) return;
         stream.pause();
         const check = () => {
             if (stream.destroyed) return;
