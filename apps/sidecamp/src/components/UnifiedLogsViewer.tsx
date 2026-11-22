@@ -92,8 +92,8 @@ export function UnifiedLogsViewer({
 		<div className="unified-logs-card">
 			<div className="unified-logs-header">
 				<div className="unified-logs-title-group">
-					<Terminal size={18} style={{ color: "var(--primary)" }} />
-					<h3 style={{ margin: 0, fontSize: "1.05rem", fontFamily: "var(--font-headings)" }}>
+					<Terminal size={15} style={{ color: "var(--primary)" }} />
+					<h3 style={{ margin: 0, fontSize: "0.86rem", fontFamily: "var(--font-headings)" }}>
 						Activity & Terminal Logs
 					</h3>
 					<span className="unified-logs-badge">

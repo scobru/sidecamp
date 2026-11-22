@@ -123,7 +123,7 @@ Or trigger the workflow manually (`workflow_dispatch`) to just build and upload 
 - **Providers** (`apps/sidecamp/electron/providers/`): Soulseek, Torrent, yt-dlp, Internet Archive, and network modules.
 - **Uploader** (`apps/sidecamp/electron/uploader/`): Uploads files to TuneCamp.
 - **Peer** (`apps/sidecamp/electron/peer/`): Reverse tunnel & WebRTC DataChannel engine for zero-config P2P file sharing.
-- **Frontend** (`apps/sidecamp/src/`): React + Vite UI rendered inside the Electron window and mobile Capacitor runtime.
+- **Frontend** (`apps/sidecamp/src/`): React + Vite UI rendered inside the Electron window.
 
 ## Ecosystem
 

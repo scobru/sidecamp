@@ -16,28 +16,28 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_STYLES: Record<Variant, CSSProperties> = {
   primary: {
-    background: 'linear-gradient(135deg, var(--primary, #a855f7) 0%, #ec4899 100%)',
-    color: '#ffffff',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    boxShadow: '0 2px 10px rgba(168, 85, 247, 0.25)',
+    background: 'var(--primary)',
+    color: 'var(--tc-color-primary-content, #ffffff)',
+    border: '1px solid transparent',
+    boxShadow: 'none',
   },
   secondary: {
     background: 'rgba(255, 255, 255, 0.05)',
     color: 'var(--text-main, #ffffff)',
     border: '1px solid var(--glass-border, rgba(255, 255, 255, 0.12))',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
+    boxShadow: 'none',
   },
   accent: {
-    background: 'linear-gradient(135deg, var(--accent, #06b6d4) 0%, var(--primary, #a855f7) 100%)',
-    color: '#ffffff',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    boxShadow: '0 2px 10px rgba(6, 182, 212, 0.25)',
+    background: 'var(--accent)',
+    color: 'var(--tc-color-primary-content, #ffffff)',
+    border: '1px solid transparent',
+    boxShadow: 'none',
   },
   danger: {
-    background: 'var(--danger, #ef4444)',
-    color: '#ffffff',
-    border: 'none',
-    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+    background: 'color-mix(in srgb, var(--danger) 15%, transparent)',
+    color: 'var(--danger)',
+    border: '1px solid color-mix(in srgb, var(--danger) 35%, transparent)',
+    boxShadow: 'none',
   },
   ghost: {
     background: 'transparent',
@@ -47,9 +47,9 @@ const VARIANT_STYLES: Record<Variant, CSSProperties> = {
 };
 
 const SIZE_STYLES: Record<Size, CSSProperties> = {
-  sm: { padding: '0.4rem 0.8rem', fontSize: '0.82rem', borderRadius: '8px' },
-  md: { padding: '0.55rem 1.15rem', fontSize: '0.88rem', borderRadius: '10px' },
-  lg: { padding: '0.75rem 1.5rem', fontSize: '0.98rem', borderRadius: '12px' },
+  sm: { padding: '0.3rem 0.62rem', fontSize: '0.76rem', borderRadius: '6px' },
+  md: { padding: '0.42rem 0.85rem', fontSize: '0.8rem', borderRadius: '6px' },
+  lg: { padding: '0.55rem 1.1rem', fontSize: '0.88rem', borderRadius: '7px' },
 };
 
 export function Button({

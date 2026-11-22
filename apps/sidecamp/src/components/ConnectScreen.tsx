@@ -37,9 +37,8 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
 
     setLoading(true);
     try {
-      // Goes through window.electronAPI (Electron IPC / CapacitorHttp native
-      // request) rather than a plain fetch(), so it isn't blocked by the
-      // Android webview's CORS restrictions.
+      // Goes through Electron IPC rather than renderer fetch() to avoid
+      // cross-origin restrictions when talking to remote TuneCamp instances.
       const data = await window.electronAPI.authConnect(server, mode, username, password);
       onConnected(server, data.token);
     } catch (err: any) {
@@ -59,13 +58,13 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
   };
 
   return (
-    <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <div className="glass-card" style={{ maxWidth: '420px', width: '100%', margin: 'auto', padding: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-          <img src={logo} alt="Sidecamp" style={{ width: '48px', height: '48px', borderRadius: '10px' }} />
+    <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div className="glass-card" style={{ maxWidth: '380px', width: '100%', margin: 'auto', padding: '1.4rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '1.1rem' }}>
+          <img src={logo} alt="Sidecamp" style={{ width: '34px', height: '34px', borderRadius: '8px' }} />
           <div>
-            <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)' }}>Sidecamp</h2>
-            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Connect to a TuneCamp instance</p>
+            <h2 style={{ margin: 0, fontFamily: 'var(--font-headings)', fontSize: '1.15rem' }}>Sidecamp</h2>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.78rem' }}>Connect to a TuneCamp instance</p>
           </div>
         </div>
 
@@ -81,11 +80,11 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
             />
           </div>
 
-          <div className="btn-group" style={{ marginBottom: '1rem' }}>
-            <Button type="button" variant={mode === 'register' ? 'primary' : 'secondary'} onClick={() => setMode('register')}>
+          <div className="btn-group" style={{ marginBottom: '0.7rem' }}>
+            <Button type="button" size="sm" variant={mode === 'register' ? 'primary' : 'secondary'} onClick={() => setMode('register')}>
               Register
             </Button>
-            <Button type="button" variant={mode === 'login' ? 'primary' : 'secondary'} onClick={() => setMode('login')}>
+            <Button type="button" size="sm" variant={mode === 'login' ? 'primary' : 'secondary'} onClick={() => setMode('login')}>
               Log In
             </Button>
           </div>
@@ -111,25 +110,25 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
             />
           </div>
 
-          {error && <p style={{ color: 'var(--danger, #e5484d)', fontSize: '0.85rem' }}>{error}</p>}
+          {error && <p style={{ color: 'var(--danger, #e5484d)', fontSize: '0.78rem', marginBottom: '0.5rem' }}>{error}</p>}
 
-          <div className="btn-group" style={{ marginTop: '1rem' }}>
+          <div className="btn-group" style={{ marginTop: '0.85rem' }}>
             <Button type="submit" variant="primary" disabled={loading}>
               {loading ? 'Connecting…' : mode === 'register' ? 'Create Account' : 'Log In'}
             </Button>
           </div>
         </form>
 
-        <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+        <div style={{ marginTop: '1rem', borderTop: '1px solid var(--glass-border)', paddingTop: '0.75rem' }}>
           <button
             type="button"
             onClick={() => setShowManual(s => !s)}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.76rem', cursor: 'pointer', padding: 0 }}
           >
             {showManual ? '▾' : '▸'} Advanced: paste an existing JWT token
           </button>
           {showManual && (
-            <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ marginTop: '0.6rem' }}>
               <div className="form-group">
                 <input
                   type="password"
@@ -139,7 +138,7 @@ export default function ConnectScreen({ onConnected }: ConnectScreenProps) {
                   className="glass-input"
                 />
               </div>
-              <Button type="button" variant="secondary" onClick={handleManualConnect}>
+              <Button type="button" size="sm" variant="secondary" onClick={handleManualConnect}>
                 Connect with Token
               </Button>
             </div>

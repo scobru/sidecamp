@@ -78,4 +78,30 @@ describe('ProgressBar Component', () => {
     const wrapper = container.querySelector('.progress-container');
     expect(wrapper).toHaveClass('custom-class');
   });
+
+  it('renders speed in meta when label is omitted', () => {
+    render(
+      <ProgressBar
+        progress={0.4}
+        speed="DL: 2.5 MB/s"
+        downloaded={2 * 1024 * 1024}
+        total={5 * 1024 * 1024}
+      />
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    expect(screen.getByText('DL: 2.5 MB/s')).toBeInTheDocument();
+    expect(screen.getByText('40.0%')).toBeInTheDocument();
+  });
+
+  it('renders indeterminate progressbar without percentage text', () => {
+    render(<ProgressBar progress={0} indeterminate={true} />);
+
+    const progressBar = screen.getByRole('progressbar');
+    expect(progressBar).toBeInTheDocument();
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
 });

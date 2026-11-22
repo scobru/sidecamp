@@ -1,7 +1,7 @@
 {
   "name": "sidecamp",
   "private": true,
-  "version": "0.31.1",
+  "version": "0.32.0",
   "description": "Desktop companion app for TuneCamp — P2P content acquisition and peer file sharing.",
   "author": {
     "name": "scobru",
@@ -19,23 +19,12 @@
     "build:win": "npm run compile && electron-builder --win",
     "build:mac": "npm run compile && electron-builder --mac",
     "build:linux": "npm run compile && electron-builder --linux",
-    "build:mobile": "cross-env BUILD_TARGET=mobile vite build && cap sync",
-    "cap:sync": "cap sync",
-    "cap:add:android": "cap add android",
-    "cap:add:ios": "cap add ios",
-    "cap:open:android": "cap open android",
-    "cap:open:ios": "cap open ios",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@capacitor/app": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
-    "@capacitor/device": "^7.0.0",
-    "@capacitor/filesystem": "^7.0.0",
-    "@capacitor/preferences": "^7.0.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@types/fs-extra": "^11.0.4",
@@ -59,9 +48,6 @@
     "zen": "github:scobru/zen"
   },
   "devDependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/cli": "^7.0.0",
-    "@capacitor/ios": "^7.0.0",
     "@testing-library/dom": "^10.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -69,7 +55,6 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "cross-env": "^7.0.3",
     "electron": "43.1.0",
     "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",

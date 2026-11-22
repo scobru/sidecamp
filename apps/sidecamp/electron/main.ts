@@ -22,10 +22,9 @@ let win: BrowserWindow | null
 // Native menu mirrors the sidebar sections with Ctrl+1..9 accelerators.
 const NAV_SECTIONS: [string, string][] = [
   ['Search', 'download'],
-  ['Upload', 'upload'],
-  ['Graph', 'graph'],
   ['Network', 'network'],
   ['Sharing', 'peer'],
+  ['Upload', 'upload'],
   ['Settings', 'settings'],
 ];
 
@@ -62,8 +61,10 @@ function buildMenu() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 960,
+    height: 660,
+    minWidth: 720,
+    minHeight: 480,
     webPreferences: {
       preload: join(import.meta.dirname, 'preload.cjs'),
       nodeIntegration: false,

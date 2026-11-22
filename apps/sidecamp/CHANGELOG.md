@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0] - 2026-11-22
+
+### Removed
+
+- **Android / Capacitor mobile target.** Removed the redundant Capacitor mobile layer (`android/`, `ios/`, `capacitor.config.ts`, `src/services/platform/`, `@capacitor/*` and `cross-env` dependencies, mobile npm scripts, and the Android APK CI release job) now that the TuneCamp web app already covers mobile usage.
+
+### Changed
+
+- **Desktop UI/UX Overhaul.** Redesigned the Electron interface to be compact, flat, and edge-to-edge: slimmer sidebar (`176px` / `52px` collapsed) with unified footer theme/status controls, single slim header bar with contextual tab actions, compact hairline search/network/file rows, flat inline transfer progress bars, full-height split workspaces without wasted vertical space, and a `50px` audio player bar.
+
 ## [0.31.1] - 2026-11-20
 
 ### Changed

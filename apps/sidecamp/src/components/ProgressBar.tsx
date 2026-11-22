@@ -13,11 +13,11 @@ interface ProgressBarProps {
   indeterminate?: boolean;
 }
 
-export function ProgressBar({ 
-  progress = 0, 
-  label, 
-  speed, 
-  downloaded, 
+export function ProgressBar({
+  progress = 0,
+  label,
+  speed,
+  downloaded,
   total,
   animated = true,
   className = '',
@@ -35,7 +35,7 @@ export function ProgressBar({
     const end = Math.max(0, Math.min(1, progress));
     const startTime = Date.now();
     let frameId: number;
-    
+
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
@@ -50,7 +50,8 @@ export function ProgressBar({
   }, [progress]);
 
   const pct = (displayProgress * 100).toFixed(1);
-  
+  const hasMeta = downloaded !== undefined || total !== undefined || (!label && !!speed);
+
   return (
     <div className={`progress-container ${className}`}>
       {label && (
@@ -59,39 +60,43 @@ export function ProgressBar({
           {speed && <span className="progress-speed">{speed}</span>}
         </div>
       )}
-      <div className="progress-bar-track">
-        {indeterminate ? (
-          <div
-            className="progress-bar-fill indeterminate"
-            role="progressbar"
-            aria-label={label || 'Download progress'}
-          />
-        ) : (
-        <div 
-          ref={barRef}
-          className={`progress-bar-fill ${animated && progress > 0 && progress < 1 ? 'animated' : ''}`}
-          style={{ width: `${pct}%` }}
-          role="progressbar"
-          aria-valuenow={Math.round(displayProgress * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={label || 'Download progress'}
-        >
-          {showPercent && (
-            <span className="progress-percent" aria-hidden="true">{pct}%</span>
+      <div className="progress-bar-row">
+        <div className="progress-bar-track">
+          {indeterminate ? (
+            <div
+              className="progress-bar-fill indeterminate"
+              role="progressbar"
+              aria-label={label || 'Download progress'}
+            />
+          ) : (
+            <div
+              ref={barRef}
+              className={`progress-bar-fill ${animated && progress > 0 && progress < 1 ? 'animated' : ''}`}
+              style={{ width: `${pct}%` }}
+              role="progressbar"
+              aria-valuenow={Math.round(displayProgress * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={label || 'Download progress'}
+            />
           )}
         </div>
+        {!indeterminate && showPercent && (
+          <span className="progress-percent" aria-hidden="true">{pct}%</span>
         )}
       </div>
-      {(downloaded !== undefined || total !== undefined) && (
+      {hasMeta && (
         <div className="progress-meta">
-          {downloaded !== undefined && <span>{formatBytes(downloaded)}</span>}
-          {total !== undefined && (
-            <>
-              {downloaded !== undefined && <span className="divider">/</span>}
-              <span>{formatBytes(total)}</span>
-            </>
-          )}
+          <span className="progress-bytes">
+            {downloaded !== undefined && <span>{formatBytes(downloaded)}</span>}
+            {total !== undefined && (
+              <>
+                {downloaded !== undefined && <span className="divider"> / </span>}
+                <span>{formatBytes(total)}</span>
+              </>
+            )}
+          </span>
+          {!label && speed && <span className="progress-speed">{speed}</span>}
         </div>
       )}
     </div>

@@ -36,24 +36,13 @@ import {
 } from "./downloadPolicy";
 import "./index.css";
 import logo from "./assets/logo.png";
-
-import platformAPI, { currentPlatform } from "./services/platform";
 import ConnectScreen from "./components/ConnectScreen";
-
-const isCapacitor = currentPlatform.isCapacitor;
-
-// Shared collator: options are parsed once, not on every comparison.
 
 // Declare global for TypeScript
 declare global {
 	interface Window {
 		electronAPI: any;
 	}
-}
-
-// Fallback window.electronAPI to platformAPI for Capacitor / Web environments
-if (typeof window !== "undefined" && !window.electronAPI) {
-	window.electronAPI = platformAPI;
 }
 
 function cleanTrackMetadata(filename: string): { artist: string; title: string } {
@@ -150,11 +139,10 @@ function App() {
 	const autoUpload = localStorage.getItem("auto_upload") === "true";
 	const [peerStatus, setPeerStatus] = useState("offline");
 	const [logs, setLogs] = useState<string[]>([]);
-	const [activeTab, setActiveTab] = useState(
-		isCapacitor ? "network" : "download",
-	);
+	const [activeTab, setActiveTab] = useState("download");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<any[]>([]);
+	const [hasSearched, setHasSearched] = useState(false);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [theme, setTheme] = useState(
 		() => localStorage.getItem("theme") || "dark",
@@ -296,7 +284,7 @@ function App() {
 			setPeerStatus(status);
 		});
 
-		// Native menu "Go" items / Ctrl+1..9 accelerators
+		// Native menu "Go" items / Ctrl+1..5 accelerators
 		window.electronAPI.onNavGoto?.((tab: string) => setActiveTab(tab));
 
 		window.electronAPI
@@ -381,7 +369,7 @@ function App() {
 				: "";
 			setSlskPass(savedSlskPass);
 
-			if (!isCapacitor && savedSlskUser && savedSlskPass) {
+			if (savedSlskUser && savedSlskPass) {
 				await window.electronAPI
 					.slskConnect(savedSlskUser, savedSlskPass)
 					.then((connected: boolean) => {
@@ -668,7 +656,6 @@ function App() {
 			);
 		} finally {
 			setDownloadingTrackId(null);
-			// Removed setTimeout to keep items in queue for the Transfers tab
 		}
 	};
 
@@ -685,13 +672,7 @@ function App() {
 		setDuration(0);
 		setIsSeeking(false);
 		if (!audioRef.current) return;
-		// media:// and stream:// are custom Electron protocol schemes the mobile
-		// WebView can't resolve — the Capacitor adapter turns them into a real
-		// playable URL (native file src / blob URL); no-op on Electron.
-		const resolvedSrc = isCapacitor
-			? await window.electronAPI.resolvePlaybackSrc(src)
-			: src;
-		audioRef.current.src = resolvedSrc;
+		audioRef.current.src = src;
 		// AbortError fires whenever a newer load pre-empts this one (fast skip) — expected, not a real failure.
 		audioRef.current.play().catch((e) => {
 			if (e.name !== "AbortError") console.error("Playback failed:", e);
@@ -998,6 +979,7 @@ function App() {
 	};
 
 	const handleSearch = async () => {
+		setHasSearched(true);
 		setDlLogs((prev) => [
 			...prev,
 			`[Search] Starting search for "${searchQuery}" on ${searchSource.toUpperCase()}...`,
@@ -1006,19 +988,15 @@ function App() {
 			let res: any[] = [];
 			if (searchSource === "all") {
 				const promises = [
-					...(isCapacitor
-						? []
-						: [
-								window.electronAPI
-									.slskSearch(searchQuery)
-									.then((res: any[]) =>
-										res.map((r: any) => ({ ...r, source: "soulseek" })),
-									)
-									.catch((e: any) => {
-										console.error("Soulseek search failed:", e);
-										return [];
-									}),
-							]),
+					window.electronAPI
+						.slskSearch(searchQuery)
+						.then((res: any[]) =>
+							res.map((r: any) => ({ ...r, source: "soulseek" })),
+						)
+						.catch((e: any) => {
+							console.error("Soulseek search failed:", e);
+							return [];
+						}),
 					window.electronAPI
 						.searchWeb(searchQuery, "soundcloud")
 						.then((res: any[]) =>
@@ -1214,8 +1192,6 @@ function App() {
 			setActiveDownloads((prev) =>
 				prev.map((d) => (d.id === downloadId ? { ...d, status: "failed" } : d)),
 			);
-		} finally {
-			// Removed setTimeout to keep items in queue for the Transfers tab
 		}
 	};
 
@@ -1305,7 +1281,6 @@ function App() {
 			setIsDownloading(false);
 			setDlProgress(null);
 			setDirectUrl("");
-			// Removed setTimeout to keep items in queue for the Transfers tab
 		}
 	};
 
@@ -1555,6 +1530,10 @@ function App() {
 		);
 	}
 
+	const isFixedWorkspace = ["download", "network", "peer", "upload"].includes(
+		activeTab,
+	);
+
 	return (
 		<div className="app-container">
 			<div className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
@@ -1562,88 +1541,97 @@ function App() {
 					<img src={logo} className="logo-img" alt="Sidecamp Logo" />
 					{!sidebarCollapsed && <h1>Sidecamp</h1>}
 					<button
+						type="button"
 						className="sidebar-toggle"
 						onClick={() => setSidebarCollapsed((c) => !c)}
 						title={sidebarCollapsed ? "Expand" : "Collapse"}
 					>
-						<PanelLeft size={18} />
+						<PanelLeft size={16} />
 					</button>
 				</div>
 
 				<nav className="nav-menu">
-					{!isCapacitor && (
-						<button
-							className={`nav-item ${activeTab === "download" ? "active" : ""}`}
-							onClick={() => setActiveTab("download")}
-							title="Search & Download"
-						>
-							<span className="icon">
-								<Download size={18} />
-							</span>
-							<span className="nav-label">Search</span>
-						</button>
-					)}
 					<button
+						type="button"
+						className={`nav-item ${activeTab === "download" ? "active" : ""}`}
+						onClick={() => setActiveTab("download")}
+						title="Search & Download"
+					>
+						<span className="icon">
+							<Download size={16} />
+						</span>
+						<span className="nav-label">Search</span>
+					</button>
+					<button
+						type="button"
 						className={`nav-item ${activeTab === "network" ? "active" : ""}`}
 						onClick={() => setActiveTab("network")}
 						title="Network"
 					>
 						<span className="icon">
-							<Globe size={18} />
+							<Globe size={16} />
 						</span>
 						<span className="nav-label">Network</span>
 					</button>
 					<button
+						type="button"
 						className={`nav-item ${activeTab === "peer" ? "active" : ""}`}
 						onClick={() => setActiveTab("peer")}
 						title="Sharing — peer node & shared files"
 					>
 						<span className="icon">
-							<Radio size={18} />
+							<Radio size={16} />
 						</span>
 						<span className="nav-label">Sharing</span>
 					</button>
-					{!isCapacitor && (
-						<button
-							className={`nav-item ${activeTab === "upload" ? "active" : ""}`}
-							onClick={() => setActiveTab("upload")}
-							title="Upload to TuneCamp"
-						>
-							<span className="icon">
-								<Upload size={18} />
-							</span>
-							<span className="nav-label">Upload</span>
-						</button>
-					)}
 					<button
+						type="button"
+						className={`nav-item ${activeTab === "upload" ? "active" : ""}`}
+						onClick={() => setActiveTab("upload")}
+						title="Upload to TuneCamp"
+					>
+						<span className="icon">
+							<Upload size={16} />
+						</span>
+						<span className="nav-label">Upload</span>
+					</button>
+					<button
+						type="button"
 						className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
 						onClick={() => setActiveTab("settings")}
 						title="Settings"
 					>
 						<span className="icon">
-							<Settings size={18} />
+							<Settings size={16} />
 						</span>
 						<span className="nav-label">Settings</span>
 					</button>
 				</nav>
 
-				<button
-					type="button"
-					className="theme-selector-btn"
-					onClick={cycleTheme}
-					title={`Theme: ${theme.toUpperCase()} (Click to cycle)`}
-				>
-					<Palette size={16} style={{ flexShrink: 0 }} />
-					{!sidebarCollapsed && (
-						<span className="theme-label" style={{ textTransform: "capitalize" }}>
-							{theme.replace("-", " ")}
-						</span>
-					)}
-				</button>
+				<div className="sidebar-footer">
+					<button
+						type="button"
+						className="theme-selector-btn"
+						onClick={cycleTheme}
+						title={`Theme: ${theme.toUpperCase()} (Click to cycle)`}
+					>
+						<Palette size={15} style={{ flexShrink: 0 }} />
+						{!sidebarCollapsed && (
+							<span className="theme-label" style={{ textTransform: "capitalize" }}>
+								{theme.replace("-", " ")}
+							</span>
+						)}
+					</button>
 
-				<div className="status-indicator">
-					<div className={`status-dot ${peerStatus}`}></div>
-					{!sidebarCollapsed && <span>{peerStatus.toUpperCase()}</span>}
+					<button
+						type="button"
+						className="status-indicator"
+						onClick={() => setActiveTab("peer")}
+						title={`Peer sharing: ${peerStatus.toUpperCase()} (Open Sharing)`}
+					>
+						<span className={`status-dot ${peerStatus}`} />
+						{!sidebarCollapsed && <span>{peerStatus.toUpperCase()}</span>}
+					</button>
 				</div>
 			</div>
 
@@ -1653,418 +1641,1024 @@ function App() {
 						<h2 className="app-header-title">
 							{activeTab === "download" && (
 								<>
-									<Download size={20} style={{ color: "var(--primary)" }} />
+									<Download size={16} style={{ color: "var(--primary)" }} />
 									<span>Search & Download</span>
 								</>
 							)}
 							{activeTab === "network" && (
 								<>
-									<Globe size={20} style={{ color: "var(--accent)" }} />
+									<Globe size={16} style={{ color: "var(--accent)" }} />
 									<span>P2P Network</span>
 								</>
 							)}
 							{activeTab === "peer" && (
 								<>
-									<Radio size={20} style={{ color: "var(--primary)" }} />
+									<Radio size={16} style={{ color: "var(--primary)" }} />
 									<span>Shared Files</span>
 								</>
 							)}
 							{activeTab === "upload" && (
 								<>
-									<Upload size={20} style={{ color: "var(--primary)" }} />
+									<Upload size={16} style={{ color: "var(--primary)" }} />
 									<span>Upload to TuneCamp</span>
 								</>
 							)}
 							{activeTab === "settings" && (
 								<>
-									<Settings size={20} style={{ color: "var(--text-muted)" }} />
+									<Settings size={16} style={{ color: "var(--text-muted)" }} />
 									<span>Settings</span>
 								</>
 							)}
 						</h2>
 					</div>
 					<div className="app-header-right">
-						<button
-							type="button"
-							className="header-action-btn"
-							onClick={cycleTheme}
-							title="Switch color theme"
-						>
-							<Palette size={15} />
-							<span style={{ textTransform: "capitalize" }}>{theme.replace("-", " ")}</span>
-						</button>
-						<div
-							className="status-indicator"
-							style={{ padding: "0.35rem 0.75rem", fontSize: "0.74rem" }}
-						>
-							<div className={`status-dot ${peerStatus}`} />
-							<span>{peerStatus.toUpperCase()}</span>
-						</div>
+						{activeTab === "download" && (
+							<div className="downloader-subtabs">
+								<button
+									type="button"
+									className={`subtab-btn ${downloadSource === "soulseek" ? "active" : ""}`}
+									onClick={() => setDownloadSource("soulseek")}
+								>
+									Platforms
+								</button>
+								<button
+									type="button"
+									className={`subtab-btn ${downloadSource === "direct" ? "active" : ""}`}
+									onClick={() => setDownloadSource("direct")}
+								>
+									Direct Link / Torrent
+								</button>
+							</div>
+						)}
+						{activeTab === "network" && (
+							<Button
+								variant="secondary"
+								size="sm"
+								onClick={loadNetworkPeers}
+								disabled={isLoadingPeers}
+							>
+								{isLoadingPeers ? "Refreshing..." : "Refresh"}
+							</Button>
+						)}
+						{activeTab === "peer" && (
+							<div className="btn-group">
+								<Button
+									variant="primary"
+									size="sm"
+									onClick={handleStartPeer}
+									disabled={peerStatus === "online" || validFolders.length === 0}
+								>
+									Start Sharing
+								</Button>
+								<Button
+									variant="danger"
+									size="sm"
+									onClick={handleStopPeer}
+									disabled={peerStatus === "offline"}
+								>
+									Stop
+								</Button>
+							</div>
+						)}
+						{activeTab === "upload" && uploadQueue.length > 0 && (
+							<div className="btn-group">
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={uploadBusy}
+									onClick={() =>
+										setUploadQueue((q) => q.filter((x) => x.status !== "done"))
+									}
+								>
+									Clear done
+								</Button>
+								<Button
+									variant="primary"
+									size="sm"
+									disabled={uploadBusy}
+									onClick={uploadAll}
+								>
+									Upload all
+								</Button>
+							</div>
+						)}
+						{activeTab === "settings" && (
+							<div className="btn-group">
+								{settingsSaved && (
+									<span
+										style={{
+											color: "var(--accent)",
+											fontSize: "0.78rem",
+											fontWeight: 600,
+										}}
+									>
+										✓ Saved
+									</span>
+								)}
+								<Button variant="primary" size="sm" onClick={handleSaveSettings}>
+									Save Configuration
+								</Button>
+							</div>
+						)}
 					</div>
 				</header>
 
-				<div className="content-area">
+				<div className={`content-area ${isFixedWorkspace ? "workspace-fixed" : ""}`}>
 					{update?.updateAvailable && !updateDismissed && (
 						<div
 							className="glass-card"
 							style={{
 								display: "flex",
 								alignItems: "center",
-								gap: "10px",
-								padding: "0.6rem 1rem",
-								marginBottom: "1rem",
+								gap: "8px",
+								padding: "6px 10px",
+								flexShrink: 0,
 							}}
 						>
 							<ArrowUpCircle
-								size={18}
+								size={16}
 								style={{ color: "var(--accent, #4ade80)", flexShrink: 0 }}
 							/>
-							<span style={{ flex: 1, fontSize: "0.9rem" }}>
+							<span style={{ flex: 1, fontSize: "0.8rem" }}>
 								Sidecamp <strong>{update.latestVersion}</strong> is available
 								(you have {update.currentVersion}).
 							</span>
 							<Button
 								variant="primary"
-								style={{ padding: "0.35rem 0.8rem", fontSize: "0.8rem" }}
+								size="sm"
 								onClick={() => window.electronAPI.openReleasesPage()}
 							>
 								Download
 							</Button>
 							<Button
 								variant="secondary"
-								style={{ padding: "0.35rem 0.6rem", fontSize: "0.8rem" }}
+								size="sm"
 								onClick={() => setUpdateDismissed(true)}
 								title="Dismiss"
 							>
-								<X size={14} />
+								<X size={13} />
 							</Button>
 						</div>
 					)}
-					{activeTab === "peer" && (
-						<div className="glass-card">
+
+					{activeTab === "download" && (
+						<div className="download-workspace">
 							<div
+								className="glass-card search-pane"
 								style={{
-									display: "flex",
-									justifyContent: "space-between",
-									alignItems: "center",
-									marginBottom: "1rem",
+									flex:
+										downloadSource === "soulseek" && searchResults.length > 0
+											? "1 1 55%"
+											: "0 0 auto",
 								}}
 							>
-								<h3 style={{ margin: 0, fontSize: "1.15rem", fontFamily: "var(--font-headings)" }}>
-									Shared Files
-								</h3>
-							</div>
-							{browserRoots.length === 0 && (
-								<div
-									style={{ color: "var(--text-muted)", fontStyle: "italic", padding: "1rem 0" }}
-								>
-									No folders yet. Add shared folders in the "Configuration" tab.
-								</div>
-							)}
-							{browserRoots.length > 0 && (
-								<>
-									<div
-										style={{
-											display: "flex",
-											gap: "8px",
-											flexWrap: "wrap",
-											marginBottom: "1rem",
-										}}
-									>
-										{browserRoots.map((r, i) => {
-											const isRootActive = browserRoot === r.path;
-											return (
+								{downloadSource === "soulseek" && (
+									<>
+										<div className="platform-selector">
+											{[
+												{ id: "all", label: "All Platforms" },
+												{ id: "soulseek", label: "Soulseek" },
+												{ id: "soundcloud", label: "SoundCloud" },
+												{ id: "bandcamp", label: "Bandcamp" },
+												{ id: "torrent", label: "Torrent" },
+												{ id: "network", label: "Network" },
+												{ id: "archive", label: "Archive.org" },
+												{ id: "youtube", label: "YouTube" },
+											].map((p) => (
 												<button
-													key={i}
+													key={p.id}
 													type="button"
-													className={`platform-chip ${isRootActive ? "active" : ""}`}
-													style={{ padding: "6px 14px", fontSize: "0.82rem" }}
-													onClick={() => selectBrowserRoot(r.path)}
+													className={`platform-chip ${searchSource === p.id ? "active" : ""}`}
+													onClick={() => {
+														setSearchSource(p.id);
+														setSearchResults([]);
+														setHasSearched(false);
+													}}
 												>
-													<Folder size={14} /> {r.label}
+													{p.label}
 												</button>
-											);
-										})}
-									</div>
-									{browserRoot && (
-										<>
+											))}
+										</div>
+
+										<div className="search-bar">
+											<input
+												type="text"
+												value={searchQuery}
+												onChange={(e) => {
+													const val = e.target.value;
+													setSearchQuery(val);
+													if (!val.trim()) setHasSearched(false);
+												}}
+												placeholder={
+													searchSource === "all"
+														? "Search all platforms..."
+														: `Search on ${searchSource === "soulseek" ? "Soulseek" : searchSource === "soundcloud" ? "SoundCloud" : searchSource === "bandcamp" ? "Bandcamp" : searchSource === "network" ? "TuneCamp Network" : searchSource === "archive" ? "Archive.org" : searchSource === "youtube" ? "YouTube" : "Torrent"}...`
+												}
+												className="glass-input search-input"
+												onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+											/>
+											<Button variant="primary" size="sm" onClick={handleSearch}>
+												Search
+											</Button>
+										</div>
+
+										{searchResults.length === 0 && hasSearched && (
 											<div
 												style={{
-													display: "flex",
-													alignItems: "center",
-													gap: "8px",
-													marginBottom: "0.85rem",
-													background: "rgba(255, 255, 255, 0.03)",
-													padding: "6px 10px",
-													borderRadius: "10px",
-													border: "1px solid var(--glass-border)",
-													fontSize: "0.82rem",
+													marginTop: "6px",
+													fontSize: "0.76rem",
 													color: "var(--text-muted)",
 												}}
 											>
+												No results found.
+											</div>
+										)}
+
+										{searchResults.length > 0 && (
+											<div className="search-results-wrap">
+												<div className="compact-list">
+													{searchResults.map((res, i) => {
+														const dl = activeDownloadsById.get(res.id);
+														const busy = dl && dl.status === "downloading";
+														const name =
+															res.title ||
+															(res.file && res.file.split(/[/\\]/).pop()) ||
+															"Unknown Track";
+														// TuneCamp-sourced results (this instance's catalog, a
+														// federated one, a peer share) carry their release's
+														// distribution mode; everything else is unrestricted.
+														const verdict =
+															res.source === "catalog" ||
+															res.source === "instance" ||
+															res.source === "peer"
+																? resolveDownloadability(res)
+																: { downloadable: true };
+														const blocked = verdict.downloadable === false;
+														const refusal = (verdict as any).reason as
+															| DownloadRefusal
+															| undefined;
+														return (
+															<div
+																key={i}
+																className="compact-row"
+																onDoubleClick={() =>
+																	!busy && !blocked && handleDownload(res)
+																}
+															>
+																<div className="track-card-main">
+																	<div
+																		className="track-card-title"
+																		title={res.file || name}
+																	>
+																		{name}
+																	</div>
+																	<div className="track-card-subtitle">
+																		{res.source && (
+																			<span className="track-card-badge">
+																				{res.source}
+																			</span>
+																		)}
+																		{blocked && (
+																			<span
+																				className="track-card-badge track-card-badge-locked"
+																				title={downloadRefusalHint(refusal)}
+																			>
+																				{downloadBadgeLabel(refusal)}
+																			</span>
+																		)}
+																		{res.bitrate && (
+																			<span className="track-card-badge">
+																				{res.bitrate}
+																			</span>
+																		)}
+																		{res.size && (
+																			<span>
+																				{(res.size / 1024 / 1024).toFixed(1)} MB
+																			</span>
+																		)}
+																		{res.user && (
+																			<span style={{ opacity: 0.8 }}>
+																				• {res.user}
+																			</span>
+																		)}
+																	</div>
+																</div>
+																<div className="track-card-actions">
+																	{busy && dl ? (
+																		<span
+																			style={{
+																				fontSize: "0.72rem",
+																				color: "var(--accent)",
+																				fontWeight: 600,
+																				fontFamily: "var(--tc-font-family-mono)",
+																			}}
+																		>
+																			{((dl.progress || 0) * 100).toFixed(0)}%
+																		</span>
+																	) : (
+																		<button
+																			type="button"
+																			className="row-action-btn"
+																			title={
+																				blocked
+																					? downloadRefusalHint(refusal)
+																					: "Download"
+																			}
+																			disabled={blocked}
+																			onClick={() => handleDownload(res)}
+																			style={{
+																				opacity: blocked ? 0.35 : undefined,
+																				cursor: blocked ? "not-allowed" : undefined,
+																			}}
+																		>
+																			<Download size={14} />
+																		</button>
+																	)}
+																</div>
+															</div>
+														);
+													})}
+												</div>
+											</div>
+										)}
+									</>
+								)}
+
+								{downloadSource === "direct" && (
+									<div>
+										<div
+											style={{
+												fontSize: "0.76rem",
+												color: "var(--text-muted)",
+												marginBottom: "6px",
+											}}
+										>
+											Magnet Link (Torrent) or Web URL (SoundCloud, Bandcamp, YouTube, etc.)
+										</div>
+										<div className="search-bar">
+											<input
+												type="text"
+												value={directUrl}
+												onChange={(e) => setDirectUrl(e.target.value)}
+												placeholder="magnet:?xt=urn:btih:... or https://soundcloud.com/..."
+												className="glass-input search-input"
+												disabled={isDownloading}
+												onKeyDown={(e) =>
+													e.key === "Enter" && handleDirectDownload()
+												}
+											/>
+											<Button
+												variant="primary"
+												size="sm"
+												onClick={handleDirectDownload}
+												disabled={isDownloading || !directUrl}
+											>
+												{isDownloading ? "Downloading..." : "Download"}
+											</Button>
+										</div>
+
+										{dlProgress && (
+											<div style={{ marginTop: "8px" }}>
+												<ProgressBar
+													progress={dlProgress.progress || 0}
+													label={
+														dlProgress.id
+															? `Downloading: Torrent (${dlProgress.id.substring(0, 8)})`
+															: "Downloading..."
+													}
+													speed={
+														dlProgress.speed
+															? `${(dlProgress.speed / 1024 / 1024).toFixed(2)} MB/s`
+															: undefined
+													}
+													downloaded={dlProgress.downloaded}
+													total={dlProgress.total}
+													animated={true}
+													showPercent={true}
+												/>
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+
+							<div
+								className="glass-card transfers-pane"
+								style={{
+									flex:
+										downloadSource === "soulseek" && searchResults.length > 0
+											? "1 1 45%"
+											: "1 1 auto",
+								}}
+							>
+								<div className="pane-header">
+									<div className="pane-header-title">
+										<h3>Transfers</h3>
+										<span className="count-pill">{activeDownloads.length}</span>
+									</div>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={purgeFailedDownloads}
+									>
+										Purge Failed
+									</Button>
+								</div>
+
+								<div className="transfers-list">
+									{activeDownloads.map((dl) => {
+										const isDownloading = dl.status === "downloading";
+										const isSeeding = dl.status === "seeding";
+										const isCompleted = dl.status === "completed";
+										const isFailed = dl.status === "failed";
+										const progressVal =
+											dl.progress ?? (isCompleted || isSeeding ? 1 : 0);
+										const speedText =
+											isSeeding && dl.uploadSpeed
+												? `UL: ${(dl.uploadSpeed / 1024 / 1024).toFixed(1)} MB/s`
+												: dl.speed
+													? `DL: ${(dl.speed / 1024 / 1024).toFixed(1)} MB/s`
+													: undefined;
+
+										return (
+											<div key={dl.id} className="transfer-row">
+												<div className="transfer-row-top">
+													<div
+														className={`transfer-name ${isFailed ? "failed" : ""}`}
+														title={dl.name}
+													>
+														<span className="transfer-icon">
+															{dl.source === "soulseek" ? (
+																<Music size={14} />
+															) : dl.source === "torrent" ||
+																dl.source === "torrent_search" ? (
+																<Magnet size={14} />
+															) : dl.source === "server" ? (
+																<Cloud size={14} />
+															) : (
+																<Globe size={14} />
+															)}
+														</span>
+														<span className="transfer-title-text">{dl.name}</span>
+														{isFailed && (
+															<span className="transfer-badge failed">FAILED</span>
+														)}
+														{isDownloading && (
+															<span className="transfer-badge downloading">
+																DOWNLOADING
+															</span>
+														)}
+														{isSeeding && (
+															<span className="transfer-badge seeding">SEEDING</span>
+														)}
+														{isCompleted && (
+															<span className="transfer-badge completed">
+																COMPLETED
+															</span>
+														)}
+													</div>
+													<div className="transfer-actions">
+														{isSeeding && (
+															<Button
+																variant="secondary"
+																size="sm"
+																onClick={() =>
+																	handleStopTorrent(dl.infoHash || dl.id)
+																}
+															>
+																Stop Seeding
+															</Button>
+														)}
+														{isDownloading && (
+															<Button
+																variant="secondary"
+																size="sm"
+																onClick={() => handleCancelTorrent(dl)}
+															>
+																Cancel
+															</Button>
+														)}
+														{(isFailed || isDownloading) && dl.magnetUri && (
+															<Button
+																variant="primary"
+																size="sm"
+																onClick={() => handleResumeTorrent(dl)}
+															>
+																Resume
+															</Button>
+														)}
+														{(isFailed || isCompleted) && (
+															<Button
+																variant="secondary"
+																size="sm"
+																onClick={() => clearDownloadItem(dl.id)}
+															>
+																Clear
+															</Button>
+														)}
+													</div>
+												</div>
+
+												{(isDownloading ||
+													isSeeding ||
+													dl.progress !== undefined) && (
+													<ProgressBar
+														progress={progressVal}
+														indeterminate={
+															isDownloading && dl.progress === undefined
+														}
+														speed={speedText}
+														downloaded={dl.downloaded}
+														total={dl.total}
+														animated={isDownloading}
+														showPercent={true}
+													/>
+												)}
+											</div>
+										);
+									})}
+
+									{activeDownloads.length === 0 && (
+										<div className="empty-inline">
+											No active or failed transfers.
+										</div>
+									)}
+								</div>
+							</div>
+						</div>
+					)}
+
+					{activeTab === "network" && (
+						<div className="glass-card network-card">
+							{/* Left pane: Peers list */}
+							<div className="network-peers-pane">
+								<div className="pane-header">
+									<div className="pane-header-title">
+										<h3>Peers</h3>
+										<span className="count-pill">{networkPeers.length}</span>
+									</div>
+								</div>
+								{isLoadingPeers ? (
+									<div
+										style={{
+											textAlign: "center",
+											padding: "2rem 1rem",
+											color: "var(--text-muted)",
+										}}
+									>
+										<span
+											className="spinner"
+											style={{
+												display: "inline-block",
+												width: "18px",
+												height: "18px",
+												border: "2px solid var(--accent)",
+												borderTopColor: "transparent",
+												borderRadius: "50%",
+												animation: "spin 1s linear infinite",
+												marginBottom: "8px",
+											}}
+										/>
+										<div style={{ fontSize: "0.78rem" }}>Loading peers...</div>
+									</div>
+								) : networkPeers.length === 0 ? (
+									<div className="empty-inline">No peers online.</div>
+								) : (
+									<div className="peers-list">
+										{networkPeers.map((p) => {
+											const isSelected = selectedPeer?.id === p.id;
+											return (
+												<div
+													key={p.id}
+													className={`peer-row ${isSelected ? "active" : ""}`}
+													onClick={() => selectPeer(p)}
+												>
+													<div
+														style={{
+															display: "flex",
+															alignItems: "center",
+															gap: "7px",
+															minWidth: 0,
+															flex: 1,
+														}}
+													>
+														<span className="peer-row-icon">
+															{p.id === "server" ? (
+																<Cloud size={13} />
+															) : (
+																<User size={13} />
+															)}
+														</span>
+														<div style={{ minWidth: 0, flex: 1 }}>
+															<div
+																style={{
+																	fontWeight: 600,
+																	color: isSelected
+																		? "var(--primary)"
+																		: "var(--text-main)",
+																	fontSize: "0.79rem",
+																	whiteSpace: "nowrap",
+																	overflow: "hidden",
+																	textOverflow: "ellipsis",
+																}}
+																title={p.username || "Unknown"}
+															>
+																{p.username || "Unknown"}
+															</div>
+															{p.origin && (
+																<div
+																	style={{
+																		fontSize: "0.68rem",
+																		color: "var(--text-muted)",
+																		whiteSpace: "nowrap",
+																		overflow: "hidden",
+																		textOverflow: "ellipsis",
+																	}}
+																>
+																	{new URL(p.origin).hostname}
+																</div>
+															)}
+														</div>
+													</div>
+													<span className="count-pill">{p.trackCount || 0}</span>
+												</div>
+											);
+										})}
+									</div>
+								)}
+							</div>
+
+							{/* Right pane: Selected peer tracks */}
+							<div className="network-tracks-pane">
+								<div className="pane-header">
+									<div className="pane-header-title">
+										<h3>
+											{selectedPeer
+												? `Tracks shared by ${selectedPeer.username || "Unknown"}`
+												: "Browse Peer Tracks"}
+										</h3>
+									</div>
+									{peerTracks.length > 0 && (
+										<input
+											type="text"
+											value={networkQuery}
+											onChange={(e) => setNetworkQuery(e.target.value)}
+											placeholder={`Filter ${peerTracks.length} tracks...`}
+											className="glass-input"
+											style={{ maxWidth: "250px", padding: "0.3rem 0.6rem", fontSize: "0.78rem" }}
+										/>
+									)}
+								</div>
+								{isLoadingTracks ? (
+									<div
+										style={{
+											textAlign: "center",
+											padding: "3rem 1rem",
+											color: "var(--text-muted)",
+										}}
+									>
+										<span
+											className="spinner"
+											style={{
+												display: "inline-block",
+												width: "18px",
+												height: "18px",
+												border: "2px solid var(--primary)",
+												borderTopColor: "transparent",
+												borderRadius: "50%",
+												animation: "spin 1s linear infinite",
+												marginBottom: "8px",
+											}}
+										/>
+										<div style={{ fontSize: "0.8rem" }}>Loading tracks...</div>
+									</div>
+								) : !selectedPeer ? (
+									<div className="empty-inline">
+										Select a peer from the list on the left to browse their tracks.
+									</div>
+								) : peerTracks.length === 0 ? (
+									<div className="empty-inline">
+										No tracks shared by this peer.
+									</div>
+								) : (
+									<div className="compact-list">
+										{filteredPeerTracks.map((t, i) => {
+											const isCurrent =
+												currentPlayback?.name === `${t.artist} - ${t.title}`;
+											const isDownloading = downloadingTrackId === t.id;
+											// Streaming stays available either way; only the
+											// file transfer is withheld (see downloadPolicy.ts).
+											const blocked = (t as any).downloadable === false;
+											const refusal = (t as any).reason as
+												| DownloadRefusal
+												| undefined;
+											return (
+												<div
+													key={t.id || i}
+													className={`compact-row ${isCurrent ? "playing" : ""}`}
+													onDoubleClick={() => playNetworkTrack(selectedPeer, t)}
+												>
+													<button
+														type="button"
+														className="row-play-btn"
+														title="Play"
+														onClick={() => playNetworkTrack(selectedPeer, t)}
+													>
+														<Play size={12} style={{ marginLeft: "1px" }} />
+													</button>
+													<div className="track-card-main">
+														<div className="track-card-title" title={t.title}>
+															{t.title || "Unknown Title"}
+														</div>
+														<div className="track-card-subtitle">
+															<span>{t.artist || "Unknown Artist"}</span>
+															{t.album && (
+																<span style={{ opacity: 0.7 }}>• {t.album}</span>
+															)}
+															{t.format && (
+																<span className="track-card-badge">{t.format}</span>
+															)}
+															{blocked && (
+																<span
+																	className="track-card-badge track-card-badge-locked"
+																	title={downloadRefusalHint(refusal)}
+																>
+																	{downloadBadgeLabel(refusal)}
+																</span>
+															)}
+														</div>
+													</div>
+													<div className="track-card-actions">
+														<button
+															type="button"
+															className="row-action-btn"
+															title={
+																blocked
+																	? downloadRefusalHint(refusal)
+																	: isDownloading
+																		? "Downloading…"
+																		: "Download"
+															}
+															disabled={isDownloading || blocked}
+															onClick={() => handleDownloadPeerTrack(t)}
+															style={{
+																color: isDownloading ? "var(--accent)" : undefined,
+																opacity: blocked ? 0.35 : undefined,
+																cursor: blocked ? "not-allowed" : undefined,
+															}}
+														>
+															<Download size={14} />
+														</button>
+													</div>
+												</div>
+											);
+										})}
+										{filteredPeerTracks.length === 0 && (
+											<div className="no-results">
+												No tracks match "{networkQuery}".
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{activeTab === "peer" && (
+						<div className="glass-card browser-pane">
+							{validFolders.length === 0 && (
+								<div className="inline-notice">
+									<span>No shared folders configured — peer sharing disabled.</span>
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => setActiveTab("settings")}
+									>
+										Configure in Settings
+									</Button>
+								</div>
+							)}
+
+							{browserRoots.length === 0 ? (
+								<div className="empty-inline">
+									No folders yet. Add shared folders in Settings.
+								</div>
+							) : (
+								<>
+									<div className="browser-toolbar-top">
+										<div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+											{browserRoots.map((r, i) => {
+												const isRootActive = browserRoot === r.path;
+												return (
+													<button
+														key={i}
+														type="button"
+														title={r.path}
+														className={`platform-chip ${isRootActive ? "active" : ""}`}
+														onClick={() => selectBrowserRoot(r.path)}
+													>
+														<Folder size={13} /> {r.label}
+													</button>
+												);
+											})}
+										</div>
+										{browserRoot && (
+											<div className="browser-breadcrumb">
 												<Button
 													variant="secondary"
-													style={{
-														padding: "0.3rem 0.65rem",
-														fontSize: "0.78rem",
-														borderRadius: "8px",
-													}}
+													size="sm"
 													onClick={browserGoUp}
 													disabled={!browserPath}
 												>
-													<ChevronUp size={13} /> Up
+													<ChevronUp size={12} /> Up
 												</Button>
-												<span style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+												<span
+													style={{
+														fontFamily: "var(--tc-font-family-mono)",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														whiteSpace: "nowrap",
+													}}
+												>
 													{browserRoot.split(/[/\\]/).pop() || browserRoot}
 													{browserPath
 														? " / " + browserPath.replace(/\//g, " / ")
 														: ""}
 												</span>
 											</div>
-											{movingItem && (
-												<div
-													style={{
-														display: "flex",
-														alignItems: "center",
-														gap: "10px",
-														flexWrap: "wrap",
-														padding: "0.65rem 0.9rem",
-														marginBottom: "1rem",
-														background: "rgba(217, 70, 239, 0.12)",
-														border: "1px solid var(--primary)",
-														borderRadius: "10px",
-														fontSize: "0.85rem",
-													}}
-												>
-													<span>
-														Moving <strong>{movingItem.name}</strong> — navigate
-														to destination:
-													</span>
-													<Button
-														variant="primary"
-														style={{
-															padding: "0.3rem 0.75rem",
-															fontSize: "0.8rem",
-														}}
-														onClick={handleMoveHere}
-													>
-														Move here
-													</Button>
-													<Button
-														variant="secondary"
-														style={{
-															padding: "0.3rem 0.75rem",
-															fontSize: "0.8rem",
-														}}
-														onClick={() => setMovingItem(null)}
-													>
-														Cancel
-													</Button>
-												</div>
-											)}
-											<div
-												style={{
-													display: "flex",
-													gap: "8px",
-													marginBottom: "0.85rem",
-												}}
-											>
-												<input
-													type="text"
-													value={newFolderName}
-													onChange={(e) => setNewFolderName(e.target.value)}
-													placeholder="New subfolder name..."
-													className="glass-input"
-													style={{ flex: 1, padding: "0.55rem 0.85rem", fontSize: "0.85rem", borderRadius: "10px" }}
-													onKeyDown={(e) =>
-														e.key === "Enter" && handleCreateFolder()
-													}
-												/>
-												<Button
-													variant="primary"
-													onClick={handleCreateFolder}
-													disabled={!newFolderName.trim()}
-													style={{
-														display: "flex",
-														alignItems: "center",
-														gap: "6px",
-														padding: "0.55rem 0.9rem",
-														fontSize: "0.85rem",
-														borderRadius: "10px",
-														flexShrink: 0,
-													}}
-												>
-													<FolderPlus size={15} /> Create
-												</Button>
-											</div>
-											{browserError && (
-												<div
-													style={{
-														color: "#e74c3c",
-														fontSize: "0.85rem",
-														marginBottom: "0.75rem",
-													}}
-												>
-													{browserError}
-												</div>
-											)}
-											{browserEntries.length > 0 && (
+										)}
+									</div>
+
+									{browserRoot && (
+										<>
+											<div className="browser-toolbar-actions">
 												<input
 													type="text"
 													value={browserSearch}
 													onChange={(e) => setBrowserSearch(e.target.value)}
 													placeholder="Filter in this folder…"
 													className="glass-input"
-													style={{
-														width: "100%",
-														marginBottom: "0.75rem",
-														padding: "0.5rem 0.85rem",
-														fontSize: "0.85rem",
-														borderRadius: "10px",
-													}}
+													style={{ flex: 1 }}
 												/>
+												<input
+													type="text"
+													value={newFolderName}
+													onChange={(e) => setNewFolderName(e.target.value)}
+													placeholder="New subfolder..."
+													className="glass-input"
+													style={{ width: "185px" }}
+													onKeyDown={(e) =>
+														e.key === "Enter" && handleCreateFolder()
+													}
+												/>
+												<Button
+													variant="primary"
+													size="sm"
+													onClick={handleCreateFolder}
+													disabled={!newFolderName.trim()}
+												>
+													<FolderPlus size={13} /> Create
+												</Button>
+											</div>
+
+											{movingItem && (
+												<div
+													className="inline-notice"
+													style={{
+														background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+														color: "var(--text-main)",
+													}}
+												>
+													<span>
+														Moving <strong>{movingItem.name}</strong> — navigate to
+														destination
+													</span>
+													<div className="btn-group">
+														<Button
+															variant="primary"
+															size="sm"
+															onClick={handleMoveHere}
+														>
+															Move here
+														</Button>
+														<Button
+															variant="secondary"
+															size="sm"
+															onClick={() => setMovingItem(null)}
+														>
+															Cancel
+														</Button>
+													</div>
+												</div>
 											)}
-											{/* Scrollable folder list */}
-											<div
-												style={{
-													display: "flex",
-													flexDirection: "column",
-													gap: "6px",
-													maxHeight: "50vh",
-													overflowY: "auto",
-													paddingRight: "4px",
-												}}
-											>
+
+											{browserError && (
+												<div
+													className="inline-notice"
+													style={{ color: "var(--danger)" }}
+												>
+													{browserError}
+												</div>
+											)}
+
+											<div className="compact-list">
 												{(() => {
-													const { visible, browserQueue, audioIndexMap } = browserView;
+													const { visible, browserQueue, audioIndexMap } =
+														browserView;
 													return visible.map((en, i) => {
-														const audioIdx = !en.isDir ? audioIndexMap.get(en.name) : undefined;
+														const audioIdx = !en.isDir
+															? audioIndexMap.get(en.name)
+															: undefined;
 														const canPlay = audioIdx !== undefined;
 														return (
-														<div
-															key={i}
-															style={{
-																display: "flex",
-																alignItems: "center",
-																justifyContent: "space-between",
-																gap: "8px",
-																padding: "0.6rem 0.85rem",
-																background: "rgba(255, 255, 255, 0.03)",
-																border: "1px solid var(--glass-border)",
-																borderRadius: "10px",
-																transition: "all 0.15s ease",
-															}}
-														>
-															<div
-																onClick={() =>
-																	en.isDir
-																		? openBrowserFolder(en.name)
-																		: canPlay &&
-																			playAt(browserQueue, audioIdx)
-																}
-																title={
-																	en.isDir
-																		? "Open folder"
-																		: canPlay
-																			? "Play"
-																			: undefined
-																}
-																style={{
-																	display: "flex",
-																	alignItems: "center",
-																	gap: "10px",
-																	flex: 1,
-																	minWidth: 0,
-																	minHeight: "36px",
-																	cursor:
-																		en.isDir || canPlay
-																			? "pointer"
-																			: "default",
-																}}
-															>
-																<span
+															<div key={i} className="compact-row">
+																<div
+																	onClick={() =>
+																		en.isDir
+																			? openBrowserFolder(en.name)
+																			: canPlay && playAt(browserQueue, audioIdx)
+																	}
+																	title={
+																		en.isDir
+																			? "Open folder"
+																			: canPlay
+																				? "Play"
+																				: undefined
+																	}
 																	style={{
-																		display: "inline-flex",
+																		display: "flex",
 																		alignItems: "center",
-																		justifyContent: "center",
-																		width: "28px",
-																		height: "28px",
-																		borderRadius: "6px",
-																		background: en.isDir ? "rgba(217, 70, 239, 0.12)" : "rgba(6, 182, 212, 0.12)",
-																		color: en.isDir ? "var(--primary)" : "var(--accent)",
-																		flexShrink: 0,
-																	}}
-																>
-																	{en.isDir ? (
-																		<Folder size={15} />
-																	) : (
-																		<Music size={15} />
-																	)}
-																</span>
-																<span
-																	style={{
+																		gap: "8px",
 																		flex: 1,
-																		color: "var(--text-main)",
-																		fontSize: "0.88rem",
-																		fontWeight: en.isDir ? 600 : 400,
-																		wordBreak: "break-all",
+																		minWidth: 0,
+																		cursor:
+																			en.isDir || canPlay ? "pointer" : "default",
 																	}}
 																>
-																	{en.name}
-																</span>
-																{en.isDir && (
-																	<ChevronRight
-																		size={16}
-																		color="var(--text-muted)"
-																		style={{ flexShrink: 0 }}
-																	/>
-																)}
+																	<span
+																		className={`browser-entry-icon ${en.isDir ? "dir" : ""}`}
+																	>
+																		{en.isDir ? (
+																			<Folder size={13} />
+																		) : (
+																			<Music size={13} />
+																		)}
+																	</span>
+																	<span
+																		style={{
+																			flex: 1,
+																			color: "var(--text-main)",
+																			fontSize: "0.82rem",
+																			fontWeight: en.isDir ? 600 : 400,
+																			whiteSpace: "nowrap",
+																			overflow: "hidden",
+																			textOverflow: "ellipsis",
+																		}}
+																	>
+																		{en.name}
+																	</span>
+																	{en.isDir && (
+																		<ChevronRight
+																			size={14}
+																			color="var(--text-muted)"
+																			style={{ flexShrink: 0 }}
+																		/>
+																	)}
+																</div>
+																<div className="track-card-actions">
+																	<button
+																		type="button"
+																		onClick={() =>
+																			setMovingItem({
+																				root: browserRoot,
+																				path: browserPath,
+																				name: en.name,
+																				isDir: en.isDir,
+																			})
+																		}
+																		title={`Move ${en.isDir ? "folder" : "file"}`}
+																		className="row-action-btn"
+																	>
+																		<FolderSync size={13} />
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() =>
+																			handleDeleteEntry(en.name, en.isDir)
+																		}
+																		title={`Delete ${en.isDir ? "folder" : "file"}`}
+																		className="row-action-btn"
+																		style={{ color: "var(--danger)" }}
+																	>
+																		<Trash2 size={13} />
+																	</button>
+																</div>
 															</div>
-															<div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-																<button
-																	type="button"
-																	onClick={() =>
-																		setMovingItem({
-																			root: browserRoot,
-																			path: browserPath,
-																			name: en.name,
-																			isDir: en.isDir,
-																		})
-																	}
-																	title={`Move ${en.isDir ? "folder" : "file"}`}
-																	className="track-card-action-btn"
-																	style={{ width: "34px", height: "34px" }}
-																>
-																	<FolderSync size={15} />
-																</button>
-																<button
-																	type="button"
-																	onClick={() =>
-																		handleDeleteEntry(en.name, en.isDir)
-																	}
-																	title={`Delete ${en.isDir ? "folder" : "file"}`}
-																	className="track-card-action-btn"
-																	style={{ width: "34px", height: "34px", color: "var(--danger)" }}
-																>
-																	<Trash2 size={15} />
-																</button>
-															</div>
-														</div>
 														);
 													});
 												})()}
 												{browserEntries.length === 0 && (
-													<div
-														style={{
-															color: "var(--text-muted)",
-															fontStyle: "italic",
-															fontSize: "0.9rem",
-															padding: "1rem",
-															textAlign: "center",
-														}}
-													>
-														Empty folder.
-													</div>
+													<div className="empty-inline">Empty folder.</div>
 												)}
 											</div>
 										</>
@@ -2075,26 +2669,28 @@ function App() {
 					)}
 
 					{activeTab === "upload" && (
-						<div className="glass-card">
+						<div className="upload-workspace">
 							<div
 								onDragOver={(e) => e.preventDefault()}
 								onDrop={(e) => {
 									e.preventDefault();
 									addUploadFiles(e.dataTransfer.files);
 								}}
-								style={{
-									border: "2px dashed var(--glass-border)",
-									borderRadius: "var(--tc-radius-md)",
-									padding: "2rem",
-									textAlign: "center",
-									marginBottom: "1.5rem",
-								}}
+								className={`upload-dropzone ${uploadQueue.length > 0 ? "compact" : ""}`}
 							>
-								<p style={{ color: "var(--text-muted)", marginBottom: "1rem" }}>
+								<span
+									style={{
+										color: "var(--text-muted)",
+										fontSize: "0.8rem",
+										display: uploadQueue.length > 0 ? "inline" : "block",
+										marginBottom: uploadQueue.length > 0 ? 0 : "8px",
+									}}
+								>
 									Drop audio files here or choose them from disk.
-								</p>
+								</span>
 								<Button
 									variant="secondary"
+									size="sm"
 									onClick={() => uploadInputRef.current?.click()}
 								>
 									Choose files
@@ -2111,123 +2707,142 @@ function App() {
 									}}
 								/>
 							</div>
-							{uploadQueue.map((u) => (
-								<div
-									key={u.id}
-									className="glass-card"
-									style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}
-								>
-									<div
-										style={{
-											fontFamily: "monospace",
-											fontSize: "0.8rem",
-											color: "var(--text-muted)",
-											wordBreak: "break-all",
-											marginBottom: "0.5rem",
-										}}
-									>
-										{u.name}
-									</div>
-									<div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-										{(["title", "artist", "album"] as const).map((k) => (
-											<input
-												key={k}
-												type="text"
-												placeholder={k}
-												value={u[k]}
-												disabled={u.status === "uploading" || u.status === "done"}
-												onChange={(e) => patchUpload(u.id, { [k]: e.target.value })}
-												className="glass-input"
-												style={{ flex: "1 1 160px" }}
-											/>
-										))}
-										<Button
-											variant="primary"
-											disabled={u.status === "uploading" || u.status === "done"}
-											onClick={() => runUpload(u)}
-										>
-											{u.status === "uploading"
-												? "Uploading…"
-												: u.status === "done"
-													? "Done"
-													: u.status === "error"
-														? "Retry"
-														: "Upload"}
-										</Button>
-										<Button
-											variant="secondary"
-											disabled={u.status === "uploading"}
-											onClick={() =>
-												setUploadQueue((q) => q.filter((x) => x.id !== u.id))
-											}
-											title="Remove"
-										>
-											<X size={14} />
-										</Button>
-									</div>
-									{u.error && (
-										<div style={{ color: "var(--danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
-											{u.error}
-										</div>
-									)}
-								</div>
-							))}
+
 							{uploadQueue.length > 0 && (
-								<div className="btn-group" style={{ justifyContent: "flex-end" }}>
-									<Button
-										variant="secondary"
-										disabled={uploadBusy}
-										onClick={() => setUploadQueue((q) => q.filter((x) => x.status !== "done"))}
-									>
-										Clear done
-									</Button>
-									<Button variant="primary" disabled={uploadBusy} onClick={uploadAll}>
-										Upload all
-									</Button>
+								<div className="glass-card upload-queue-card">
+									{uploadQueue.map((u) => (
+										<div key={u.id} className="upload-row">
+											<div
+												style={{
+													fontFamily: "var(--tc-font-family-mono)",
+													fontSize: "0.74rem",
+													color: "var(--text-muted)",
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+												}}
+												title={u.name}
+											>
+												{u.name}
+											</div>
+											<div
+												style={{
+													display: "flex",
+													gap: "6px",
+													alignItems: "center",
+												}}
+											>
+												{(["title", "artist", "album"] as const).map((k) => (
+													<input
+														key={k}
+														type="text"
+														placeholder={k}
+														value={u[k]}
+														disabled={
+															u.status === "uploading" || u.status === "done"
+														}
+														onChange={(e) =>
+															patchUpload(u.id, { [k]: e.target.value })
+														}
+														className="glass-input"
+														style={{ flex: "1 1 120px" }}
+													/>
+												))}
+												<Button
+													variant="primary"
+													size="sm"
+													disabled={
+														u.status === "uploading" || u.status === "done"
+													}
+													onClick={() => runUpload(u)}
+												>
+													{u.status === "uploading"
+														? "Uploading…"
+														: u.status === "done"
+															? "Done"
+															: u.status === "error"
+																? "Retry"
+																: "Upload"}
+												</Button>
+												<Button
+													variant="secondary"
+													size="sm"
+													disabled={u.status === "uploading"}
+													onClick={() =>
+														setUploadQueue((q) => q.filter((x) => x.id !== u.id))
+													}
+													title="Remove"
+												>
+													<X size={13} />
+												</Button>
+											</div>
+											{u.error && (
+												<div
+													style={{
+														color: "var(--danger)",
+														fontSize: "0.74rem",
+													}}
+												>
+													{u.error}
+												</div>
+											)}
+										</div>
+									))}
 								</div>
 							)}
 						</div>
 					)}
 
 					{activeTab === "settings" && (
-						<>
-							<div
-								className="settings-section"
-								style={{ marginBottom: "2rem" }}
-							>
-								<h3 style={{ marginBottom: "1rem" }}>Connection to TuneCamp</h3>
-								<div className="form-group">
-									<label>Server URL</label>
-									<input
-										type="text"
-										value={server}
-										onChange={(e) => setServer(e.target.value)}
-										placeholder="https://my-tunecamp.com"
-										className="glass-input"
-									/>
+						<div className="settings-stack">
+							{/* Card 1: TuneCamp Connection */}
+							<div className="glass-card">
+								<div className="settings-card-header">
+									<h3>TuneCamp Connection</h3>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => {
+											localStorage.removeItem("tc_server");
+											localStorage.removeItem("tc_token");
+											setServer("");
+											setToken("");
+											setHasConnected(false);
+										}}
+									>
+										Disconnect / Switch Instance
+									</Button>
 								</div>
-								<div className="form-group">
-									<label>API Token / JWT</label>
-									<input
-										type="password"
-										value={token}
-										onChange={(e) => setToken(e.target.value)}
-										placeholder="Enter JWT token"
-										className="glass-input"
-									/>
+								<div className="settings-grid-2">
+									<div className="form-group">
+										<label>Server URL</label>
+										<input
+											type="text"
+											value={server}
+											onChange={(e) => setServer(e.target.value)}
+											placeholder="https://my-tunecamp.com"
+											className="glass-input"
+										/>
+									</div>
+									<div className="form-group">
+										<label>API Token / JWT</label>
+										<input
+											type="password"
+											value={token}
+											onChange={(e) => setToken(e.target.value)}
+											placeholder="Enter JWT token"
+											className="glass-input"
+										/>
+									</div>
 								</div>
 							</div>
 
-							{!isCapacitor && (
-								<div
-									className="settings-section"
-									style={{
-										marginBottom: "2rem",
-										borderTop: "1px solid var(--glass-border)",
-										paddingTop: "1.5rem",
-									}}
-								>
-									<h3 style={{ marginBottom: "1rem" }}>Soulseek Credentials</h3>
+							{/* Card 2: P2P & Storage */}
+							<div className="glass-card">
+								<div className="settings-card-header">
+									<h3>P2P & Storage</h3>
+								</div>
+								<div className="settings-grid-2" style={{ marginBottom: "0.7rem" }}>
 									<div className="form-group">
 										<label>Soulseek Username</label>
 										<input
@@ -2249,99 +2864,67 @@ function App() {
 										/>
 									</div>
 								</div>
-							)}
 
-							<div
-								className="settings-section"
-								style={{
-									marginBottom: "2rem",
-									borderTop: "1px solid var(--glass-border)",
-									paddingTop: "1.5rem",
-								}}
-							>
-								<h3 style={{ marginBottom: "1rem" }}>Torrent Settings</h3>
-								<div className="form-group">
-									<label>
-										Custom Port (0 = random, useful with VPNs like ProtonVPN
-										that pin a specific port)
-									</label>
-									<input
-										type="number"
-										value={torrentPort || ""}
-										onChange={(e) =>
-											setTorrentPort(
-												e.target.value ? parseInt(e.target.value) : 0,
-											)
-										}
-										placeholder="0"
-										className="glass-input"
-										style={{ width: "120px" }}
-									/>
-								</div>
-							</div>
-
-							<div
-								className="settings-section"
-								style={{
-									marginBottom: "2rem",
-									borderTop: "1px solid var(--glass-border)",
-									paddingTop: "1.5rem",
-								}}
-							>
-								<h3 style={{ marginBottom: "1rem" }}>Sidecamp Library Folder</h3>
-								<div className="form-group">
-									<label>
-										Where downloaded music is stored. Leave empty to use the
-										default Music folder. Takes effect after restarting
-										Sidecamp.
-									</label>
-									<div style={{ display: "flex", gap: "8px" }}>
+								<div
+									style={{
+										display: "flex",
+										gap: "10px",
+										alignItems: "flex-end",
+										marginBottom: "0.7rem",
+									}}
+								>
+									<div className="form-group" style={{ marginBottom: 0 }}>
+										<label>Torrent Port</label>
 										<input
-											type="text"
-											value={libraryDir}
-											onChange={(e) => setLibraryDir(e.target.value)}
-											placeholder="Default: Music folder"
+											type="number"
+											value={torrentPort || ""}
+											onChange={(e) =>
+												setTorrentPort(
+													e.target.value ? parseInt(e.target.value) : 0,
+												)
+											}
+											placeholder="0"
+											title="0 = random, useful with VPN port forwarding"
 											className="glass-input"
-											style={{ flex: 1 }}
+											style={{ width: "110px" }}
 										/>
-										<Button
-											variant="secondary"
-											onClick={handleBrowseLibraryDir}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "6px",
-												whiteSpace: "nowrap",
-											}}
-										>
-											<Folder size={16} /> Browse
-										</Button>
-										{libraryDir && (
+									</div>
+									<div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+										<label>
+											Sidecamp Library Folder (restart required after change)
+										</label>
+										<div style={{ display: "flex", gap: "6px" }}>
+											<input
+												type="text"
+												value={libraryDir}
+												onChange={(e) => setLibraryDir(e.target.value)}
+												placeholder="Default: Music folder"
+												className="glass-input"
+												style={{ flex: 1 }}
+											/>
 											<Button
 												variant="secondary"
-												onClick={() => setLibraryDir("")}
+												size="sm"
+												onClick={handleBrowseLibraryDir}
 											>
-												Reset
+												<Folder size={13} /> Browse
 											</Button>
-										)}
+											{libraryDir && (
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={() => setLibraryDir("")}
+												>
+													Reset
+												</Button>
+											)}
+										</div>
 									</div>
 								</div>
-							</div>
 
-							<div
-								className="settings-section"
-								style={{
-									marginBottom: "2rem",
-									borderTop: "1px solid var(--glass-border)",
-									paddingTop: "1.5rem",
-								}}
-							>
-								<h3 style={{ marginBottom: "1rem" }}>
-									Local Shared Folders (Peer Node)
-								</h3>
 								<div className="form-group">
-									<label>Music Folders to Share (comma-separated)</label>
-									<div style={{ display: "flex", gap: "8px" }}>
+									<label>Shared Music Folders (comma-separated)</label>
+									<div style={{ display: "flex", gap: "6px" }}>
 										<input
 											type="text"
 											value={folder}
@@ -2352,162 +2935,60 @@ function App() {
 										/>
 										<Button
 											variant="secondary"
+											size="sm"
 											onClick={handleBrowseFolder}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "6px",
-												whiteSpace: "nowrap",
-											}}
 										>
-											<Folder size={16} /> Browse
+											<Folder size={13} /> Browse
 										</Button>
 									</div>
 								</div>
 							</div>
 
-							<div className="btn-group" style={{ alignItems: "center" }}>
-								<Button variant="primary" onClick={handleSaveSettings}>
-									Save Configuration
-								</Button>
-								{settingsSaved && (
-									<span
-										style={{
-											color: "var(--accent)",
-											marginLeft: "1rem",
-											fontWeight: 600,
-										}}
-									>
-										✓ Configuration saved!
-									</span>
-								)}
-							</div>
+							{/* Card 3: Unified Logs */}
+							<UnifiedLogsViewer
+								libraryLogs={libraryLogs}
+								dlLogs={dlLogs}
+								peerLogs={logs}
+								onClearCategory={handleClearCategoryLogs}
+							/>
 
-							<div
-								className="settings-section"
-								style={{
-									marginBottom: "2rem",
-									borderTop: "1px solid var(--glass-border)",
-									paddingTop: "1.5rem",
-								}}
-							>
-								<UnifiedLogsViewer
-									libraryLogs={libraryLogs}
-									dlLogs={dlLogs}
-									peerLogs={logs}
-									onClearCategory={handleClearCategoryLogs}
-								/>
-							</div>
-
-							<div className="btn-group" style={{ marginTop: "1rem" }}>
-								<Button
-									variant="secondary"
-									onClick={() => {
-										localStorage.removeItem("tc_server");
-										localStorage.removeItem("tc_token");
-										setServer("");
-										setToken("");
-										setHasConnected(false);
+							{/* Card 4: Compact About Strip */}
+							<div className="glass-card">
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										gap: "12px",
+										marginBottom: "8px",
 									}}
 								>
-									Disconnect / Switch Instance
-								</Button>
-							</div>
-
-							{/* About */}
-							<div
-								style={{
-									maxWidth: "720px",
-									marginTop: "2.5rem",
-									borderTop: "1px solid var(--glass-border)",
-									paddingTop: "2rem",
-								}}
-							>
-								<div className="glass-card" style={{ marginBottom: "1.5rem" }}>
-									<div
-										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: "1.5rem",
-											marginBottom: "1.5rem",
-										}}
-									>
+									<div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
 										<img
 											src={logo}
 											alt="Sidecamp"
 											style={{
-												width: "64px",
-												height: "64px",
-												borderRadius: "12px",
+												width: "32px",
+												height: "32px",
+												borderRadius: "6px",
+												flexShrink: 0,
 											}}
 										/>
-										<div>
-											<h2
+										<div style={{ minWidth: 0 }}>
+											<div style={{ fontSize: "0.84rem", fontWeight: 600 }}>
+												Sidecamp v{update?.currentVersion ?? "…"} · Powered by{" "}
+												<span style={{ color: "var(--primary)" }}>TuneCamp</span>
+											</div>
+											<div
 												style={{
-													margin: 0,
-													fontFamily: "var(--font-headings)",
-													fontSize: "1.8rem",
-												}}
-											>
-												Sidecamp
-											</h2>
-											<p
-												style={{
-													margin: "4px 0 0",
+													fontSize: "0.75rem",
 													color: "var(--text-muted)",
-													fontSize: "0.9rem",
 												}}
 											>
-												Powered by{" "}
-												<span
-													style={{ color: "var(--primary)", fontWeight: 600 }}
-												>
-													TuneCamp
-												</span>
-											</p>
-											<p
-												style={{
-													margin: "4px 0 0",
-													color: "var(--text-muted)",
-													fontSize: "0.85rem",
-												}}
-											>
-												Version {update?.currentVersion ?? "…"}
-											</p>
+												Desktop companion for TuneCamp — P2P discovery (Soulseek, BitTorrent, yt-dlp) and peer file sharing.
+											</div>
 										</div>
 									</div>
-									<p
-										style={{
-											lineHeight: 1.7,
-											color: "var(--text-muted)",
-											marginBottom: "1rem",
-										}}
-									>
-										<strong style={{ color: "var(--text-main)" }}>
-											Sidecamp
-										</strong>{" "}
-										is a desktop companion app for{" "}
-										<strong style={{ color: "var(--primary)" }}>
-											TuneCamp
-										</strong>{" "}
-										— an independent music platform built for artists and
-										listeners who believe in open, decentralized music
-										distribution.
-									</p>
-									<p
-										style={{
-											lineHeight: 1.7,
-											color: "var(--text-muted)",
-											marginBottom: "1.2rem",
-										}}
-									>
-										With Sidecamp you can discover and download music from the
-										TuneCamp network
-										{!isCapacitor &&
-											" and from peer-to-peer sources (Soulseek, BitTorrent, YouTube)"}
-										 and share your collection back to the network as a peer
-										node — all from one place.
-									</p>
 									{update?.updateAvailable ? (
 										<Button
 											variant="primary"
@@ -2528,966 +3009,34 @@ function App() {
 										</Button>
 									)}
 								</div>
-
-								<div className="glass-card">
-									<h3
-										style={{
-											fontFamily: "var(--font-headings)",
-											marginBottom: "1rem",
-										}}
-									>
-										Tech stack
-									</h3>
-									<div
-										style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
-									>
-										{(isCapacitor
-											? [
-													"React 19",
-													"TypeScript",
-													"Vite",
-													"Capacitor",
-													"TuneCamp API",
-												]
-											: [
-													"Electron",
-													"React 19",
-													"TypeScript",
-													"Vite",
-													"Soulseek",
-													"WebTorrent",
-													"yt-dlp",
-													"node-id3",
-													"TuneCamp API",
-												]
-										).map((t) => (
-											<span
-												key={t}
-												style={{
-													padding: "4px 10px",
-													background: "rgba(179,102,255,0.12)",
-													border: "1px solid rgba(179,102,255,0.25)",
-													borderRadius: "20px",
-													fontSize: "0.8rem",
-													color: "var(--primary)",
-												}}
-											>
-												{t}
-											</span>
-										))}
-									</div>
+								<div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+									{[
+										"Electron",
+										"React 19",
+										"TypeScript",
+										"Vite",
+										"Soulseek",
+										"WebTorrent",
+										"yt-dlp",
+										"node-id3",
+										"TuneCamp API",
+									].map((t) => (
+										<span key={t} className="track-card-badge">
+											{t}
+										</span>
+									))}
 								</div>
-							</div>
-						</>
-					)}
-
-					{activeTab === "network" && (
-						<div
-							className="glass-card network-card"
-							style={{ display: "flex", gap: "2rem", minHeight: "450px" }}
-						>
-							{/* Left pane: Peers list */}
-							<div
-								className="network-peers-pane"
-								style={{
-									flex: "1",
-									borderRight: "1px solid var(--glass-border)",
-									paddingRight: "1.5rem",
-								}}
-							>
-								<div
-									style={{
-										display: "flex",
-										justifyContent: "space-between",
-										alignItems: "center",
-										marginBottom: "1.25rem",
-									}}
-								>
-									<h3
-										style={{
-											margin: 0,
-											fontSize: "1.15rem",
-											fontFamily: "var(--font-headings)",
-										}}
-									>
-										Connected Peers
-									</h3>
-									<Button
-										variant="secondary"
-										onClick={loadNetworkPeers}
-										disabled={isLoadingPeers}
-										style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
-									>
-										{isLoadingPeers ? "Refreshing..." : "Refresh"}
-									</Button>
-								</div>
-								{isLoadingPeers ? (
-									<div
-										style={{
-											textAlign: "center",
-											padding: "3rem 1rem",
-											color: "var(--text-muted)",
-										}}
-									>
-										<span
-											className="spinner"
-											style={{
-												display: "inline-block",
-												width: "20px",
-												height: "20px",
-												border: "3px solid var(--accent)",
-												borderTopColor: "transparent",
-												borderRadius: "50%",
-												animation: "spin 1s linear infinite",
-												marginBottom: "10px",
-											}}
-										></span>
-										<div style={{ fontSize: "0.9rem" }}>Loading peers...</div>
-									</div>
-								) : networkPeers.length === 0 ? (
-									<div
-										style={{
-											textAlign: "center",
-											padding: "3rem 1rem",
-											color: "var(--text-muted)",
-											fontStyle: "italic",
-											fontSize: "0.9rem",
-										}}
-									>
-										No peers online.
-									</div>
-								) : (
-									<div
-										className="peers-list"
-										style={{
-											display: "flex",
-											flexDirection: "column",
-											gap: "8px",
-										}}
-									>
-										{networkPeers.map((p) => {
-											const isSelected = selectedPeer?.id === p.id;
-											return (
-												<div
-													key={p.id}
-													className={`peer-row ${isSelected ? "active" : ""}`}
-													onClick={() => selectPeer(p)}
-													style={{
-														padding: "0.8rem 1rem",
-														background: isSelected
-															? "linear-gradient(135deg, rgba(217, 70, 239, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)"
-															: "rgba(255, 255, 255, 0.03)",
-														border: isSelected
-															? "1px solid var(--primary)"
-															: "1px solid var(--glass-border)",
-														borderRadius: "12px",
-														cursor: "pointer",
-														display: "flex",
-														justifyContent: "space-between",
-														alignItems: "center",
-														transition: "all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)",
-														boxShadow: isSelected
-															? "0 4px 16px rgba(217, 70, 239, 0.18)"
-															: "none",
-													}}
-												>
-													<div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
-														<div
-															style={{
-																width: "32px",
-																height: "32px",
-																borderRadius: "8px",
-																background: isSelected ? "var(--primary)" : "rgba(255,255,255,0.06)",
-																color: isSelected ? "#fff" : "var(--text-muted)",
-																display: "flex",
-																alignItems: "center",
-																justifyContent: "center",
-																flexShrink: 0,
-															}}
-														>
-															{p.id === "server" ? <Cloud size={16} /> : <User size={16} />}
-														</div>
-														<div style={{ minWidth: 0, flex: 1 }}>
-															<div
-																style={{
-																	fontWeight: 600,
-																	color: isSelected ? "var(--primary)" : "var(--text-main)",
-																	fontSize: "0.9rem",
-																	whiteSpace: "nowrap",
-																	overflow: "hidden",
-																	textOverflow: "ellipsis",
-																}}
-															>
-																{p.username || "Unknown"}
-															</div>
-															{p.origin && (
-																<div
-																	style={{
-																		fontSize: "0.72rem",
-																		color: "var(--text-muted)",
-																		whiteSpace: "nowrap",
-																		overflow: "hidden",
-																		textOverflow: "ellipsis",
-																	}}
-																>
-																	{new URL(p.origin).hostname}
-																</div>
-															)}
-														</div>
-													</div>
-													<span
-														style={{
-															fontSize: "0.74rem",
-															color: "var(--text-muted)",
-															background: "rgba(255, 255, 255, 0.06)",
-															padding: "2px 8px",
-															borderRadius: "9999px",
-															border: "1px solid rgba(255, 255, 255, 0.08)",
-															marginLeft: "8px",
-															flexShrink: 0,
-														}}
-													>
-														{p.trackCount || 0} tracks
-													</span>
-												</div>
-											);
-										})}
-									</div>
-								)}
-							</div>
-
-							{/* Right pane: Selected peer tracks */}
-							<div className="network-tracks-pane" style={{ flex: "2" }}>
-								<h3
-									style={{
-										marginBottom: "1.25rem",
-										fontSize: "1.15rem",
-										fontFamily: "var(--font-headings)",
-										borderBottom: "1px solid var(--glass-border)",
-										paddingBottom: "0.5rem",
-									}}
-								>
-									{selectedPeer
-										? `Tracks shared by ${selectedPeer.username || "Unknown"}`
-										: "Browse Peer Tracks"}
-								</h3>
-								{isLoadingTracks ? (
-									<div
-										style={{
-											textAlign: "center",
-											padding: "4rem 1rem",
-											color: "var(--text-muted)",
-										}}
-									>
-										<span
-											className="spinner"
-											style={{
-												display: "inline-block",
-												width: "20px",
-												height: "20px",
-												border: "3px solid var(--primary)",
-												borderTopColor: "transparent",
-												borderRadius: "50%",
-												animation: "spin 1s linear infinite",
-												marginBottom: "10px",
-											}}
-										></span>
-										<div style={{ fontSize: "0.9rem" }}>Loading tracks...</div>
-									</div>
-								) : !selectedPeer ? (
-									<div
-										style={{
-											textAlign: "center",
-											padding: "4rem 1rem",
-											color: "var(--text-muted)",
-											fontStyle: "italic",
-											fontSize: "0.9rem",
-										}}
-									>
-										Select a peer from the list on the left to browse their
-										tracks.
-									</div>
-								) : peerTracks.length === 0 ? (
-									<div
-										style={{
-											textAlign: "center",
-											padding: "4rem 1rem",
-											color: "var(--text-muted)",
-											fontStyle: "italic",
-											fontSize: "0.9rem",
-										}}
-									>
-										No tracks shared by this peer.
-									</div>
-								) : (
-									(() => {
-										const filtered = filteredPeerTracks;
-										return (
-											<>
-												<input
-													type="text"
-													value={networkQuery}
-													onChange={(e) => setNetworkQuery(e.target.value)}
-													placeholder={`Filter ${peerTracks.length} tracks by title, artist, album...`}
-													className="glass-input"
-													style={{ marginBottom: "1rem" }}
-												/>
-												<div
-													className="mobile-track-list peer-tracks-wrap"
-													style={{ maxHeight: "420px", overflowY: "auto", paddingRight: "4px" }}
-												>
-													{filtered.map((t, i) => {
-														const isCurrent =
-															currentPlayback?.name ===
-															`${t.artist} - ${t.title}`;
-														const isDownloading = downloadingTrackId === t.id;
-														// Streaming stays available either way; only the
-														// file transfer is withheld (see downloadPolicy.ts).
-														const blocked = (t as any).downloadable === false;
-														const refusal = (t as any).reason as DownloadRefusal | undefined;
-														return (
-															<div
-																key={t.id || i}
-																className={`mobile-track-card ${isCurrent ? "playing" : ""}`}
-																onDoubleClick={() => playNetworkTrack(selectedPeer, t)}
-															>
-																<button
-																	type="button"
-																	className="track-card-play-btn"
-																	title="Play"
-																	onClick={() => playNetworkTrack(selectedPeer, t)}
-																>
-																	<Play size={14} style={{ marginLeft: "2px" }} />
-																</button>
-																<div className="track-card-main">
-																	<div className="track-card-title" title={t.title}>
-																		{t.title || "Unknown Title"}
-																	</div>
-																	<div className="track-card-subtitle">
-																		<span>{t.artist || "Unknown Artist"}</span>
-																		{t.album && <span style={{ opacity: 0.7 }}>• {t.album}</span>}
-																		{t.format && <span className="track-card-badge">{t.format}</span>}
-																		{blocked && (
-																			<span
-																				className="track-card-badge track-card-badge-locked"
-																				title={downloadRefusalHint(refusal)}
-																			>
-																				{downloadBadgeLabel(refusal)}
-																			</span>
-																		)}
-																	</div>
-																</div>
-																<div className="track-card-actions">
-																	<button
-																		type="button"
-																		className="track-card-action-btn"
-																		title={
-																			blocked
-																				? downloadRefusalHint(refusal)
-																				: isDownloading
-																					? "Downloading…"
-																					: "Download"
-																		}
-																		disabled={isDownloading || blocked}
-																		onClick={() => handleDownloadPeerTrack(t)}
-																		style={{
-																			color: isDownloading ? "var(--accent)" : "inherit",
-																			opacity: blocked ? 0.35 : undefined,
-																			cursor: blocked ? "not-allowed" : undefined,
-																		}}
-																	>
-																		<Download size={16} />
-																	</button>
-																</div>
-															</div>
-														);
-													})}
-													{filtered.length === 0 && (
-														<div
-															style={{
-																textAlign: "center",
-																padding: "2rem 1rem",
-																color: "var(--text-muted)",
-																fontStyle: "italic",
-																fontSize: "0.9rem",
-															}}
-														>
-															No tracks match "{networkQuery}".
-														</div>
-													)}
-												</div>
-											</>
-										);
-									})()
-								)}
-							</div>
-						</div>
-					)}
-
-					{activeTab === "peer" && (
-						<div className="glass-card peer-card">
-							<div className="peer-controls">
-								<div className="form-group">
-									<label style={{ fontWeight: 600, fontSize: "0.95rem" }}>
-										Currently shared folders:
-									</label>
-									<div
-										style={{
-											padding: "0.8rem 1rem",
-											background: "rgba(0, 0, 0, 0.2)",
-											border: "1px solid var(--glass-border)",
-											borderRadius: "8px",
-											marginTop: "0.5rem",
-										}}
-									>
-										{validFolders.map((f, idx) => (
-											<div
-												key={idx}
-												style={{
-													display: "flex",
-													alignItems: "center",
-													gap: "8px",
-													margin: "4px 0",
-												}}
-											>
-												<span style={{ display: "inline-flex" }}>
-													<Folder size={15} />
-												</span>
-												<span
-													style={{
-														fontFamily: "monospace",
-														fontSize: "0.9rem",
-														color: "var(--text-main)",
-													}}
-												>
-													{f}
-												</span>
-											</div>
-										))}
-										{validFolders.length === 0 && (
-											<div
-												style={{
-													color: "var(--text-muted)",
-													fontSize: "0.9rem",
-													fontStyle: "italic",
-												}}
-											>
-												No folders configured. Configure them in the
-												"Configuration" tab.
-											</div>
-										)}
-									</div>
-								</div>
-								<div className="btn-group" style={{ marginTop: "1.5rem" }}>
-									<Button
-										variant="primary"
-										onClick={handleStartPeer}
-										disabled={
-											peerStatus === "online" || validFolders.length === 0
-										}
-									>
-										Start Sharing
-									</Button>
-									<Button
-										variant="danger"
-										onClick={handleStopPeer}
-										disabled={peerStatus === "offline"}
-									>
-										Stop
-									</Button>
-								</div>
-							</div>
-						</div>
-					)}
-
-					{activeTab === "download" && (
-						<div className="glass-card download-card">
-							{/* Downloader Sub-tabs */}
-							<div className="downloader-subtabs">
-								<button
-									className={`subtab-btn ${downloadSource === "soulseek" ? "active" : ""}`}
-									onClick={() => setDownloadSource("soulseek")}
-								>
-									Platforms
-								</button>
-								<button
-									className={`subtab-btn ${downloadSource === "direct" ? "active" : ""}`}
-									onClick={() => setDownloadSource("direct")}
-								>
-									Direct Link / Torrent
-								</button>
-							</div>
-
-							{downloadSource === "soulseek" && (
-								<>
-									<div className="platform-selector">
-										{[
-											{ id: "all", label: "All Platforms" },
-											...(!isCapacitor
-												? [{ id: "soulseek", label: "Soulseek" }]
-												: []),
-											{ id: "soundcloud", label: "SoundCloud" },
-											{ id: "bandcamp", label: "Bandcamp" },
-											{ id: "torrent", label: "Torrent" },
-											{ id: "network", label: "Network" },
-											{ id: "archive", label: "Archive.org" },
-											{ id: "youtube", label: "YouTube" },
-										].map((p) => (
-											<button
-												key={p.id}
-												type="button"
-												className={`platform-chip ${searchSource === p.id ? "active" : ""}`}
-												onClick={() => {
-													setSearchSource(p.id);
-													setSearchResults([]);
-												}}
-											>
-												<span className="platform-chip-dot" />
-												{p.label}
-											</button>
-										))}
-									</div>
-
-									<div className="search-bar">
-										<input
-											type="text"
-											value={searchQuery}
-											onChange={(e) => setSearchQuery(e.target.value)}
-											placeholder={`Search on ${searchSource === "soulseek" ? "Soulseek" : searchSource === "soundcloud" ? "SoundCloud" : searchSource === "bandcamp" ? "Bandcamp" : searchSource === "network" ? "TuneCamp Network" : searchSource === "archive" ? "Archive.org" : searchSource === "youtube" ? "YouTube" : "Torrent"}...`}
-											className="glass-input search-input"
-											onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-										/>
-										<Button variant="primary" onClick={handleSearch}>
-											Search
-										</Button>
-									</div>
-
-									{searchResults.length === 0 ? (
-										<div className="no-results">No results.</div>
-									) : (
-										<div className="mobile-track-list" style={{ maxHeight: "55vh", overflowY: "auto", paddingRight: "4px" }}>
-											{searchResults.map((res, i) => {
-												const dl = activeDownloadsById.get(res.id);
-												const busy = dl && dl.status === "downloading";
-												const name =
-													res.title ||
-													(res.file && res.file.split(/[/\\]/).pop()) ||
-													"Unknown Track";
-												// TuneCamp-sourced results (this instance's catalog, a
-												// federated one, a peer share) carry their release's
-												// distribution mode; everything else is unrestricted.
-												const verdict =
-													res.source === "catalog" ||
-													res.source === "instance" ||
-													res.source === "peer"
-														? resolveDownloadability(res)
-														: { downloadable: true };
-												const blocked = verdict.downloadable === false;
-												const refusal = (verdict as any).reason as DownloadRefusal | undefined;
-												return (
-													<div
-														key={i}
-														className="mobile-track-card"
-														onDoubleClick={() => !busy && !blocked && handleDownload(res)}
-													>
-														<div className="track-card-main">
-															<div className="track-card-title" title={res.file || name}>
-																{name}
-															</div>
-															<div className="track-card-subtitle">
-																{res.source && (
-																	<span className="track-card-badge">
-																		{res.source}
-																	</span>
-																)}
-																{blocked && (
-																	<span
-																		className="track-card-badge track-card-badge-locked"
-																		title={downloadRefusalHint(refusal)}
-																	>
-																		{downloadBadgeLabel(refusal)}
-																	</span>
-																)}
-																{res.bitrate && (
-																	<span className="track-card-badge">
-																		{res.bitrate}
-																	</span>
-																)}
-																{res.size && (
-																	<span style={{ fontSize: "0.72rem" }}>
-																		{(res.size / 1024 / 1024).toFixed(1)} MB
-																	</span>
-																)}
-																{res.user && (
-																	<span style={{ fontSize: "0.72rem", opacity: 0.8 }}>
-																		• {res.user}
-																	</span>
-																)}
-															</div>
-														</div>
-														<div className="track-card-actions">
-															{busy && dl ? (
-																<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-																	<span style={{ fontSize: "0.75rem", color: "var(--accent)", fontWeight: 600 }}>
-																		{(dl.progress * 100).toFixed(0)}%
-																	</span>
-																</div>
-															) : (
-																<button
-																	type="button"
-																	className="track-card-action-btn"
-																	title={blocked ? downloadRefusalHint(refusal) : "Download"}
-																	disabled={blocked}
-																	onClick={() => handleDownload(res)}
-																	style={{
-																		opacity: blocked ? 0.35 : undefined,
-																		cursor: blocked ? "not-allowed" : undefined,
-																	}}
-																>
-																	<Download size={16} />
-																</button>
-															)}
-														</div>
-													</div>
-												);
-											})}
-										</div>
-									)}
-								</>
-							)}
-
-							{downloadSource === "direct" && (
-								<div className="direct-download-container">
-									<div className="form-group">
-										<label>
-											Paste a Magnet Link (Torrent) or Web URL (SoundCloud,
-											Bandcamp, YouTube, etc.)
-										</label>
-										<div className="search-bar">
-											<input
-												type="text"
-												value={directUrl}
-												onChange={(e) => setDirectUrl(e.target.value)}
-												placeholder="magnet:?xt=urn:btih:...  or  https://soundcloud.com/..."
-												className="glass-input search-input"
-												disabled={isDownloading}
-											/>
-											<Button
-												variant="primary"
-												onClick={handleDirectDownload}
-												disabled={isDownloading || !directUrl}
-											>
-												{isDownloading ? "Downloading..." : "Download"}
-											</Button>
-										</div>
-									</div>
-
-									{/* Progress Display */}
-									{dlProgress && (
-										<div className="progress-container">
-											<div className="progress-info">
-												<span>
-													Downloading:{" "}
-													{dlProgress.id
-														? `Torrent (${dlProgress.id.substring(0, 8)})`
-														: "In progress"}
-												</span>
-												<span className="progress-speed">
-													{dlProgress.speed
-														? `${(dlProgress.speed / 1024 / 1024).toFixed(2)} MB/s`
-														: ""}
-												</span>
-											</div>
-											<div className="progress-bar-bg">
-												<div
-													className="progress-bar-fill"
-													style={{
-														width: `${((dlProgress.progress || 0) * 100).toFixed(1)}%`,
-													}}
-												></div>
-											</div>
-											<div className="progress-info">
-												<span>
-													{((dlProgress.progress || 0) * 100).toFixed(1)}%
-												</span>
-												<span>
-													{dlProgress.downloaded
-														? `${(dlProgress.downloaded / 1024 / 1024).toFixed(2)} MB`
-														: ""}
-													{dlProgress.total
-														? ` / ${(dlProgress.total / 1024 / 1024).toFixed(2)} MB`
-														: ""}
-												</span>
-											</div>
-										</div>
-									)}
-								</div>
-							)}
-						</div>
-					)}
-
-					{activeTab === "download" && (
-						<div className="glass-card files-card">
-							{/* Transfer Queue Section */}
-							<div
-								className="files-header"
-								style={{
-									display: "flex",
-									justifyContent: "space-between",
-									alignItems: "center",
-									marginBottom: "1.5rem",
-								}}
-							>
-								<h3 style={{ margin: 0 }}>Active & Failed Transfers</h3>
-								<Button variant="secondary" onClick={purgeFailedDownloads}>
-									Purge Failed
-								</Button>
-							</div>
-
-							<div
-								className="files-list"
-								style={{
-									display: "flex",
-									flexDirection: "column",
-									gap: "10px",
-									maxHeight: "250px",
-									overflowY: "auto",
-									paddingRight: "5px",
-									marginBottom: "2rem",
-								}}
-							>
-								{activeDownloads.map((dl) => {
-									const isDownloading = dl.status === "downloading";
-									const isSeeding = dl.status === "seeding";
-									const isCompleted = dl.status === "completed";
-									const isFailed = dl.status === "failed";
-									const progressVal =
-										dl.progress ?? (isCompleted || isSeeding ? 1 : 0);
-									const speedText =
-										isSeeding && dl.uploadSpeed
-											? `UL: ${(dl.uploadSpeed / 1024 / 1024).toFixed(1)} MB/s`
-											: dl.speed
-												? `DL: ${(dl.speed / 1024 / 1024).toFixed(1)} MB/s`
-												: undefined;
-
-									return (
-										<div
-											key={dl.id}
-											className="result-item"
-											style={{
-												background: "rgba(255, 255, 255, 0.05)",
-												padding: "0.8rem 1rem",
-												borderRadius: "8px",
-												border: "1px solid rgba(255, 255, 255, 0.1)",
-												display: "flex",
-												flexDirection: "column",
-												gap: "6px",
-												alignItems: "stretch",
-											}}
-										>
-											<div
-												style={{
-													display: "flex",
-													alignItems: "center",
-													justifyContent: "space-between",
-													gap: "10px",
-												}}
-											>
-												<div
-													className="result-filename"
-													style={{
-														fontWeight: 600,
-														color: isFailed ? "#e74c3c" : "var(--text-main)",
-														fontSize: "0.95rem",
-														wordBreak: "break-all",
-														display: "flex",
-														alignItems: "center",
-														gap: "8px",
-													}}
-												>
-													{dl.source === "soulseek" ? (
-														<Music size={16} />
-													) : dl.source === "torrent" ||
-														dl.source === "torrent_search" ? (
-														<Magnet size={16} />
-													) : dl.source === "server" ? (
-														<Cloud size={16} />
-													) : (
-														<Globe size={16} />
-													)}
-													{dl.name}
-													{isFailed && (
-														<span
-															style={{
-																fontSize: "0.75rem",
-																background: "rgba(231, 76, 60, 0.2)",
-																color: "#e74c3c",
-																padding: "2px 6px",
-																borderRadius: "4px",
-																fontWeight: 600,
-															}}
-														>
-															FAILED
-														</span>
-													)}
-													{isDownloading && (
-														<span
-															style={{
-																fontSize: "0.75rem",
-																background: "rgba(0, 194, 255, 0.2)",
-																color: "#00c2ff",
-																padding: "2px 6px",
-																borderRadius: "4px",
-																fontWeight: 600,
-															}}
-														>
-															DOWNLOADING
-														</span>
-													)}
-													{isSeeding && (
-														<span
-															style={{
-																fontSize: "0.75rem",
-																background: "rgba(155, 89, 182, 0.2)",
-																color: "#9b59b6",
-																padding: "2px 6px",
-																borderRadius: "4px",
-																fontWeight: 600,
-															}}
-														>
-															SEEDING
-														</span>
-													)}
-													{isCompleted && (
-														<span
-															style={{
-																fontSize: "0.75rem",
-																background: "rgba(46, 204, 113, 0.2)",
-																color: "#2ecc71",
-																padding: "2px 6px",
-																borderRadius: "4px",
-																fontWeight: 600,
-															}}
-														>
-															COMPLETED
-														</span>
-													)}
-												</div>
-												<div
-													style={{
-														display: "flex",
-														gap: "8px",
-														alignItems: "center",
-													}}
-												>
-													{isSeeding && (
-														<Button
-															variant="secondary"
-															onClick={() =>
-																handleStopTorrent(dl.infoHash || dl.id)
-															}
-															style={{
-																padding: "0.3rem 0.7rem",
-																fontSize: "0.8rem",
-															}}
-														>
-															Stop Seeding
-														</Button>
-													)}
-													{isDownloading && (
-														<Button
-															variant="secondary"
-															onClick={() => handleCancelTorrent(dl)}
-															style={{
-																padding: "0.3rem 0.7rem",
-																fontSize: "0.8rem",
-															}}
-														>
-															Cancel
-														</Button>
-													)}
-													{(isFailed || isDownloading) && dl.magnetUri && (
-														<Button
-															variant="primary"
-															onClick={() => handleResumeTorrent(dl)}
-															style={{
-																padding: "0.3rem 0.7rem",
-																fontSize: "0.8rem",
-															}}
-														>
-															Resume
-														</Button>
-													)}
-													{(isFailed || isCompleted) && (
-														<Button
-															variant="secondary"
-															onClick={() => clearDownloadItem(dl.id)}
-															style={{
-																padding: "0.3rem 0.7rem",
-																fontSize: "0.8rem",
-															}}
-														>
-															Clear
-														</Button>
-													)}
-												</div>
-											</div>
-
-											{/* Torrent & Transfer Progress Bar */}
-											{(isDownloading ||
-												isSeeding ||
-												dl.progress !== undefined) && (
-												<ProgressBar
-													progress={progressVal}
-													indeterminate={
-														isDownloading && dl.progress === undefined
-													}
-													speed={speedText}
-													downloaded={dl.downloaded}
-													total={dl.total}
-													animated={isDownloading}
-													showPercent={true}
-												/>
-											)}
-										</div>
-									);
-								})}
-
-								{activeDownloads.length === 0 && (
-									<div
-										className="no-results"
-										style={{
-											textAlign: "center",
-											padding: "2rem",
-											color: "var(--text-muted)",
-											fontStyle: "italic",
-										}}
-									>
-										No active or failed transfers.
-									</div>
-								)}
 							</div>
 						</div>
 					)}
 				</div>
 
-				{/* Audio Player Bar — flex-pinned footer of main-content, outside the
-            scrolling .content-area so it can never scroll away with content
-            and never needs sticky/fixed (both are unreliable inside a
-            scrolling flex column on Android WebView). */}
+				{/* Audio Player Bar — flex-pinned footer of main-content, outside .content-area */}
 				{currentPlayback && (
 					<div className="audio-player-bar">
-						<div className="player-top-progress">
-							<div
-								className="player-top-progress-fill"
-								style={{
-									width: `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
-								}}
-							/>
-						</div>
 						<div className="player-info">
 							<span className="player-track-icon">
-								<Music size={18} />
+								<Music size={15} />
 							</span>
 							<div className="player-track-details">
 								<span className="player-track-title" title={currentPlayback.name}>
@@ -3505,24 +3054,30 @@ function App() {
 							<div className="player-buttons">
 								{queue.length > 1 && (
 									<button
+										type="button"
 										className="player-btn"
 										onClick={playPrev}
 										disabled={queueIndex <= 0}
 										title="Previous"
 										style={{ opacity: queueIndex <= 0 ? 0.4 : 1 }}
 									>
-										<SkipBack size={14} />
+										<SkipBack size={13} />
 									</button>
 								)}
-								<button className="player-btn toggle-play" onClick={togglePlay}>
+								<button
+									type="button"
+									className="player-btn toggle-play"
+									onClick={togglePlay}
+								>
 									{isPlaying ? (
-										<Pause size={16} />
+										<Pause size={14} />
 									) : (
-										<Play size={16} style={{ marginLeft: "2px" }} />
+										<Play size={14} style={{ marginLeft: "1px" }} />
 									)}
 								</button>
 								{queue.length > 1 && (
 									<button
+										type="button"
 										className="player-btn"
 										onClick={playNext}
 										disabled={queueIndex + 1 >= queue.length}
@@ -3531,7 +3086,7 @@ function App() {
 											opacity: queueIndex + 1 >= queue.length ? 0.4 : 1,
 										}}
 									>
-										<SkipForward size={14} />
+										<SkipForward size={13} />
 									</button>
 								)}
 							</div>
@@ -3561,7 +3116,7 @@ function App() {
 
 						<div className="player-controls-right">
 							<span className="volume-icon">
-								<Volume2 size={14} />
+								<Volume2 size={13} />
 							</span>
 							<input
 								type="range"
@@ -3573,11 +3128,12 @@ function App() {
 								className="volume-slider"
 							/>
 							<button
+								type="button"
 								className="player-btn stop-play"
 								onClick={stopPlayback}
 								title="Close Player"
 							>
-								<X size={16} />
+								<X size={14} />
 							</button>
 						</div>
 					</div>
@@ -3617,7 +3173,6 @@ function App() {
 					const t = audioRef.current.currentTime;
 					// whole-second granularity: skips ~3 of 4 timeupdate re-renders of the whole
 					// app; every readout is second- or percent-based so nothing visible changes
-					// (the big scrolling wave reads currentTime directly via rAF, not this state)
 					setCurrentTime((prev) =>
 						Math.floor(prev) === Math.floor(t) ? prev : t,
 					);
@@ -3642,7 +3197,6 @@ function App() {
 					else stopPlayback();
 				}}
 			/>
-
 		</div>
 	);
 }

@@ -1,18 +1,15 @@
 /* AUDIO PLAYER FOOTER */
 .audio-player-bar {
   flex-shrink: 0;
-  height: 64px;
+  height: 50px;
   width: 100%;
-  background: var(--tc-color-glass-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: var(--panel-bg);
   border-top: 1px solid var(--glass-border);
-  border-bottom-left-radius: var(--tc-radius-xl);
-  border-bottom-right-radius: var(--tc-radius-xl);
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.5rem;
+  padding: 0 12px;
   position: relative;
   z-index: 20;
 }
@@ -21,40 +18,22 @@
   display: none;
 }
 
-/* Slim Top Edge Progress Bar for Mobile & Compact mode */
-.player-top-progress {
-  display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.player-top-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--primary));
-  transition: width 0.15s linear;
-}
-
 /* Left: Track Info */
 .player-info {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
   width: 28%;
-  min-width: 180px;
+  min-width: 160px;
   overflow: hidden;
 }
 
 .player-track-icon {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--tc-radius-sm);
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(6, 182, 212, 0.25) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -65,23 +44,22 @@
 .player-track-details {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   overflow: hidden;
   min-width: 0;
 }
 
 .player-track-title {
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: -0.2px;
 }
 
 .player-track-path {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -96,7 +74,7 @@
   align-items: center;
   justify-content: center;
   width: 44%;
-  gap: 4px;
+  gap: 2px;
 }
 
 .player-buttons {
@@ -104,7 +82,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -113,54 +91,46 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--tc-transition-fast);
+  transition: background var(--tc-transition-fast), color var(--tc-transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
 }
 
 .player-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--row-hover-bg);
   color: var(--text-main);
-  transform: scale(1.08);
-}
-
-.player-btn:active:not(:disabled) {
-  transform: scale(0.94);
 }
 
 .toggle-play {
   background: var(--text-main);
   color: var(--bg-color);
-  width: 36px;
-  height: 36px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  width: 28px;
+  height: 28px;
 }
 
 .toggle-play:hover {
   background: var(--primary);
-  color: #ffffff;
-  transform: scale(1.08);
-  box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
+  color: var(--tc-color-primary-content, #ffffff);
 }
 
 .player-seeker {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  max-width: 480px;
+  max-width: 460px;
   min-width: 0;
 }
 
 .time-display {
   font-family: var(--tc-font-family-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--text-tertiary);
-  min-width: 36px;
+  min-width: 32px;
   text-align: center;
 }
 
@@ -170,37 +140,32 @@
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 3px;
+  background: rgba(128, 128, 128, 0.25);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
-  transition: background var(--tc-transition-fast);
 }
 
 .seeker-slider:hover,
 .volume-slider:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(128, 128, 128, 0.4);
 }
 
 .seeker-slider::-webkit-slider-thumb,
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--text-main);
   cursor: pointer;
-  transition: all var(--tc-transition-fast);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 .seeker-slider:hover::-webkit-slider-thumb,
 .volume-slider:hover::-webkit-slider-thumb {
   background: var(--primary);
-  transform: scale(1.25);
-  box-shadow: 0 0 10px var(--primary);
 }
 
 /* Right: Volume & Close */
@@ -208,9 +173,9 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   width: 28%;
-  min-width: 160px;
+  min-width: 140px;
 }
 
 .volume-icon {
@@ -220,76 +185,16 @@
 }
 
 .volume-slider {
-  max-width: 90px;
+  max-width: 80px;
 }
 
 .stop-play {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   color: var(--text-muted);
 }
 
 .stop-play:hover {
-  background: rgba(239, 68, 68, 0.15) !important;
+  background: color-mix(in srgb, var(--danger) 15%, transparent) !important;
   color: var(--danger) !important;
-}
-
-/* Mobile Player Mode */
-@media (max-width: 768px) {
-  .audio-player-bar {
-    height: 56px;
-    padding: 0 1rem;
-    gap: 8px;
-    border-radius: 0;
-    border-bottom: 1px solid var(--glass-border);
-  }
-
-  .player-top-progress {
-    display: block;
-  }
-
-  .player-info {
-    width: auto;
-    min-width: 0;
-    flex: 1;
-    gap: 0.6rem;
-  }
-
-  .player-track-icon {
-    width: 32px;
-    height: 32px;
-  }
-
-  .player-track-title {
-    font-size: 0.82rem;
-  }
-
-  .player-track-path {
-    display: none;
-  }
-
-  .player-controls-center {
-    width: auto;
-    flex-direction: row;
-  }
-
-  .player-seeker {
-    display: none;
-  }
-
-  .player-controls-right {
-    width: auto;
-    min-width: 0;
-    gap: 4px;
-  }
-
-  .volume-icon,
-  .volume-slider {
-    display: none;
-  }
-
-  .toggle-play {
-    width: 32px;
-    height: 32px;
-  }
 }
