@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Uploader
   setUploadConfig: (server: string, token: string) => ipcRenderer.invoke('upload:config', server, token),
+  checkUploadDuplicates: (filePaths: string[], refresh?: boolean) => ipcRenderer.invoke('upload:check-duplicates', filePaths, refresh),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   uploadTrack: (filePath: string, metadata: any) => ipcRenderer.invoke('upload:track', filePath, metadata),
 

@@ -164,13 +164,34 @@ ytdlp.on('log', (msg) => win?.webContents.send('download:log', `[YT-DLP] ${msg}`
 ytdlp.on('progress', (data) => win?.webContents.send('download:progress', data));
 network.on('progress', (data) => win?.webContents.send('download:progress', data));
 
+async function resolveUploadMetadata(filePath: string, metadata?: any) {
+  if (!metadata?.fallbackFromFilename) return metadata;
+  const { fallbackFromFilename: _ignored, ...rest } = metadata;
+  try {
+    const mm = await import('music-metadata');
+    const parsed = await mm.parseFile(filePath, { skipCovers: true });
+    if (parsed?.common?.title?.trim()) delete rest.title;
+    if (parsed?.common?.artist?.trim()) delete rest.artist;
+  } catch {
+    // Keep filename-derived fallback metadata if embedded tags cannot be parsed.
+  }
+  return rest;
+}
+
 ipcMain.handle('upload:config', (event, server, token) => {
   uploader.setConfig({ server, token });
   return { success: true };
 });
 
+ipcMain.handle('upload:check-duplicates', async (_event, filePaths: string[], refresh = false) => {
+  if (!Array.isArray(filePaths)) return {};
+  const cleanPaths = filePaths.filter((p): p is string => typeof p === 'string' && p.length > 0);
+  return await uploader.checkFilesExist(cleanPaths, { refresh: Boolean(refresh) });
+});
+
 ipcMain.handle('upload:track', async (event, filePath, metadata) => {
-  return await uploader.uploadTrack(filePath, metadata);
+  const resolvedMeta = await resolveUploadMetadata(filePath, metadata);
+  return await uploader.uploadTrack(filePath, resolvedMeta);
 });
 
 ipcMain.handle('app:set-background-throttling', (_event, throttle: boolean) => {

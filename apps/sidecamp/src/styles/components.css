@@ -273,6 +273,24 @@
   color: var(--warning);
 }
 
+.track-card-badge-success {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  color: var(--success);
+}
+
+.track-card-badge-info {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
+  color: var(--accent);
+}
+
+.track-card-badge-danger {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  color: var(--danger);
+}
+
 .track-card-actions {
   display: flex;
   align-items: center;
@@ -442,6 +460,11 @@
 .transfer-badge.completed {
   background: color-mix(in srgb, var(--success) 18%, transparent);
   color: var(--success);
+}
+
+.transfer-badge.duplicate {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
 }
 
 .transfer-actions {
@@ -631,6 +654,15 @@
 
 .upload-row:last-child {
   border-bottom: none;
+}
+
+.upload-status-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
 }
 
 /* Settings Stack */

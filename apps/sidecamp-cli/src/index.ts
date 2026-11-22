@@ -236,18 +236,29 @@ program
 
 program
     .command('upload <filePath>')
-    .description('Upload a local file to your TuneCamp account')
-    .option('--artist <artist>')
-    .option('--album <album>')
-    .option('--release <releaseSlug>')
+    .description('Upload a local file to your TuneCamp account (checks server hash first)')
+    .option('--title <title>', 'override track title')
+    .option('--artist <artist>', 'override artist name')
+    .option('--album <album>', 'override album title')
+    .option('--release <releaseSlug>', 'target release slug')
+    .option('--force', 'upload even if a file with the same hash is already on the server')
     .action(async (filePath, opts) => {
         const { server, token } = requireServerAuth(loadConfig());
         const uploader = new TuneCampUploader({ server, token });
         const result = await uploader.uploadTrack(filePath, {
+            title: opts.title,
             artist: opts.artist,
             album: opts.album,
             releaseSlug: opts.release,
+            force: Boolean(opts.force),
         });
+        if (result.duplicate) {
+            const existingLabel = result.existingTrack?.artist
+                ? `${result.existingTrack.artist} - ${result.existingTrack.title}`
+                : (result.existingTrack?.title || 'existing track');
+            console.log(`Already on server (hash ${result.hash}): ${existingLabel} — skipped upload. Use --force to upload anyway.`);
+            return;
+        }
         console.log(result);
     });
 

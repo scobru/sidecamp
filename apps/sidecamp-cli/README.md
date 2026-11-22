@@ -110,10 +110,10 @@ sidecamp get -s bandcamp "Kavinsky Nightcall"
 
 ## 📤 Upload Tracks
 
-Upload local audio files directly to your TuneCamp instance:
+Upload local audio files directly to your TuneCamp instance. Before uploading, Sidecamp computes the file hash and checks your server catalog to skip tracks already on the server (pass `--force` to upload anyway):
 
 ```bash
-sidecamp upload <filePath> [--artist <artist>] [--album <album>] [--release <releaseSlug>]
+sidecamp upload <filePath> [--title <title>] [--artist <artist>] [--album <album>] [--release <releaseSlug>] [--force]
 ```
 
 **Example:**

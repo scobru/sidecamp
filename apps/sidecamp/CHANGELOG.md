@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0] - 2026-11-22
+
+### Added
+
+- **Direct Upload from Shared Files & Transfers.** Upload audio files directly to your TuneCamp instance from the **Shared Files** browser (per-track button or **Upload folder**) and from completed **Transfers** (single tracks or multi-file torrents), preserving embedded ID3/Vorbis/MP4 metadata when no custom overrides are supplied.
+- **Pre-Upload Server Hash Duplicate Check.** Before uploading, Sidecamp computes TuneCamp's compatible fast MD5 hash (`getFastFileHash`: full MD5 below 2 MiB, or head 1 MiB + tail 1 MiB + byte length at 2 MiB+) and checks `/api/tracks` (`hash` / `file_hash`) to skip tracks already on the server across the Upload tab (**Check server** & `On server` badges), Shared Files, Transfers, Auto-Upload, and CLI (`sidecamp upload --title <title> --force`).
+
 ## [0.32.0] - 2026-11-22
 
 ### Removed

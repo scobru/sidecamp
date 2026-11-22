@@ -24,6 +24,8 @@ import {
 	ChevronUp,
 	ArrowUpCircle,
 	User,
+	Check,
+	RefreshCw,
 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ProgressBar } from "./components/ProgressBar";
@@ -43,6 +45,23 @@ declare global {
 	interface Window {
 		electronAPI: any;
 	}
+}
+
+const UPLOADABLE_AUDIO_RE = /\.(mp3|flac|wav|ogg|m4a|aac|opus)$/i;
+const isUploadableAudio = (name: string) => UPLOADABLE_AUDIO_RE.test(name);
+
+function joinBrowserPath(root: string, subpath: string, name: string): string {
+	const sep = root.includes("\\") ? "\\" : "/";
+	const cleanRoot = root.replace(/[\\/]+$/, "");
+	const parts = [cleanRoot, ...(subpath ? subpath.split("/").filter(Boolean) : []), name];
+	return parts.join(sep);
+}
+
+function formatDuplicateLabel(track?: { title?: string; artist?: string }): string {
+	if (!track) return "existing track";
+	return track.artist
+		? `${track.artist} - ${track.title || "Untitled"}`
+		: track.title || "existing track";
 }
 
 function cleanTrackMetadata(filename: string): { artist: string; title: string } {
@@ -80,44 +99,115 @@ function App() {
 		title: string;
 		artist: string;
 		album: string;
-		status: "ready" | "uploading" | "done" | "error";
+		status: "checking" | "ready" | "uploading" | "done" | "duplicate" | "error";
 		error?: string;
+		hash?: string;
+		existingTrack?: { id: number | string; title: string; artist?: string; album?: string };
 	};
 	const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
 	const [uploadBusy, setUploadBusy] = useState(false);
 	const uploadInputRef = useRef<HTMLInputElement>(null);
 	const patchUpload = (id: string, patch: Partial<UploadItem>) =>
 		setUploadQueue((q) => q.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+	const checkUploadQueueDuplicates = async (items: UploadItem[], refresh = false) => {
+		if (!server || !token) return;
+		const checkable = items.filter((x) => x.status !== "uploading" && x.status !== "done");
+		if (checkable.length === 0) return;
+		const targetIds = new Set(checkable.map((x) => x.id));
+		setUploadQueue((q) =>
+			q.map((u) => (targetIds.has(u.id) ? { ...u, status: "checking", error: undefined } : u)),
+		);
+		try {
+			await window.electronAPI.setUploadConfig(server, token);
+			const checks = await window.electronAPI.checkUploadDuplicates?.(
+				checkable.map((x) => x.path),
+				refresh,
+			);
+			setUploadQueue((q) =>
+				q.map((u) => {
+					if (!targetIds.has(u.id)) return u;
+					const res = checks?.[u.path];
+					if (!res) return u.status === "checking" ? { ...u, status: "ready" } : u;
+					if (res.exists) {
+						return {
+							...u,
+							status: "duplicate",
+							hash: res.hash,
+							existingTrack: res.match,
+						};
+					}
+					return {
+						...u,
+						status: "ready",
+						hash: res.hash,
+						existingTrack: undefined,
+					};
+				}),
+			);
+		} catch {
+			setUploadQueue((q) =>
+				q.map((u) =>
+					targetIds.has(u.id) && u.status === "checking"
+						? { ...u, status: "ready" }
+						: u,
+				),
+			);
+		}
+	};
 	const addUploadFiles = (files: FileList | File[]) => {
+		const seen = new Set(uploadQueue.map((x) => x.path));
 		const items: UploadItem[] = [];
 		for (const f of Array.from(files)) {
 			const filePath = window.electronAPI.getFilePath?.(f) || "";
-			if (!filePath) continue;
+			if (!filePath || seen.has(filePath)) continue;
+			seen.add(filePath);
 			const { artist, title } = cleanTrackMetadata(f.name);
 			items.push({
 				id: crypto.randomUUID(),
 				name: f.name,
 				path: filePath,
 				title,
-				artist: artist || "Sidecamp",
+				artist,
 				album: "",
-				status: "ready",
+				status: server && token ? "checking" : "ready",
 			});
 		}
+		if (items.length === 0) return;
 		setUploadQueue((q) => [
 			...q,
 			...items.filter((i) => !q.some((x) => x.path === i.path)),
 		]);
+		if (server && token) {
+			void checkUploadQueueDuplicates(items, false);
+		}
 	};
 	const runUpload = async (u: UploadItem) => {
+		if (!server || !token) {
+			alert(
+				"You must configure the Server URL and Token in the Configuration section to upload files!",
+			);
+			return;
+		}
 		patchUpload(u.id, { status: "uploading", error: undefined });
 		try {
-			await uploadFile(
+			const res = await uploadFile(
 				u.path,
-				{ artist: u.artist, title: u.title || u.name, album: u.album || undefined },
+				{
+					artist: u.artist || undefined,
+					title: u.title || undefined,
+					album: u.album || undefined,
+				},
 				"Upload",
 			);
-			patchUpload(u.id, { status: "done" });
+			if (res?.duplicate) {
+				patchUpload(u.id, {
+					status: "duplicate",
+					hash: res.hash,
+					existingTrack: res.existingTrack,
+				});
+			} else {
+				patchUpload(u.id, { status: "done", hash: res?.hash });
+			}
 		} catch (e: any) {
 			patchUpload(u.id, { status: "error", error: e.message || String(e) });
 		}
@@ -130,7 +220,12 @@ function App() {
 			return;
 		}
 		setUploadBusy(true);
-		for (const u of uploadQueue.filter((x) => x.status !== "done")) {
+		for (const u of uploadQueue.filter(
+			(x) =>
+				x.status !== "done" &&
+				x.status !== "duplicate" &&
+				x.status !== "checking",
+		)) {
 			await runUpload(u);
 		}
 		setUploadBusy(false);
@@ -170,6 +265,21 @@ function App() {
 	} | null>(null);
 	// Per-list search filters
 	const [browserSearch, setBrowserSearch] = useState("");
+	const [browserUploadMap, setBrowserUploadMap] = useState<
+		Record<
+			string,
+			{
+				state: "checking" | "uploading" | "done" | "duplicate" | "error";
+				message?: string;
+				hash?: string;
+			}
+		>
+	>({});
+	const [browserFolderUploading, setBrowserFolderUploading] = useState<{
+		current: number;
+		total: number;
+	} | null>(null);
+	const browserCheckReqRef = useRef(0);
 
 	// Direct Download & Torrent States
 	const [downloadSource, setDownloadSource] = useState("soulseek"); // 'soulseek' | 'direct'
@@ -412,6 +522,8 @@ function App() {
 										? {
 												...item,
 												status: "completed",
+												filePath: paths[0],
+												filePaths: paths,
 												name: item.name.startsWith("Analyzing")
 													? paths[0].split(/[/\\]/).pop() || item.name
 													: item.name,
@@ -642,7 +754,14 @@ function App() {
 			]);
 			setActiveDownloads((prev) =>
 				prev.map((d) =>
-					d.id === downloadId ? { ...d, status: "completed" } : d,
+					d.id === downloadId
+						? {
+								...d,
+								status: "completed",
+								filePath: filePath || d.filePath,
+								filePaths: filePath ? [filePath] : d.filePaths,
+							}
+						: d,
 				),
 			);
 			if (autoUpload && filePath) handleUploadFileAuto(filePath);
@@ -928,7 +1047,12 @@ function App() {
 
 	const uploadFile = async (
 		filePath: string,
-		meta: { artist: string; title: string; album?: string },
+		meta: {
+			artist?: string;
+			title?: string;
+			album?: string;
+			fallbackFromFilename?: boolean;
+		},
 		tag: string,
 	) => {
 		if (!server || !token) {
@@ -936,14 +1060,25 @@ function App() {
 				...prev,
 				`[${tag}] Server/Token not configured, skipping upload.`,
 			]);
-			return false;
+			return null;
 		}
-		setDlLogs((prev) => [...prev, `[${tag}] Uploading ${meta.title}...`]);
+		const label = meta.title || filePath.split(/[/\\]/).pop() || filePath;
+		setDlLogs((prev) => [...prev, `[${tag}] Checking & uploading ${label}...`]);
 		try {
 			await window.electronAPI.setUploadConfig(server, token);
-			await window.electronAPI.uploadTrack(filePath, meta);
-			setDlLogs((prev) => [...prev, `[${tag}] Upload completed successfully!`]);
-			return true;
+			const res = await window.electronAPI.uploadTrack(filePath, meta);
+			if (res?.duplicate) {
+				setDlLogs((prev) => [
+					...prev,
+					`[${tag}] Skipped ${label} — already on server (${formatDuplicateLabel(res.existingTrack)}, hash ${res.hash?.slice(0, 8)}).`,
+				]);
+			} else {
+				setDlLogs((prev) => [
+					...prev,
+					`[${tag}] Uploaded ${label} successfully!`,
+				]);
+			}
+			return res;
 		} catch (e: any) {
 			setDlLogs((prev) => [
 				...prev,
@@ -956,8 +1091,216 @@ function App() {
 	const handleUploadFileAuto = (filePath: string) => {
 		const filename = filePath.split(/[/\\]/).pop() || "";
 		const { artist, title } = cleanTrackMetadata(filename);
-		uploadFile(filePath, { artist: artist || "Sidecamp", title }, "Auto-Upload").catch(
-			() => {},
+		uploadFile(
+			filePath,
+			{ artist: artist || undefined, title, fallbackFromFilename: true },
+			"Auto-Upload",
+		).catch(() => {});
+	};
+
+	const handleUploadBrowserFile = async (name: string) => {
+		if (!server || !token) {
+			alert(
+				"Please configure the Server URL and Token in the Configuration tab first.",
+			);
+			setActiveTab("settings");
+			return;
+		}
+		const filePath = joinBrowserPath(browserRoot, browserPath, name);
+		const { artist, title } = cleanTrackMetadata(name);
+		setBrowserUploadMap((prev) => ({
+			...prev,
+			[filePath]: { state: "uploading" },
+		}));
+		try {
+			const res = await uploadFile(
+				filePath,
+				{ artist: artist || undefined, title, fallbackFromFilename: true },
+				"Upload",
+			);
+			if (res?.duplicate) {
+				setBrowserUploadMap((prev) => ({
+					...prev,
+					[filePath]: {
+						state: "duplicate",
+						message: `Already on server: ${formatDuplicateLabel(res.existingTrack)}`,
+						hash: res.hash,
+					},
+				}));
+			} else {
+				setBrowserUploadMap((prev) => ({
+					...prev,
+					[filePath]: {
+						state: "done",
+						message: "Uploaded to TuneCamp",
+						hash: res?.hash,
+					},
+				}));
+			}
+		} catch (e: any) {
+			setBrowserUploadMap((prev) => ({
+				...prev,
+				[filePath]: { state: "error", message: e?.message || String(e) },
+			}));
+		}
+	};
+
+	const handleUploadBrowserFolder = async () => {
+		if (!server || !token) {
+			alert(
+				"Please configure the Server URL and Token in the Configuration tab first.",
+			);
+			setActiveTab("settings");
+			return;
+		}
+		const targets = browserView.uploadableAudio
+			.map((en) => ({
+				name: en.name,
+				filePath: joinBrowserPath(browserRoot, browserPath, en.name),
+			}))
+			.filter(({ filePath }) => {
+				const st = browserUploadMap[filePath]?.state;
+				return st !== "done" && st !== "duplicate" && st !== "uploading";
+			});
+		if (targets.length === 0) {
+			setDlLogs((prev) => [
+				...prev,
+				"[Upload] All visible audio files are already uploaded or on the server.",
+			]);
+			return;
+		}
+		let uploaded = 0;
+		let duplicates = 0;
+		let failed = 0;
+		try {
+			for (let i = 0; i < targets.length; i++) {
+				const { name, filePath } = targets[i];
+				setBrowserFolderUploading({ current: i + 1, total: targets.length });
+				const { artist, title } = cleanTrackMetadata(name);
+				setBrowserUploadMap((prev) => ({
+					...prev,
+					[filePath]: { state: "uploading" },
+				}));
+				try {
+					const res = await uploadFile(
+						filePath,
+						{ artist: artist || undefined, title, fallbackFromFilename: true },
+						"Upload",
+					);
+					if (res?.duplicate) {
+						duplicates++;
+						setBrowserUploadMap((prev) => ({
+							...prev,
+							[filePath]: {
+								state: "duplicate",
+								message: `Already on server: ${formatDuplicateLabel(res.existingTrack)}`,
+								hash: res.hash,
+							},
+						}));
+					} else {
+						uploaded++;
+						setBrowserUploadMap((prev) => ({
+							...prev,
+							[filePath]: {
+								state: "done",
+								message: "Uploaded to TuneCamp",
+								hash: res?.hash,
+							},
+						}));
+					}
+				} catch (e: any) {
+					failed++;
+					setBrowserUploadMap((prev) => ({
+						...prev,
+						[filePath]: { state: "error", message: e?.message || String(e) },
+					}));
+				}
+			}
+			setDlLogs((prev) => [
+				...prev,
+				`[Upload] Folder upload finished: ${uploaded} uploaded, ${duplicates} skipped (already on server), ${failed} failed.`,
+			]);
+		} finally {
+			setBrowserFolderUploading(null);
+		}
+	};
+
+	const handleUploadTransfer = async (dl: any) => {
+		if (!server || !token) {
+			alert(
+				"Please configure the Server URL and Token in the Configuration tab first.",
+			);
+			setActiveTab("settings");
+			return;
+		}
+		const rawPaths: string[] =
+			Array.isArray(dl.filePaths) && dl.filePaths.length > 0
+				? dl.filePaths
+				: dl.filePath
+					? [dl.filePath]
+					: [];
+		const audioPaths = rawPaths.filter((p) => p && isUploadableAudio(p));
+		const targetPaths = audioPaths.length > 0 ? audioPaths : rawPaths.filter(Boolean);
+		if (targetPaths.length === 0) return;
+
+		setActiveDownloads((prev) =>
+			prev.map((d) =>
+				d.id === dl.id
+					? { ...d, uploadStatus: "uploading", uploadError: undefined }
+					: d,
+			),
+		);
+
+		let uploaded = 0;
+		let duplicates = 0;
+		let failed = 0;
+		let lastDupLabel = "";
+		let lastErr = "";
+
+		for (const p of targetPaths) {
+			const filename = p.split(/[/\\]/).pop() || p;
+			const { artist, title } = cleanTrackMetadata(filename);
+			try {
+				const res = await uploadFile(
+					p,
+					{ artist: artist || undefined, title, fallbackFromFilename: true },
+					"Upload",
+				);
+				if (res?.duplicate) {
+					duplicates++;
+					lastDupLabel = formatDuplicateLabel(res.existingTrack);
+				} else {
+					uploaded++;
+				}
+			} catch (e: any) {
+				failed++;
+				lastErr = e?.message || String(e);
+			}
+		}
+
+		setActiveDownloads((prev) =>
+			prev.map((d) => {
+				if (d.id !== dl.id) return d;
+				if (failed > 0) {
+					return {
+						...d,
+						uploadStatus: "error",
+						uploadError: lastErr || `${failed} file(s) failed`,
+					};
+				}
+				if (duplicates === targetPaths.length) {
+					return {
+						...d,
+						uploadStatus: "duplicate",
+						uploadMessage: lastDupLabel,
+					};
+				}
+				return {
+					...d,
+					uploadStatus: "done",
+					uploadMessage: `${uploaded} uploaded${duplicates ? `, ${duplicates} already on server` : ""}`,
+				};
+			}),
 		);
 	};
 
@@ -1125,6 +1468,7 @@ function App() {
 		]);
 		try {
 			let filePath = "";
+			let resultPaths: string[] = [];
 			if (
 				source === "soundcloud" ||
 				source === "bandcamp" ||
@@ -1136,11 +1480,11 @@ function App() {
 					downloadId,
 				);
 			} else if (source === "torrent_search") {
-				const paths = await window.electronAPI.torrentDownload(
+				resultPaths = await window.electronAPI.torrentDownload(
 					result.url,
 					downloadId,
 				);
-				filePath = paths.length > 0 ? paths[0] : "";
+				filePath = resultPaths.length > 0 ? resultPaths[0] : "";
 			} else if (source === "peer") {
 				filePath = await window.electronAPI.downloadPeerTrack(
 					server,
@@ -1172,13 +1516,23 @@ function App() {
 			} else {
 				filePath = await window.electronAPI.slskDownload(result);
 			}
+			if (resultPaths.length === 0 && filePath) {
+				resultPaths = [filePath];
+			}
 			setDlLogs((prev) => [
 				...prev,
 				`[${source.toUpperCase()}] Download completed! Saved to: ${filePath}`,
 			]);
 			setActiveDownloads((prev) =>
 				prev.map((d) =>
-					d.id === downloadId ? { ...d, status: "completed" } : d,
+					d.id === downloadId
+						? {
+								...d,
+								status: "completed",
+								filePath: resultPaths[0] || d.filePath,
+								filePaths: resultPaths.length > 0 ? resultPaths : d.filePaths,
+							}
+						: d,
 				),
 			);
 			if (autoUpload && filePath) handleUploadFileAuto(filePath);
@@ -1258,6 +1612,8 @@ function App() {
 						? {
 								...d,
 								status: "completed",
+								filePath: resultPaths[0] || d.filePath,
+								filePaths: resultPaths.length > 0 ? resultPaths : d.filePaths,
 								name:
 									d.name.startsWith("Analyzing") && resultPaths.length > 0
 										? resultPaths[0].split(/[/\\]/).pop()
@@ -1382,6 +1738,8 @@ function App() {
 							? {
 									...d,
 									status: "completed",
+									filePath: paths[0],
+									filePaths: paths,
 									name: d.name.startsWith("Analyzing")
 										? paths[0].split(/[/\\]/).pop() || d.name
 										: d.name,
@@ -1459,6 +1817,9 @@ function App() {
 		const isAudio = (n: string) =>
 			/\.(mp3|flac|wav|ogg|m4a|mp4|webm)$/i.test(n);
 		const audio = visible.filter((en) => !en.isDir && isAudio(en.name));
+		const uploadableAudio = visible.filter(
+			(en) => !en.isDir && isUploadableAudio(en.name),
+		);
 		const audioIndexMap = new Map<string, number>();
 		const browserQueue = audio.map((en, idx) => {
 			audioIndexMap.set(en.name, idx);
@@ -1467,7 +1828,7 @@ function App() {
 				path: `${browserRoot}${browserPath ? "/" + browserPath : ""}/${en.name}`,
 			});
 		});
-		return { visible, browserQueue, audioIndexMap };
+		return { visible, browserQueue, audioIndexMap, uploadableAudio };
 	}, [browserEntries, browserSearch, browserRoot, browserPath]);
 
 	const filteredPeerTracks = useMemo(() => {
@@ -1493,6 +1854,55 @@ function App() {
 			selectBrowserRoot(browserRoots[0].path);
 		}
 	}, [activeTab, downloadsDir]);
+
+	useEffect(() => {
+		if (
+			activeTab !== "peer" ||
+			!server ||
+			!token ||
+			!browserRoot ||
+			browserEntries.length === 0
+		) {
+			return;
+		}
+		const audioPaths = browserEntries
+			.filter((en) => !en.isDir && isUploadableAudio(en.name))
+			.map((en) => joinBrowserPath(browserRoot, browserPath, en.name));
+		if (audioPaths.length === 0 || audioPaths.length > 150) return;
+
+		const reqId = ++browserCheckReqRef.current;
+		(async () => {
+			try {
+				await window.electronAPI.setUploadConfig(server, token);
+				const checks = await window.electronAPI.checkUploadDuplicates?.(
+					audioPaths,
+					false,
+				);
+				if (browserCheckReqRef.current !== reqId || !checks) return;
+				setBrowserUploadMap((prev) => {
+					const next = { ...prev };
+					for (const fp of audioPaths) {
+						const r = checks[fp];
+						if (!r) continue;
+						const cur = next[fp];
+						if (cur?.state === "uploading" || cur?.state === "done") continue;
+						if (r.exists) {
+							next[fp] = {
+								state: "duplicate",
+								message: `Already on server: ${formatDuplicateLabel(r.match)}`,
+								hash: r.hash,
+							};
+						} else if (cur?.state === "duplicate") {
+							delete next[fp];
+						}
+					}
+					return next;
+				});
+			} catch {
+				// Offline or server unreachable — keep browsing uninterrupted.
+			}
+		})();
+	}, [activeTab, browserRoot, browserPath, browserEntries, server, token]);
 
 	useEffect(() => {
 		document.documentElement.dataset.theme = theme;
@@ -1725,9 +2135,22 @@ function App() {
 								<Button
 									variant="secondary"
 									size="sm"
+									disabled={uploadBusy || !server || !token}
+									onClick={() => void checkUploadQueueDuplicates(uploadQueue, true)}
+									title="Check file hashes against TuneCamp server"
+								>
+									<RefreshCw size={12} /> Check server
+								</Button>
+								<Button
+									variant="secondary"
+									size="sm"
 									disabled={uploadBusy}
 									onClick={() =>
-										setUploadQueue((q) => q.filter((x) => x.status !== "done"))
+										setUploadQueue((q) =>
+											q.filter(
+												(x) => x.status !== "done" && x.status !== "duplicate",
+											),
+										)
 									}
 								>
 									Clear done
@@ -2116,8 +2539,64 @@ function App() {
 																COMPLETED
 															</span>
 														)}
+														{dl.uploadStatus === "done" && (
+															<span
+																className="transfer-badge completed"
+																title={dl.uploadMessage || "Uploaded to TuneCamp"}
+															>
+																UPLOADED
+															</span>
+														)}
+														{dl.uploadStatus === "duplicate" && (
+															<span
+																className="transfer-badge duplicate"
+																title={
+																	dl.uploadMessage
+																		? `Already on server: ${dl.uploadMessage}`
+																		: "Already on TuneCamp server"
+																}
+															>
+																ON SERVER
+															</span>
+														)}
 													</div>
 													<div className="transfer-actions">
+														{(isCompleted || isSeeding) &&
+															(dl.filePaths?.length || dl.filePath) && (
+																<Button
+																	variant={
+																		dl.uploadStatus === "done" ||
+																		dl.uploadStatus === "duplicate"
+																			? "secondary"
+																			: "primary"
+																	}
+																	size="sm"
+																	disabled={
+																		dl.uploadStatus === "uploading" ||
+																		dl.uploadStatus === "done" ||
+																		dl.uploadStatus === "duplicate"
+																	}
+																	title={
+																		dl.uploadStatus === "error"
+																			? dl.uploadError || "Retry upload to TuneCamp"
+																			: dl.uploadStatus === "duplicate"
+																				? `Already on server: ${dl.uploadMessage || "duplicate hash"}`
+																				: "Upload to TuneCamp server"
+																	}
+																	onClick={() => handleUploadTransfer(dl)}
+																>
+																	<Upload size={12} />
+																	{dl.uploadStatus === "uploading"
+																		? "Uploading…"
+																		: dl.uploadStatus === "done"
+																			? "Uploaded"
+																			: dl.uploadStatus === "duplicate"
+																				? "On server"
+																				: dl.uploadStatus === "error"
+																					? "Retry Upload"
+																					: "Upload"}
+																</Button>
+															)}
 														{isSeeding && (
 															<Button
 																variant="secondary"
@@ -2519,6 +2998,21 @@ function App() {
 												>
 													<FolderPlus size={13} /> Create
 												</Button>
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={() => void handleUploadBrowserFolder()}
+													disabled={
+														browserView.uploadableAudio.length === 0 ||
+														browserFolderUploading !== null
+													}
+													title="Upload visible audio files in this folder to TuneCamp (skips duplicates by hash)"
+												>
+													<Upload size={13} />
+													{browserFolderUploading
+														? `Uploading ${browserFolderUploading.current}/${browserFolderUploading.total}…`
+														: "Upload folder"}
+												</Button>
 											</div>
 
 											{movingItem && (
@@ -2570,6 +3064,14 @@ function App() {
 															? audioIndexMap.get(en.name)
 															: undefined;
 														const canPlay = audioIdx !== undefined;
+														const isAudioUploadable =
+															!en.isDir && isUploadableAudio(en.name);
+														const entryFullPath = isAudioUploadable
+															? joinBrowserPath(browserRoot, browserPath, en.name)
+															: "";
+														const uploadState = entryFullPath
+															? browserUploadMap[entryFullPath]
+															: undefined;
 														return (
 															<div key={i} className="compact-row">
 																<div
@@ -2626,6 +3128,68 @@ function App() {
 																	)}
 																</div>
 																<div className="track-card-actions">
+																	{uploadState && (
+																		<span
+																			className={`track-card-badge ${
+																				uploadState.state === "done"
+																					? "track-card-badge-success"
+																					: uploadState.state === "duplicate"
+																						? "track-card-badge-info"
+																						: uploadState.state === "error"
+																							? "track-card-badge-danger"
+																							: ""
+																			}`}
+																			title={uploadState.message}
+																		>
+																			{uploadState.state === "uploading"
+																				? "Uploading…"
+																				: uploadState.state === "done"
+																					? "Uploaded"
+																					: uploadState.state === "duplicate"
+																						? "On server"
+																						: uploadState.state === "error"
+																							? "Error"
+																							: "Checking…"}
+																		</span>
+																	)}
+																	{isAudioUploadable && (
+																		<button
+																			type="button"
+																			disabled={
+																				uploadState?.state === "uploading" ||
+																				uploadState?.state === "done" ||
+																				uploadState?.state === "duplicate"
+																			}
+																			onClick={() => void handleUploadBrowserFile(en.name)}
+																			title={
+																				uploadState?.state === "duplicate"
+																					? uploadState.message || "Already on TuneCamp server"
+																					: uploadState?.state === "done"
+																						? "Uploaded to TuneCamp"
+																						: uploadState?.state === "error"
+																							? `Retry upload: ${uploadState.message}`
+																							: "Upload to TuneCamp"
+																			}
+																			className="row-action-btn"
+																			style={{
+																				color:
+																					uploadState?.state === "done"
+																						? "var(--success)"
+																						: uploadState?.state === "duplicate"
+																							? "var(--accent)"
+																							: uploadState?.state === "error"
+																								? "var(--danger)"
+																								: undefined,
+																			}}
+																		>
+																			{uploadState?.state === "done" ||
+																			uploadState?.state === "duplicate" ? (
+																				<Check size={13} />
+																			) : (
+																				<Upload size={13} />
+																			)}
+																		</button>
+																	)}
 																	<button
 																		type="button"
 																		onClick={() =>
@@ -2710,84 +3274,114 @@ function App() {
 
 							{uploadQueue.length > 0 && (
 								<div className="glass-card upload-queue-card">
-									{uploadQueue.map((u) => (
-										<div key={u.id} className="upload-row">
-											<div
-												style={{
-													fontFamily: "var(--tc-font-family-mono)",
-													fontSize: "0.74rem",
-													color: "var(--text-muted)",
-													whiteSpace: "nowrap",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-												}}
-												title={u.name}
-											>
-												{u.name}
-											</div>
-											<div
-												style={{
-													display: "flex",
-													gap: "6px",
-													alignItems: "center",
-												}}
-											>
-												{(["title", "artist", "album"] as const).map((k) => (
-													<input
-														key={k}
-														type="text"
-														placeholder={k}
-														value={u[k]}
-														disabled={
-															u.status === "uploading" || u.status === "done"
-														}
-														onChange={(e) =>
-															patchUpload(u.id, { [k]: e.target.value })
-														}
-														className="glass-input"
-														style={{ flex: "1 1 120px" }}
-													/>
-												))}
-												<Button
-													variant="primary"
-													size="sm"
-													disabled={
-														u.status === "uploading" || u.status === "done"
-													}
-													onClick={() => runUpload(u)}
-												>
-													{u.status === "uploading"
-														? "Uploading…"
-														: u.status === "done"
-															? "Done"
-															: u.status === "error"
-																? "Retry"
-																: "Upload"}
-												</Button>
-												<Button
-													variant="secondary"
-													size="sm"
-													disabled={u.status === "uploading"}
-													onClick={() =>
-														setUploadQueue((q) => q.filter((x) => x.id !== u.id))
-													}
-													title="Remove"
-												>
-													<X size={13} />
-												</Button>
-											</div>
-											{u.error && (
+									{uploadQueue.map((u) => {
+										const isLocked =
+											u.status === "checking" ||
+											u.status === "uploading" ||
+											u.status === "done" ||
+											u.status === "duplicate";
+										return (
+											<div key={u.id} className="upload-row">
 												<div
 													style={{
-														color: "var(--danger)",
+														fontFamily: "var(--tc-font-family-mono)",
 														fontSize: "0.74rem",
+														color: "var(--text-muted)",
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+													}}
+													title={u.name}
+												>
+													{u.name}
+												</div>
+												<div
+													style={{
+														display: "flex",
+														gap: "6px",
+														alignItems: "center",
 													}}
 												>
-													{u.error}
+													{(["title", "artist", "album"] as const).map((k) => (
+														<input
+															key={k}
+															type="text"
+															placeholder={k}
+															value={u[k]}
+															disabled={isLocked}
+															onChange={(e) =>
+																patchUpload(u.id, { [k]: e.target.value })
+															}
+															className="glass-input"
+															style={{ flex: "1 1 120px" }}
+														/>
+													))}
+													<Button
+														variant={
+															u.status === "done" || u.status === "duplicate"
+																? "secondary"
+																: "primary"
+														}
+														size="sm"
+														disabled={isLocked}
+														onClick={() => runUpload(u)}
+													>
+														{u.status === "checking"
+															? "Checking…"
+															: u.status === "uploading"
+																? "Uploading…"
+																: u.status === "done"
+																	? "Done"
+																	: u.status === "duplicate"
+																		? "On server"
+																		: u.status === "error"
+																			? "Retry"
+																			: "Upload"}
+													</Button>
+													<Button
+														variant="secondary"
+														size="sm"
+														disabled={u.status === "uploading"}
+														onClick={() =>
+															setUploadQueue((q) => q.filter((x) => x.id !== u.id))
+														}
+														title="Remove"
+													>
+														<X size={13} />
+													</Button>
 												</div>
-											)}
-										</div>
-									))}
+												{u.status === "duplicate" && (
+													<div className="upload-status-note">
+														<span className="track-card-badge track-card-badge-info">
+															On server
+														</span>
+														<span>
+															Already on server: {formatDuplicateLabel(u.existingTrack)}
+															{u.hash ? ` · hash ${u.hash.slice(0, 8)}` : ""}
+														</span>
+													</div>
+												)}
+												{u.status === "done" && (
+													<div className="upload-status-note">
+														<span className="track-card-badge track-card-badge-success">
+															Uploaded
+														</span>
+														{u.hash && <span>hash {u.hash.slice(0, 8)}</span>}
+													</div>
+												)}
+												{u.error && (
+													<div
+														style={{
+															color: "var(--danger)",
+															fontSize: "0.74rem",
+														}}
+													>
+														{u.error}
+													</div>
+												)}
+											</div>
+										);
+									})}
 								</div>
 							)}
 						</div>
